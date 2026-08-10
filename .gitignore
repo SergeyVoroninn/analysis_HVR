@@ -1,0 +1,10 @@
+program/dist/
+program/build/
+*.db
+*.exe
+*.pkg
+*.zip
+__pycache__/
+*.pyc
+.idea/
+.vscode/
