@@ -5,151 +5,100 @@
   - athlete_generator  (create_athlete)
   - ecg_generator      (create_record)
   - schedule_engine    (build_schedules, load_config)
+  - database           (get_connection, init_database, get_db_path)
 
-Записывает всё в SQLite.
+Записывает всё в SQLite. Путь к БД задаётся в config.yaml.
 """
 
 import os
 import sqlite3
 import random
 import sys
+import shutil
 
-from athlete_generator import create_athlete
-from ecg_generator import create_record
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
+
 from schedule_engine import build_schedules, load_config
+from ecg_generator import create_record
 from analysis import parse_rr, calc_metrics, calc_stress
+from database import get_connection, init_database, get_db_path
 
 
 # ============================================================
-# ПРОГРЕСС-БАР (без внешних зависимостей)
+# ПРОГРЕСС-БАР
 # ============================================================
-def _progress_bar(current, total, prefix="", suffix="", length=40):
-    """
-    Рисует ASCII-прогресс-бар в одну строку.
+def _progress_bar(current, total, prefix="", suffix="", length=30):
+    if total <= 0:
+        return
+    cols = shutil.get_terminal_size((120, 24)).columns
+    percent = 100.0 * current / total
+    filled = int(length * current // total)
+    bar = "█" * filled + "░" * (length - filled)
+    counter = f"({current}/{total})"
+    fixed = len(prefix) + length + len(counter) + 10
+    suffix = suffix[: max(0, cols - fixed - 2)]
+    line = f"\r{prefix} |{bar}| {percent:5.1f}% {counter} {suffix}"
 
-    :param current: текущее значение
-    :param total:   итоговое значение
-    :param prefix:  текст слева
-    :param suffix:  текст справа
-    :param length:  ширина полосы в символах
-    """
-    percent = current / total if total > 0 else 1.0
-    filled = int(length * percent)
-    bar = '█' * filled + '░' * (length - filled)
-    line = f"\r{prefix} |{bar}| {percent * 100:5.1f}% {suffix}"
-    sys.stdout.write(line)
-    sys.stdout.flush()
-    if current >= total:
-        sys.stdout.write("\n")
+    if sys.stdout.isatty():
+        sys.stdout.write(line)
         sys.stdout.flush()
+        if current >= total:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+    else:
+        step = max(1, total // 20)
+        if current % step == 0 or current == total:
+            print(line.lstrip("\r"))
 
 
 # ============================================================
-# СХЕМА БАЗЫ ДАННЫХ
-# ============================================================
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS athletes (
-    id                  TEXT PRIMARY KEY,
-    last_name           TEXT,
-    first_name          TEXT,
-    middle_name         TEXT,
-    gender              TEXT,
-    birth_year          INTEGER,
-    age                 INTEGER,
-    height_cm           INTEGER,
-    weight_kg           REAL,
-    resting_hr          INTEGER,
-    max_hr              INTEGER,
-    hrv_rmssd_baseline  INTEGER,
-    avg_rr_ms           INTEGER,
-    polar_id            TEXT UNIQUE
-);
-
-CREATE TABLE IF NOT EXISTS ecg_records (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    athlete_id        TEXT NOT NULL,
-    recorded_at       TEXT NOT NULL,
-    duration_seconds  REAL,
-    profile           TEXT,
-    raw_data          TEXT,
-    mean_hr           REAL,
-    rmssd             REAL,
-    sdnn              REAL,
-    status            TEXT,
-    stress_si         REAL,
-    created_at        TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (athlete_id) REFERENCES athletes(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_ecg_athlete ON ecg_records(athlete_id);
-CREATE INDEX IF NOT EXISTS idx_ecg_time    ON ecg_records(recorded_at);
-CREATE INDEX IF NOT EXISTS idx_ecg_cover
-    ON ecg_records(athlete_id, recorded_at, sdnn, status);
-"""
-
-
-# ============================================================
-# НАСТРОЙКИ
+# ЧТЕНИЕ НАСТРОЕК
 # ============================================================
 def _get_settings(cfg):
     s = cfg.get("settings", {})
     return {
         "duration_seconds": s.get("duration_seconds", 12.0),
-        "db_path":          s.get("db_path", "data/ecg.db"),
+        "db_path":          s.get("db_path", None),  # None = дефолт
         "store_raw_data":   s.get("store_raw_data", True),
         "seed":             s.get("seed", None),
     }
 
 
 # ============================================================
-# ОСНОВНАЯ ФУНКЦИЯ: ПОДГОТОВКА БАЗЫ ДАННЫХ
+# ОСНОВНАЯ ФУНКЦИЯ
 # ============================================================
 def prepare_database(config_path="config.yaml"):
     """
     Генерирует данные и пишет их в SQLite.
-
-    1. Загружает конфиг.
-    2. Строит расписания для команды.
-    3. Генерирует ЭКГ для каждой записи.
-    4. Записывает в базу данных.
+    Путь к БД берётся из конфига (settings.db_path).
     """
     cfg = load_config(config_path)
     settings = _get_settings(cfg)
 
-    # Фиксируем зерно для воспроизводимости
     if settings["seed"] is not None:
         random.seed(settings["seed"])
 
     duration  = settings["duration_seconds"]
-    db_path   = settings["db_path"]
+    db_path   = get_db_path(settings["db_path"])
     store_raw = settings["store_raw_data"]
 
-    # Создаём папку для базы
-    os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+    # Инициализируем БД с удалением старых данных
+    db_path = init_database(db_path, drop_existing=True)
 
-    # Строим расписания (уже содержит спортсменов из конфига)
     print("📋 Построение расписаний...")
     schedules = build_schedules(config_path)
 
-    # Считаем общее число записей для прогресс-бара
     total_records = sum(len(times) for _, _, times in schedules)
     print(f"   Спортсменов: {len(schedules)} | Записей к генерации: {total_records}\n")
 
-    conn = sqlite3.connect(db_path)
-    
-    # Удаляем старые таблицы и создаём заново с актуальной схемой
-    conn.executescript("""
-        DROP TABLE IF EXISTS ecg_records;
-        DROP TABLE IF EXISTS athletes;
-    """)
-    conn.executescript(SCHEMA)
+    conn = get_connection(db_path)
 
     processed = 0
-    with conn:  # единая транзакция
+    with conn:
         for athlete, profile_name, times in schedules:
             fio = f"{athlete['last_name']} {athlete['first_name']}"
 
-            # Вставляем спортсмена
             conn.execute(
                 """INSERT INTO athletes
                    (id, last_name, first_name, middle_name, gender, birth_year,
@@ -164,7 +113,6 @@ def prepare_database(config_path="config.yaml"):
                  athlete["polar_id"]),
             )
 
-            # Готовим записи ЭКГ с прогресс-баром
             rows = []
             for ts in times:
                 dt_str = ts.strftime("%Y.%m.%d %H:%M:%S")
@@ -177,16 +125,13 @@ def prepare_database(config_path="config.yaml"):
                 s = calc_stress(rr)
                 raw = raw_str if store_raw else None
 
-                # Ровно 10 значений под 10 колонок INSERT
                 rows.append((athlete["id"], ts.isoformat(sep=" "),
                              duration, profile_name, raw,
                              m["mean_hr"], m["rmssd"], m["sdnn"], m["status"],
                              s["si"] if s else None))
 
                 processed += 1
-                _progress_bar(processed, total_records,
-                              prefix="⚙️  Генерация ЭКГ",
-                              suffix=f"({processed}/{total_records}) {fio}")
+                _progress_bar(processed, total_records, prefix="⚙️  Генерация ЭКГ", suffix=fio)
 
             conn.executemany(
                 """INSERT INTO ecg_records
@@ -206,13 +151,13 @@ def prepare_database(config_path="config.yaml"):
 # ============================================================
 # ПРОВЕРКА БАЗЫ ДАННЫХ
 # ============================================================
-def verify_database(db_path="data/ecg.db"):
+def verify_database(db_path):
     """Печатает сводку по содержимому базы."""
     if not os.path.exists(db_path):
         print(f"❌ Файл базы не найден: {db_path}")
         return
 
-    conn = sqlite3.connect(db_path)
+    conn = get_connection(db_path)
     cur = conn.cursor()
 
     cur.execute("SELECT COUNT(*) FROM athletes")
@@ -240,5 +185,5 @@ def verify_database(db_path="data/ecg.db"):
 # ТОЧКА ВХОДА
 # ============================================================
 if __name__ == '__main__':
-    prepare_database("config.yaml")
-    verify_database("data/ecg.db")
+    db_path = prepare_database(CONFIG_PATH)
+    verify_database(db_path)

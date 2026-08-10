@@ -1,7 +1,6 @@
 """
 Приложение для просмотра базы данных ЭКГ (одна страница, без вкладки ЭКГ).
 """
-
 import sqlite3
 import uuid
 import customtkinter as ctk
@@ -12,10 +11,20 @@ import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+import os
+import sys
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
+
+sys.path.insert(0, SCRIPTS_DIR)
+
 from analysis import parse_rr, calc_metrics, calc_stress, stress_level
 from athlete_generator import (
     _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
     _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd)
+from database import get_connection, get_db_path
+
 
 # ============================================================
 # ЦВЕТА ИНТЕРФЕЙСА
@@ -39,9 +48,6 @@ COL_CRIT = '#da3633'
 COL_TP_YEAR = '#4cc9f0'
 COL_TP_WEEK = "#468056"
 
-# ============================================================
-# РАЗМЕРЫ И ОТСТУПЫ
-# ============================================================
 YEAR_X0, YEAR_Y0 = 5, 18
 WEEK_X0, WEEK_Y0 = 28, 5
 
@@ -132,9 +138,15 @@ class AthleteDialog(ctk.CTkToplevel):
 
 
 class ECGViewerApp(ctk.CTk):
-    def __init__(self, db_path="data/ecg.db"):
+    def __init__(self, db_path=None):
         super().__init__()
-        self.db_path = db_path
+        
+        # Получаем путь к БД через менеджер
+        if db_path is None:
+            self.db_path = get_db_path()
+        else:
+            self.db_path = get_db_path(db_path)
+        
         self.title("Просмотр ЭКГ — Анализ ВРС")
         self.geometry("1400x800")
 
@@ -152,7 +164,6 @@ class ECGViewerApp(ctk.CTk):
         self._min_year = self._view_year
         self._max_year = self._view_year
 
-        # Последний применённый размер фигуры (защита от повторных ресайзов)
         self._tp_last = None
 
         self._create_widgets()
@@ -160,14 +171,10 @@ class ECGViewerApp(ctk.CTk):
         self._load_year_range()
         self._load_athletes()
 
-    # ============================================================
-    # ИНТЕРФЕЙС
-    # ============================================================
     def _create_widgets(self):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # ===== ЛЕВАЯ ПАНЕЛЬ =====
         self.left_panel = ctk.CTkFrame(self, width=300)
         self.left_panel.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         self.left_panel.grid_rowconfigure(1, weight=1)
@@ -197,20 +204,17 @@ class ECGViewerApp(ctk.CTk):
         ctk.CTkButton(self.left_panel, text="⬇ Импорт записи ЭКГ",
                       command=self._import_ecg).grid(row=3, column=0, padx=5, pady=5, sticky="ew")
 
-        # ===== ПРАВАЯ ПАНЕЛЬ =====
         self.right_panel = ctk.CTkFrame(self)
         self.right_panel.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
         self.right_panel.grid_columnconfigure(0, weight=1)
         self.right_panel.grid_rowconfigure(2, weight=1)
 
-        # row 0: детали
         self.frame_details = ctk.CTkFrame(self.right_panel)
         self.frame_details.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
         self.label_details = ctk.CTkLabel(self.frame_details, text="Выберите спортсмена",
                                           font=ctk.CTkFont(size=14))
         self.label_details.pack(padx=10, pady=10)
 
-        # row 1: heatmap
         self.density_frame = ctk.CTkFrame(self.right_panel)
         self.density_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
         self.density_frame.bind("<Configure>", self._on_density_resize)
@@ -239,7 +243,6 @@ class ECGViewerApp(ctk.CTk):
         self.canvas_week = tk.Canvas(self.week_box, bg=COL_BG_DARK, highlightthickness=0)
         self.canvas_week.pack()
 
-        # row 2: графики TP / ИС — ОДНА фигура с constrained_layout
         self.tp_frame = ctk.CTkFrame(self.right_panel)
         self.tp_frame.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
         self.tp_frame.grid_rowconfigure(1, weight=1)
@@ -264,14 +267,10 @@ class ECGViewerApp(ctk.CTk):
         self._tp_widget.configure(background=COL_BG_WIDGET)
         self._tp_widget.pack(fill="both", expand=True)
 
-        # Ресайз привязан к ФРЕЙМУ: событие даёт финальный размер контейнера
         self.plt_area.bind("<Configure>", self._on_tp_configure)
 
         self._apply_canvas_sizes()
 
-    # ============================================================
-    # АДАПТИВНЫЕ РАЗМЕРЫ
-    # ============================================================
     def _apply_canvas_sizes(self):
         s = self.step
         self.canvas_year.config(width=53 * s + 10, height=YEAR_Y0 + 7 * s + 6)
@@ -292,7 +291,6 @@ class ECGViewerApp(ctk.CTk):
                 self._draw_density(self.selected_athlete[0])
 
     def _on_tp_configure(self, event):
-        """Фигура всегда равна текущему размеру фрейма plt_area."""
         w, h = event.width, event.height
         if w < 100 or h < 100 or self._tp_last == (w, h):
             return
@@ -301,11 +299,8 @@ class ECGViewerApp(ctk.CTk):
                                     forward=False)
         self.canvas_tp.draw_idle()
 
-    # ============================================================
-    # УПРАВЛЕНИЕ СПОРТСМЕНАМИ
-    # ============================================================
     def _get_athlete_full(self, aid):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cur = conn.cursor()
         cur.execute("SELECT " + ", ".join(CTK_COLS) + " FROM athletes WHERE id=?", (aid,))
         row = cur.fetchone()
@@ -323,7 +318,7 @@ class ECGViewerApp(ctk.CTk):
         height = d["height_cm"] or _estimate_height_cm(age, gender)
         weight = d["weight_kg"] or _estimate_weight_kg(height, age, gender)
         resting = _estimate_resting_hr(age, gender)
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         conn.execute(
             """INSERT INTO athletes
                (id, last_name, first_name, middle_name, gender, birth_year,
@@ -352,7 +347,7 @@ class ECGViewerApp(ctk.CTk):
             return
         d = dlg.result
         age = datetime.date.today().year - d["birth_year"]
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         conn.execute(
             """UPDATE athletes SET last_name=?, first_name=?, middle_name=?,
                gender=?, birth_year=?, age=?, height_cm=?, weight_kg=?, polar_id=?
@@ -371,16 +366,13 @@ class ECGViewerApp(ctk.CTk):
         fio = f"{self.selected_athlete[1]} {self.selected_athlete[2]}"
         if not messagebox.askyesno("Удаление", f"Удалить {fio} и все его записи ЭКГ?"):
             return
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         conn.execute("DELETE FROM ecg_records WHERE athlete_id=?", (aid,))
         conn.execute("DELETE FROM athletes WHERE id=?", (aid,))
         conn.commit()
         conn.close()
         self._load_athletes()
 
-    # ============================================================
-    # ИМПОРТ
-    # ============================================================
     @staticmethod
     def _parse_header(raw):
         dt_str, polar = None, None
@@ -425,7 +417,7 @@ class ECGViewerApp(ctk.CTk):
 
         aid = athlete[0]
         recorded_at = dt.isoformat(sep=" ")
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cur = conn.cursor()
         cur.execute("SELECT 1 FROM ecg_records WHERE athlete_id=? AND recorded_at=?",
                     (aid, recorded_at))
@@ -455,26 +447,13 @@ class ECGViewerApp(ctk.CTk):
         self._view_year = min(max(dt.year, self._min_year), self._max_year)
         self._load_athletes(select_id=aid)
 
-    # ============================================================
-    # ЗАГРУЗКА / ИНДЕКСЫ
-    # ============================================================
     def _ensure_indexes(self):
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-        cur.execute("PRAGMA table_info(ecg_records)")
-        cols = {r[1] for r in cur.fetchall()}
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ecg_time ON ecg_records(recorded_at)")
-        if {"athlete_id", "recorded_at", "sdnn", "status"} <= cols:
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_ecg_cover "
-                         "ON ecg_records(athlete_id, recorded_at, sdnn, status)")
-        if {"athlete_id", "recorded_at", "sdnn", "status", "stress_si"} <= cols:
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_ecg_cover2 "
-                         "ON ecg_records(athlete_id, recorded_at, sdnn, status, stress_si)")
-        conn.commit()
-        conn.close()
+        # Индексы уже создаются в SCHEMA (database.py)
+        # Эта функция оставлена для совместимости
+        pass
 
     def _load_year_range(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cur = conn.cursor()
         cur.execute("SELECT MIN(recorded_at), MAX(recorded_at) FROM ecg_records")
         mn, mx = cur.fetchone()
@@ -494,7 +473,7 @@ class ECGViewerApp(ctk.CTk):
 
     def _load_athletes(self, select_id=None):
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(self.db_path)
             cur = conn.cursor()
             cur.execute("SELECT id, last_name, first_name, age, gender, polar_id "
                         "FROM athletes ORDER BY last_name, first_name")
@@ -535,9 +514,6 @@ class ECGViewerApp(ctk.CTk):
             f"👤 {last} {first}\nВозраст: {age} лет\n"
             f"Пол: {'Мужской' if gender == 'M' else 'Женский'}\nPolar ID: {pid}"))
 
-    # ============================================================
-    # ГРАФИКИ TP / ИС
-    # ============================================================
     @staticmethod
     def _style_ax(ax):
         ax.set_facecolor(COL_BG_DARK)
@@ -566,7 +542,7 @@ class ECGViewerApp(ctk.CTk):
         ax.set_xlim(0, 53)
 
     def _draw_tp(self, athlete_id):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cur = conn.cursor()
         cur.execute("PRAGMA table_info(ecg_records)")
         cols = {r[1] for r in cur.fetchall()}
@@ -590,7 +566,6 @@ class ECGViewerApp(ctk.CTk):
                 if jan1 <= d <= dec31:
                     week_si.setdefault((d - self._year_start).days // 7, []).append(si)
 
-        # --- TP по неделям года ---
         self.ax_tp_year.clear()
         self._style_ax(self.ax_tp_year)
         xs = [w for w in range(53) if w in week_tp]
@@ -601,7 +576,6 @@ class ECGViewerApp(ctk.CTk):
         self.ax_tp_year.set_title(f"TP по неделям, {self._view_year}",
                                   color=COL_TEXT_LIGHT, fontsize=9)
 
-        # --- TP по дням недели ---
         self.ax_tp_week.clear()
         self._style_ax(self.ax_tp_week)
         ys7 = [self._mean(day_tp.get((self._week_start + datetime.timedelta(days=d)).isoformat()))
@@ -614,7 +588,6 @@ class ECGViewerApp(ctk.CTk):
             self.ax_tp_week.set_title(f"{self._week_start:%d.%m}–{we:%d.%m}",
                                       color=COL_TEXT_LIGHT, fontsize=7)
 
-        # --- ИС по неделям года ---
         self.ax_si_year.clear()
         self._style_ax(self.ax_si_year)
         xs = [w for w in range(53) if w in week_si]
@@ -625,7 +598,6 @@ class ECGViewerApp(ctk.CTk):
         self.ax_si_year.set_title(f"Стресс по неделям, {self._view_year}",
                                   color=COL_TEXT_LIGHT, fontsize=9)
 
-        # --- ИС по дням недели ---
         self.ax_si_week.clear()
         self._style_ax(self.ax_si_week)
         ys7 = [self._mean(day_si.get((self._week_start + datetime.timedelta(days=d)).isoformat()))
@@ -640,9 +612,6 @@ class ECGViewerApp(ctk.CTk):
 
         self.canvas_tp.draw()
 
-    # ============================================================
-    # ПАНЕЛИ ПЛОТНОСТИ
-    # ============================================================
     def _cell_color(self, count, worst, base):
         if worst == 'crit':
             return COL_CRIT
@@ -655,7 +624,7 @@ class ECGViewerApp(ctk.CTk):
         return base
 
     def _draw_density(self, athlete_id):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cur = conn.cursor()
         cur.execute("SELECT recorded_at, status FROM ecg_records WHERE athlete_id=?",
                     (athlete_id,))
@@ -750,5 +719,6 @@ class ECGViewerApp(ctk.CTk):
 
 
 if __name__ == '__main__':
-    app = ECGViewerApp("data/ecg.db")
+    # БД создастся автоматически если её нет
+    app = ECGViewerApp()
     app.mainloop()
