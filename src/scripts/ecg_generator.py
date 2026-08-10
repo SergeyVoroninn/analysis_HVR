@@ -138,7 +138,7 @@ if __name__ == '__main__':
     test_record = create_record(
         device='TEST0001',
         datetime_str='2026.08.10 12:00:00',
-        duration_seconds=10.0
+        duration_seconds=300.0
     )
 
     # Сохраняем в файл для проверки

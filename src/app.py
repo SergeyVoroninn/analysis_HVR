@@ -25,7 +25,6 @@ from athlete_generator import (
     _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd)
 from database import get_connection, get_db_path
 
-
 # ============================================================
 # ЦВЕТА ИНТЕРФЕЙСА
 # ============================================================
@@ -141,7 +140,6 @@ class ECGViewerApp(ctk.CTk):
     def __init__(self, db_path=None):
         super().__init__()
         
-        # Получаем путь к БД через менеджер
         if db_path is None:
             self.db_path = get_db_path()
         else:
@@ -254,7 +252,7 @@ class ECGViewerApp(ctk.CTk):
         self.plt_area = ctk.CTkFrame(self.tp_frame, fg_color="transparent")
         self.plt_area.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
-        self.fig_tp = Figure(figsize=(9, 4.6), dpi=100, constrained_layout=True)
+        self.fig_tp = Figure(figsize=(9, 4.6), dpi=100)
         self.fig_tp.patch.set_facecolor(COL_BG_DARK)
         gs = self.fig_tp.add_gridspec(2, 2, width_ratios=[3, 1])
         self.ax_tp_year = self.fig_tp.add_subplot(gs[0, 0])
@@ -297,6 +295,7 @@ class ECGViewerApp(ctk.CTk):
         self._tp_last = (w, h)
         self.fig_tp.set_size_inches(w / self.fig_tp.dpi, h / self.fig_tp.dpi,
                                     forward=False)
+        self.fig_tp.tight_layout() 
         self.canvas_tp.draw_idle()
 
     def _get_athlete_full(self, aid):
@@ -448,8 +447,6 @@ class ECGViewerApp(ctk.CTk):
         self._load_athletes(select_id=aid)
 
     def _ensure_indexes(self):
-        # Индексы уже создаются в SCHEMA (database.py)
-        # Эта функция оставлена для совместимости
         pass
 
     def _load_year_range(self):
@@ -610,7 +607,8 @@ class ECGViewerApp(ctk.CTk):
             self.ax_si_week.set_title(f"{self._week_start:%d.%m}–{we:%d.%m}",
                                       color=COL_TEXT_LIGHT, fontsize=7)
 
-        self.canvas_tp.draw()
+        self.fig_tp.tight_layout()
+        self.canvas_tp.draw_idle()
 
     def _cell_color(self, count, worst, base):
         if worst == 'crit':
@@ -719,6 +717,5 @@ class ECGViewerApp(ctk.CTk):
 
 
 if __name__ == '__main__':
-    # БД создастся автоматически если её нет
     app = ECGViewerApp()
     app.mainloop()
