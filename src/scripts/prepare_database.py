@@ -101,13 +101,13 @@ def prepare_database(config_path="config.yaml"):
 
             conn.execute(
                 """INSERT INTO athletes
-                   (id, last_name, first_name, middle_name, gender, birth_year,
-                    age, height_cm, weight_kg, resting_hr, max_hr,
+                   (id, last_name, first_name, middle_name, gender, birth_date,
+                    height_cm, weight_kg, resting_hr, max_hr,
                     hrv_rmssd_baseline, avg_rr_ms, polar_id)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (athlete["id"], athlete["last_name"], athlete["first_name"],
-                 athlete["middle_name"], athlete["gender"], athlete["birth_year"],
-                 athlete["age"], athlete["height_cm"], athlete["weight_kg"],
+                 athlete["middle_name"], athlete["gender"], athlete["birth_date"],
+                 athlete["height_cm"], athlete["weight_kg"],
                  athlete["resting_hr"], athlete["max_hr"],
                  athlete["hrv_rmssd_baseline"], athlete["avg_rr_ms"],
                  athlete["polar_id"]),
@@ -116,9 +116,13 @@ def prepare_database(config_path="config.yaml"):
             rows = []
             for ts in times:
                 dt_str = ts.strftime("%Y.%m.%d %H:%M:%S")
-                raw_str = create_record(device=athlete["polar_id"],
-                                        datetime_str=dt_str,
-                                        duration_seconds=duration)
+                raw_str = create_record(
+                    device=athlete["polar_id"],
+                    datetime_str=dt_str,
+                    duration_seconds=duration,
+                    mean_rr_ms=athlete["avg_rr_ms"],            # из профиля спортсмена
+                    rmssd_ms=athlete["hrv_rmssd_baseline"],     # из профиля спортсмена
+                )
 
                 rr = parse_rr(raw_str)
                 m = calc_metrics(rr)

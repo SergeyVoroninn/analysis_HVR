@@ -6,7 +6,8 @@ import datetime
 import random
 import uuid
 
-CURRENT_YEAR = datetime.date.today().year
+TODAY = datetime.date.today()
+CURRENT_YEAR = TODAY.year
 
 BASE_NAMES = [
     "Иван", "Пётр", "Дамир", "Ильдар", "Максим",
@@ -24,12 +25,10 @@ FEMALE_FIRST_NAMES = [
 
 
 def _to_base(name):
-    """Нормализуем основу: заменяем ё на е."""
     return name.replace('ё', 'е')
 
 
 def _make_last_name(base, gender):
-    """Фамилия из основы имени."""
     base = _to_base(base)
     if base.endswith(('й', 'ь')):
         return base[:-1] + ('ева' if gender == 'F' else 'ев')
@@ -37,7 +36,6 @@ def _make_last_name(base, gender):
 
 
 def _make_middle_name(base, gender):
-    """Отчество из основы имени."""
     base = _to_base(base)
     if base.endswith(('й', 'ь')):
         return base[:-1] + ('евна' if gender == 'F' else 'евич')
@@ -45,12 +43,41 @@ def _make_middle_name(base, gender):
 
 
 def _generate_polar_id():
-    """Генерирует ID датчика Polar в формате C8208E2E."""
     return ''.join(random.choices('0123456789ABCDEF', k=8))
 
 
+def _random_date_in_year(year):
+    """Генерирует случайную дату в заданном году (учитывает длину месяца)."""
+    month = random.randint(1, 12)
+    if month == 12:
+        next_month = datetime.date(year + 1, 1, 1)
+    else:
+        next_month = datetime.date(year, month + 1, 1)
+    first_of_month = datetime.date(year, month, 1)
+    days_in_month = (next_month - first_of_month).days
+    day = random.randint(1, days_in_month)
+    return datetime.date(year, month, day)
+
+
+def _calc_age(birth_date):
+    """
+    Полный возраст в годах на сегодня.
+    Принимает datetime.date ИЛИ строку ISO "YYYY-MM-DD" (как приходит из SQLite).
+    """
+    if not birth_date:
+        return 0
+    if isinstance(birth_date, str):
+        try:
+            birth_date = datetime.date.fromisoformat(birth_date)
+        except ValueError:
+            return 0
+    age = TODAY.year - birth_date.year
+    if (TODAY.month, TODAY.day) < (birth_date.month, birth_date.day):
+        age -= 1
+    return age
+
+
 def _estimate_height_cm(age, gender):
-    """Приблизительный рост с учётом возраста и пола."""
     adult = 178 if gender == 'M' else 166
     if age >= 18:
         return adult + random.randint(-8, 8)
@@ -59,7 +86,6 @@ def _estimate_height_cm(age, gender):
 
 
 def _estimate_weight_kg(height_cm, age, gender):
-    """Приблизительный вес через ИМТ."""
     if age < 12:
         bmi = random.uniform(15, 18)
     elif age < 18:
@@ -70,7 +96,6 @@ def _estimate_weight_kg(height_cm, age, gender):
 
 
 def _estimate_resting_hr(age, gender):
-    """Пульс покоя: выше у детей и женщин."""
     if age < 8:
         hr = random.randint(85, 105)
     elif age < 12:
@@ -87,12 +112,10 @@ def _estimate_resting_hr(age, gender):
 
 
 def _estimate_max_hr(age):
-    """Максимальный пульс по формуле Tanaka: 208 - 0.7*age."""
     return int(208 - 0.7 * age)
 
 
 def _estimate_hrv_rmssd(age):
-    """Базовая вариабельность (RMSSD): выше у молодых."""
     if age < 13:
         return random.randint(55, 90)
     elif age < 20:
@@ -103,21 +126,25 @@ def _estimate_hrv_rmssd(age):
         return random.randint(25, 55)
 
 
-def create_athlete(birth_year, gender):
+def create_athlete(birth_year, gender='M'):
     """
     Генерирует профиль спортсмена с ФИО и физиологией.
 
     :param birth_year: год рождения (например, 2010)
     :param gender: 'M' или 'F'
-    :return: словарь с профилем спортсмена
+    :return: dict с профилем (birth_date = случайный день в году)
     """
     gender = gender.upper()
     if gender not in ('M', 'F'):
         raise ValueError("gender must be 'M' or 'F'")
 
-    age = CURRENT_YEAR - birth_year
-    if age < 0:
+    birth_year = int(birth_year)
+    if birth_year > CURRENT_YEAR:
         raise ValueError("birth_year is in the future")
+
+    # Случайная дата в заданном году — генерируется один раз
+    bd = _random_date_in_year(birth_year)
+    age = _calc_age(bd)
 
     last_name = _make_last_name(random.choice(BASE_NAMES), gender)
     middle_name = _make_middle_name(random.choice(BASE_NAMES), gender)
@@ -137,8 +164,7 @@ def create_athlete(birth_year, gender):
         "first_name": first_name,
         "middle_name": middle_name,
         "gender": gender,
-        "birth_year": birth_year,
-        "age": age,
+        "birth_date": bd.isoformat(),          # DATE в ISO-формате
         "height_cm": height_cm,
         "weight_kg": weight_kg,
         "resting_hr": resting_hr,
@@ -150,10 +176,12 @@ def create_athlete(birth_year, gender):
 
 
 if __name__ == '__main__':
-    # Тест: генерируем 5 спортсменов
     for _ in range(5):
-        athlete = create_athlete(random.randint(2000, 2012), random.choice(['M', 'F']))
+        year = random.randint(2000, 2012)
+        athlete = create_athlete(birth_year=year, gender=random.choice(['M', 'F']))
+        bd = datetime.date.fromisoformat(athlete['birth_date'])
+        age = _calc_age(bd)
         print(f"{athlete['last_name']} {athlete['first_name']} | "
-              f"{athlete['gender']}, {athlete['age']} лет | "
+              f"{athlete['gender']}, {bd.isoformat()} ({age} лет) | "
               f"рост {athlete['height_cm']}, вес {athlete['weight_kg']} | "
               f"пульс покоя {athlete['resting_hr']}")

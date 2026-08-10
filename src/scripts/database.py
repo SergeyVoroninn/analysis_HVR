@@ -34,8 +34,7 @@ CREATE TABLE IF NOT EXISTS athletes (
     first_name          TEXT,
     middle_name         TEXT,
     gender              TEXT,
-    birth_year          INTEGER,
-    age                 INTEGER,
+    birth_date          DATE,
     height_cm           INTEGER,
     weight_kg           REAL,
     resting_hr          INTEGER,
@@ -68,7 +67,6 @@ CREATE INDEX IF NOT EXISTS idx_ecg_cover
 CREATE INDEX IF NOT EXISTS idx_ecg_cover2
     ON ecg_records(athlete_id, recorded_at, sdnn, status, stress_si);
 """
-
 
 # ============================================================
 # ПУТЬ К БАЗЕ ДАННЫХ

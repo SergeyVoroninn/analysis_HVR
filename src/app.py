@@ -22,7 +22,8 @@ sys.path.insert(0, SCRIPTS_DIR)
 from analysis import parse_rr, calc_metrics, calc_stress, stress_level
 from athlete_generator import (
     _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
-    _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd)
+    _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd,
+    _calc_age)
 from database import get_connection, get_db_path
 
 # ============================================================
@@ -55,7 +56,7 @@ MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн",
 DAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
 CTK_COLS = ["id", "last_name", "first_name", "middle_name", "gender",
-            "birth_year", "age", "height_cm", "weight_kg", "resting_hr",
+            "birth_date", "height_cm", "weight_kg", "resting_hr",
             "max_hr", "hrv_rmssd_baseline", "avg_rr_ms", "polar_id"]
 
 ctk.set_appearance_mode("dark")
@@ -73,7 +74,8 @@ class AthleteDialog(ctk.CTkToplevel):
         self.result = None
 
         fields = [("last_name", "Фамилия"), ("first_name", "Имя"),
-                  ("middle_name", "Отчество"), ("birth_year", "Год рождения"),
+                  ("middle_name", "Отчество"),
+                  ("birth_date", "Дата рождения (ГГГГ-ММ-ДД)"),  # ← дата
                   ("height_cm", "Рост (см)"), ("weight_kg", "Вес (кг)"),
                   ("polar_id", "Polar ID")]
         self.entries = {}
@@ -110,12 +112,15 @@ class AthleteDialog(ctk.CTkToplevel):
         if not last or not first:
             messagebox.showwarning("Проверка", "Фамилия и имя обязательны.")
             return
+
+        bd_str = self.entries["birth_date"].get().strip()
         try:
-            birth_year = int(self.entries["birth_year"].get().strip())
-            if not 1900 <= birth_year <= datetime.date.today().year:
+            bd = datetime.date.fromisoformat(bd_str)
+            if not datetime.date(1900, 1, 1) <= bd <= datetime.date.today():
                 raise ValueError
         except ValueError:
-            messagebox.showwarning("Проверка", "Некорректный год рождения.")
+            messagebox.showwarning("Проверка",
+                                   "Некорректная дата (формат ГГГГ-ММ-ДД).")
             return
 
         def opt_num(key, cast):
@@ -129,7 +134,8 @@ class AthleteDialog(ctk.CTkToplevel):
 
         self.result = {"last_name": last, "first_name": first,
                        "middle_name": self.entries["middle_name"].get().strip(),
-                       "birth_year": birth_year, "gender": self.gender_var.get(),
+                       "birth_date": bd_str,
+                       "gender": self.gender_var.get(),
                        "height_cm": opt_num("height_cm", int),
                        "weight_kg": opt_num("weight_kg", float),
                        "polar_id": self.entries["polar_id"].get().strip()}
@@ -165,9 +171,21 @@ class ECGViewerApp(ctk.CTk):
         self._tp_last = None
 
         self._create_widgets()
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
         self._ensure_indexes()
         self._load_year_range()
         self._load_athletes()
+
+    def _on_closing(self):
+        """Останавливает цикл событий и уничтожает все виджеты."""
+        try:
+            self.quit()        # остановить mainloop
+        except Exception:
+            pass
+        try:
+            self.destroy()     # уничтожить виджеты (включая канвас matplotlib)
+        except Exception:
+            pass
 
     def _create_widgets(self):
         self.grid_columnconfigure(1, weight=1)
@@ -266,6 +284,8 @@ class ECGViewerApp(ctk.CTk):
         self._tp_widget.pack(fill="both", expand=True)
 
         self.plt_area.bind("<Configure>", self._on_tp_configure)
+        # Клик по годовому графику TP/ИС → переключение недели
+        self.canvas_tp.mpl_connect("button_press_event", self._on_tp_click)
 
         self._apply_canvas_sizes()
 
@@ -312,20 +332,22 @@ class ECGViewerApp(ctk.CTk):
         if not dlg.result:
             return
         d = dlg.result
-        age = datetime.date.today().year - d["birth_year"]
+        bd = datetime.date.fromisoformat(d["birth_date"])
+        age = _calc_age(bd)
         gender = d["gender"]
         height = d["height_cm"] or _estimate_height_cm(age, gender)
         weight = d["weight_kg"] or _estimate_weight_kg(height, age, gender)
         resting = _estimate_resting_hr(age, gender)
+
         conn = get_connection(self.db_path)
         conn.execute(
             """INSERT INTO athletes
-               (id, last_name, first_name, middle_name, gender, birth_year,
-                age, height_cm, weight_kg, resting_hr, max_hr,
+               (id, last_name, first_name, middle_name, gender, birth_date,
+                height_cm, weight_kg, resting_hr, max_hr,
                 hrv_rmssd_baseline, avg_rr_ms, polar_id)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (str(uuid.uuid4()), d["last_name"], d["first_name"], d["middle_name"],
-             gender, d["birth_year"], age, height, weight, resting,
+             gender, d["birth_date"], height, weight, resting,
              _estimate_max_hr(age), _estimate_hrv_rmssd(age),
              int(60000 / resting), d["polar_id"] or _generate_polar_id()))
         conn.commit()
@@ -345,14 +367,16 @@ class ECGViewerApp(ctk.CTk):
         if not dlg.result:
             return
         d = dlg.result
-        age = datetime.date.today().year - d["birth_year"]
+        bd = datetime.date.fromisoformat(d["birth_date"])
+        age = _calc_age(bd)
+
         conn = get_connection(self.db_path)
         conn.execute(
             """UPDATE athletes SET last_name=?, first_name=?, middle_name=?,
-               gender=?, birth_year=?, age=?, height_cm=?, weight_kg=?, polar_id=?
+               gender=?, birth_date=?, height_cm=?, weight_kg=?, polar_id=?
                WHERE id=?""",
             (d["last_name"], d["first_name"], d["middle_name"], d["gender"],
-             d["birth_year"], age, d["height_cm"], d["weight_kg"],
+             d["birth_date"], d["height_cm"], d["weight_kg"],
              d["polar_id"] or full["polar_id"], aid))
         conn.commit()
         conn.close()
@@ -472,9 +496,10 @@ class ECGViewerApp(ctk.CTk):
         try:
             conn = get_connection(self.db_path)
             cur = conn.cursor()
-            cur.execute("SELECT id, last_name, first_name, age, gender, polar_id "
+            cur.execute("SELECT id, last_name, first_name, birth_date, gender, polar_id "
                         "FROM athletes ORDER BY last_name, first_name")
-            self.athletes = cur.fetchall()
+            self.athletes = [(aid, last, first, _calc_age(bd), gender, pid)
+                             for aid, last, first, bd, gender, pid in cur.fetchall()]
             conn.close()
 
             for item in self.tree_athletes.get_children():
@@ -702,20 +727,47 @@ class ECGViewerApp(ctk.CTk):
         week_end = week_start + datetime.timedelta(days=6)
         self.label_week_title.configure(text=f"Неделя {week_start:%d.%m}–{week_end:%d.%m}")
 
+    def _select_week(self, w):
+        """Общий выбор недели: heatmap + недельные графики."""
+        if not (0 <= w < 53):
+            return
+        self._selected_week = w
+        self._draw_week(self._year_start + datetime.timedelta(weeks=w))
+
+        # Рамка выделения на годовом heatmap
+        self.canvas_year.delete('sel')
+        x = YEAR_X0 + w * self.step
+        self.canvas_year.create_rectangle(x - 1, YEAR_Y0 - 1, x + self.cell + 1,
+                                          YEAR_Y0 + 7 * self.step,
+                                          outline=COL_SELECTION, width=1, tags='sel')
+        if self.selected_athlete:
+            self._draw_tp(self.selected_athlete[0])
+
     def _on_year_click(self, event):
+        """Клик по heatmap года."""
         w = (event.x - YEAR_X0) // self.step
-        if 0 <= w < 53:
-            self._selected_week = w
-            self._draw_week(self._year_start + datetime.timedelta(weeks=w))
-            self.canvas_year.delete('sel')
-            x = YEAR_X0 + w * self.step
-            self.canvas_year.create_rectangle(x - 1, YEAR_Y0 - 1, x + self.cell + 1,
-                                              YEAR_Y0 + 7 * self.step, outline=COL_SELECTION,
-                                              width=1, tags='sel')
-            if self.selected_athlete:
-                self._draw_tp(self.selected_athlete[0])
+        self._select_week(w)
+
+    def _on_tp_click(self, event):
+        """Клик по годовому графику TP или стресса (matplotlib)."""
+        # Реагируем только на клики внутри годовых осей
+        if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
+            return
+        if event.xdata is None:
+            return
+        w = int(event.xdata)
+        # Откладываем перерисовку, чтобы не рисовать изнутри события mpl
+        self.after(0, lambda: self._select_week(w))
 
 
 if __name__ == '__main__':
     app = ECGViewerApp()
-    app.mainloop()
+    try:
+        app.mainloop()
+    finally:
+        try:
+            app.destroy()
+        except Exception:
+            pass
+        sys.stdout.flush()
+        os._exit(0)
