@@ -1,9 +1,9 @@
 """
 Приложение для просмотра базы данных ЭКГ (одна страница, без вкладки ЭКГ).
+ORM-версия: использует SQLAlchemy вместо сырого SQL.
 """
 import os
 import sys
-import sqlite3
 import uuid
 import datetime
 
@@ -20,23 +20,26 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
 
-sys.path.insert(0, SCRIPTS_DIR)   # ← сначала добавляем scripts/ в путь
+sys.path.insert(0, SCRIPTS_DIR)
 
 # ============================================================
-# ИМПОРТЫ ИЗ scripts/ И src/
+# ИМПОРТЫ
 # ============================================================
+from sqlalchemy import func
+
 from analysis import parse_rr, calc_metrics, calc_stress, stress_level
 from athlete_generator import (
     _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
     _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd,
     _calc_age)
-from database import get_connection, get_db_path
+from database import get_db_path
+from models import get_session, Athlete, ECGRecord
 
 from theme import (COL_ACCENT, COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT,
-                   COL_TEXT_DIM, COL_SPINE, COL_SELECTION, COL_WEEKDAY, 
-                   COL_WEEKEND, COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN, 
+                   COL_TEXT_DIM, COL_SPINE, COL_SELECTION, COL_WEEKDAY,
+                   COL_WEEKEND, COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN,
                    COL_CRIT, COL_TP_YEAR, COL_TP_WEEK)
-from dialogs import AthleteDialog, ECGListDialog   # ← ПОСЛЕ sys.path.insert
+from dialogs import AthleteDialog, ECGListDialog
 
 YEAR_X0, YEAR_Y0 = 5, 18
 WEEK_X0, WEEK_Y0 = 28, 5
@@ -45,30 +48,23 @@ MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн",
              "июл", "авг", "сен", "окт", "ноя", "дек"]
 DAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
-CTK_COLS = ["id", "last_name", "first_name", "middle_name", "gender",
-            "birth_date", "height_cm", "weight_kg", "resting_hr",
-            "max_hr", "hrv_rmssd_baseline", "avg_rr_ms", "polar_id"]
-
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
-
-
-from tkcalendar import DateEntry
 
 
 class ECGViewerApp(ctk.CTk):
     def __init__(self, db_path=None):
         super().__init__()
-        
+
         if db_path is None:
             self.db_path = get_db_path()
         else:
             self.db_path = get_db_path(db_path)
-        
+
         self.title("Просмотр ЭКГ — Анализ ВРС")
         self.geometry("1400x800")
 
-        self.athletes = []
+        self.athletes = []          # список кортежей для treeview
         self.selected_athlete = None
 
         self.cell = 14
@@ -86,21 +82,24 @@ class ECGViewerApp(ctk.CTk):
 
         self._create_widgets()
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
-        self._ensure_indexes()
         self._load_year_range()
         self._load_athletes()
 
     def _on_closing(self):
-        """Останавливает цикл событий и уничтожает все виджеты."""
+        """Принудительно завершает процесс при закрытии окна."""
         try:
-            self.quit()        # остановить mainloop
+            self.quit()
         except Exception:
             pass
         try:
-            self.destroy()     # уничтожить виджеты (включая канвас matplotlib)
+            self.destroy()
         except Exception:
             pass
+        os._exit(0)
 
+    # =========================================================
+    # Интерфейс
+    # =========================================================
     def _create_widgets(self):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -172,7 +171,6 @@ class ECGViewerApp(ctk.CTk):
         self.label_week_title.pack()
         self.canvas_week = tk.Canvas(self.week_box, bg=COL_BG_DARK, highlightthickness=0)
         self.canvas_week.pack()
-        # И одинарный, и двойной клик открывают список ЭКГ за 3 часа
         self.canvas_week.bind("<Button-1>", self._on_week_click)
         self.canvas_week.bind("<Double-Button-1>", self._on_week_click)
 
@@ -201,24 +199,10 @@ class ECGViewerApp(ctk.CTk):
         self._tp_widget.pack(fill="both", expand=True)
 
         self.plt_area.bind("<Configure>", self._on_tp_configure)
-        # Клик по годовому графику TP/ИС → переключение недели
         self.canvas_tp.mpl_connect("button_press_event", self._on_tp_click)
         self.canvas_tp.mpl_connect("button_press_event", self._on_week_plot_click)
 
         self._apply_canvas_sizes()
-
-    def _on_week_click(self, event):
-        """Клик (одинарный или двойной) по квадрату недели → ЭКГ за 3 часа."""
-        d = (event.x - WEEK_X0) // self.step
-        b = (event.y - WEEK_Y0) // self.step
-        if not (0 <= d < 7 and 0 <= b < 8) or not self._week_start:
-            return
-
-        day = self._week_start + datetime.timedelta(days=d)
-        dt_from = datetime.datetime.combine(day, datetime.time(b * 3, 0))
-        dt_to = dt_from + datetime.timedelta(hours=3)
-        title = f"ЭКГ за {day:%d.%m.%Y} {b*3:02d}:00–{(b*3+3)%24:02d}:00"
-        self._open_ecg_list(dt_from, dt_to, title)        
 
     def _apply_canvas_sizes(self):
         s = self.step
@@ -246,16 +230,36 @@ class ECGViewerApp(ctk.CTk):
         self._tp_last = (w, h)
         self.fig_tp.set_size_inches(w / self.fig_tp.dpi, h / self.fig_tp.dpi,
                                     forward=False)
-        self.fig_tp.tight_layout() 
+        self.fig_tp.tight_layout()
         self.canvas_tp.draw_idle()
 
+    # =========================================================
+    # CRUD спортсмена (ORM)
+    # =========================================================
     def _get_athlete_full(self, aid):
-        conn = get_connection(self.db_path)
-        cur = conn.cursor()
-        cur.execute("SELECT " + ", ".join(CTK_COLS) + " FROM athletes WHERE id=?", (aid,))
-        row = cur.fetchone()
-        conn.close()
-        return dict(zip(CTK_COLS, row)) if row else None
+        """Возвращает dict полей спортсмена или None."""
+        session = get_session(self.db_path)
+        try:
+            a = session.get(Athlete, aid)
+            if a is None:
+                return None
+            return {
+                "id": a.id,
+                "last_name": a.last_name,
+                "first_name": a.first_name,
+                "middle_name": a.middle_name,
+                "gender": a.gender,
+                "birth_date": a.birth_date,
+                "height_cm": a.height_cm,
+                "weight_kg": a.weight_kg,
+                "resting_hr": a.resting_hr,
+                "max_hr": a.max_hr,
+                "hrv_rmssd_baseline": a.hrv_rmssd_baseline,
+                "avg_rr_ms": a.avg_rr_ms,
+                "polar_id": a.polar_id,
+            }
+        finally:
+            session.close()
 
     def _create_athlete(self):
         dlg = AthleteDialog(self, "Новый спортсмен")
@@ -270,20 +274,34 @@ class ECGViewerApp(ctk.CTk):
         weight = d["weight_kg"] or _estimate_weight_kg(height, age, gender)
         resting = _estimate_resting_hr(age, gender)
 
-        conn = get_connection(self.db_path)
-        conn.execute(
-            """INSERT INTO athletes
-               (id, last_name, first_name, middle_name, gender, birth_date,
-                height_cm, weight_kg, resting_hr, max_hr,
-                hrv_rmssd_baseline, avg_rr_ms, polar_id)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (str(uuid.uuid4()), d["last_name"], d["first_name"], d["middle_name"],
-             gender, d["birth_date"], height, weight, resting,
-             _estimate_max_hr(age), _estimate_hrv_rmssd(age),
-             int(60000 / resting), d["polar_id"] or _generate_polar_id()))
-        conn.commit()
-        new_id = conn.execute("SELECT id FROM athletes ORDER BY rowid DESC").fetchone()[0]
-        conn.close()
+        athlete = Athlete(
+            id=str(uuid.uuid4()),
+            last_name=d["last_name"],
+            first_name=d["first_name"],
+            middle_name=d["middle_name"],
+            gender=gender,
+            birth_date=d["birth_date"],
+            height_cm=height,
+            weight_kg=weight,
+            resting_hr=resting,
+            max_hr=_estimate_max_hr(age),
+            hrv_rmssd_baseline=_estimate_hrv_rmssd(age),
+            avg_rr_ms=int(60000 / resting),
+            polar_id=d["polar_id"] or _generate_polar_id(),
+        )
+
+        session = get_session(self.db_path)
+        try:
+            session.add(athlete)
+            session.commit()
+            new_id = athlete.id
+        except Exception as e:
+            session.rollback()
+            messagebox.showerror("Ошибка", f"Не удалось создать спортсмена:\n{e}")
+            return
+        finally:
+            session.close()
+
         self._load_athletes(select_id=new_id)
 
     def _edit_athlete(self):
@@ -298,19 +316,27 @@ class ECGViewerApp(ctk.CTk):
         if not dlg.result:
             return
         d = dlg.result
-        bd = datetime.date.fromisoformat(d["birth_date"])
-        age = _calc_age(bd)
 
-        conn = get_connection(self.db_path)
-        conn.execute(
-            """UPDATE athletes SET last_name=?, first_name=?, middle_name=?,
-               gender=?, birth_date=?, height_cm=?, weight_kg=?, polar_id=?
-               WHERE id=?""",
-            (d["last_name"], d["first_name"], d["middle_name"], d["gender"],
-             d["birth_date"], d["height_cm"], d["weight_kg"],
-             d["polar_id"] or full["polar_id"], aid))
-        conn.commit()
-        conn.close()
+        session = get_session(self.db_path)
+        try:
+            a = session.get(Athlete, aid)
+            if a is None:
+                return
+            a.last_name = d["last_name"]
+            a.first_name = d["first_name"]
+            a.middle_name = d["middle_name"]
+            a.gender = d["gender"]
+            a.birth_date = d["birth_date"]
+            a.height_cm = d["height_cm"]
+            a.weight_kg = d["weight_kg"]
+            a.polar_id = d["polar_id"] or full["polar_id"]
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{e}")
+        finally:
+            session.close()
+
         self._load_athletes(select_id=aid)
 
     def _delete_athlete(self):
@@ -320,13 +346,26 @@ class ECGViewerApp(ctk.CTk):
         fio = f"{self.selected_athlete[1]} {self.selected_athlete[2]}"
         if not messagebox.askyesno("Удаление", f"Удалить {fio} и все его записи ЭКГ?"):
             return
-        conn = get_connection(self.db_path)
-        conn.execute("DELETE FROM ecg_records WHERE athlete_id=?", (aid,))
-        conn.execute("DELETE FROM athletes WHERE id=?", (aid,))
-        conn.commit()
-        conn.close()
+
+        session = get_session(self.db_path)
+        try:
+            a = session.get(Athlete, aid)
+            if a is None:
+                return
+            # cascade="all, delete-orphan" удалит связанные ecg_records
+            session.delete(a)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            messagebox.showerror("Ошибка", f"Не удалось удалить:\n{e}")
+        finally:
+            session.close()
+
         self._load_athletes()
 
+    # =========================================================
+    # Импорт ЭКГ
+    # =========================================================
     @staticmethod
     def _parse_header(raw):
         dt_str, polar = None, None
@@ -357,59 +396,107 @@ class ECGViewerApp(ctk.CTk):
         except Exception:
             dt = datetime.datetime.now().replace(microsecond=0)
 
-        athlete = next((a for a in self.athletes if a[5] == polar), None)
-        if athlete is None:
-            if not self.selected_athlete:
-                messagebox.showwarning("Внимание", "Устройство не найдено, спортсмен не выбран.")
-                return
-            fio = f"{self.selected_athlete[1]} {self.selected_athlete[2]}"
-            if messagebox.askyesno("Устройство не найдено",
-                                   f"Устройство {polar} отсутствует.\nПривязать к «{fio}»?"):
-                athlete = self.selected_athlete
-            else:
-                return
-
-        aid = athlete[0]
         recorded_at = dt.isoformat(sep=" ")
-        conn = get_connection(self.db_path)
-        cur = conn.cursor()
-        cur.execute("SELECT 1 FROM ecg_records WHERE athlete_id=? AND recorded_at=?",
-                    (aid, recorded_at))
-        if cur.fetchone():
-            conn.close()
-            messagebox.showinfo("Импорт", "Эта запись уже есть в базе.")
-            return
 
-        rr = parse_rr(raw)
-        m = calc_metrics(rr) if rr else None
-        s = calc_stress(rr) if rr else None
-        duration = sum(rr) / 1000.0 if rr else 0.0
-        cur.execute(
-            """INSERT INTO ecg_records
-               (athlete_id, recorded_at, duration_seconds, profile, raw_data,
-                mean_hr, rmssd, sdnn, status, stress_si)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (aid, recorded_at, duration, "import", raw,
-             m["mean_hr"] if m else None, m["rmssd"] if m else None,
-             m["sdnn"] if m else None, m["status"] if m else "ok",
-             s["si"] if s else None))
-        conn.commit()
-        conn.close()
+        session = get_session(self.db_path)
+        try:
+            # === Ищем запись ТОЛЬКО по времени (без спортсмена) ===
+            existing = (session.query(ECGRecord)
+                        .filter(ECGRecord.recorded_at == recorded_at)
+                        .first())
+
+            if existing:
+                # Запись с таким временем уже есть
+                if existing.athlete_id == (self.selected_athlete[0] if self.selected_athlete else None):
+                    # Тот же спортсмен — это дубликат
+                    messagebox.showinfo("Импорт", "Эта запись уже есть в базе.")
+                    return
+                else:
+                    # Другой спортсмен — спрашиваем про перепривязку
+                    other_athlete = session.get(Athlete, existing.athlete_id)
+                    other_fio = f"{other_athlete.last_name} {other_athlete.first_name}" if other_athlete else "неизвестный"
+                    
+                    current_fio = f"{self.selected_athlete[1]} {self.selected_athlete[2]}" if self.selected_athlete else "не выбран"
+                    
+                    if messagebox.askyesno(
+                        "Запись уже существует",
+                        f"Запись от {dt:%d.%m.%Y %H:%M} уже привязана к спортсмену «{other_fio}».\n\n"
+                        f"Перенести её к «{current_fio}»?"
+                    ):
+                        # Перепривязываем
+                        if self.selected_athlete:
+                            existing.athlete_id = self.selected_athlete[0]
+                            session.commit()
+                            messagebox.showinfo("Импорт", f"Запись перенесена к «{current_fio}».")
+                            self._load_year_range()
+                            self._view_year = min(max(dt.year, self._min_year), self._max_year)
+                            self._load_athletes(select_id=self.selected_athlete[0])
+                        return
+                    else:
+                        return
+
+            # === Записи нет — добавляем новую ===
+            # Поиск спортсмена по polar_id
+            athlete = next((a for a in self.athletes if a[5] == polar), None)
+            if athlete is None:
+                if not self.selected_athlete:
+                    messagebox.showwarning("Внимание", "Устройство не найдено, спортсмен не выбран.")
+                    return
+                fio = f"{self.selected_athlete[1]} {self.selected_athlete[2]}"
+                if messagebox.askyesno("Устройство не найдено",
+                                       f"Устройство {polar} отсутствует.\nПривязать к «{fio}»?"):
+                    athlete = self.selected_athlete
+                else:
+                    return
+
+            aid = athlete[0]
+
+            rr = parse_rr(raw)
+            m = calc_metrics(rr) if rr else None
+            s = calc_stress(rr) if rr else None
+            duration = sum(rr) / 1000.0 if rr else 0.0
+
+            rec = ECGRecord(
+                athlete_id=aid,
+                recorded_at=recorded_at,
+                duration_seconds=duration,
+                profile="import",
+                raw_data=raw,
+                mean_hr=m["mean_hr"] if m else None,
+                rmssd=m["rmssd"] if m else None,
+                sdnn=m["sdnn"] if m else None,
+                status=m["status"] if m else "ok",
+                stress_si=s["si"] if s else None,
+            )
+            session.add(rec)
+            session.commit()
+
+        except Exception as e:
+            session.rollback()
+            messagebox.showerror("Ошибка", f"Не удалось сохранить запись:\n{e}")
+            return
+        finally:
+            session.close()
+
         messagebox.showinfo("Импорт", f"Запись добавлена:\n{dt:%d.%m.%Y %H:%M}")
 
         self._load_year_range()
         self._view_year = min(max(dt.year, self._min_year), self._max_year)
         self._load_athletes(select_id=aid)
 
-    def _ensure_indexes(self):
-        pass
-
+    # =========================================================
+    # Загрузка диапазонов и списка спортсменов
+    # =========================================================
     def _load_year_range(self):
-        conn = get_connection(self.db_path)
-        cur = conn.cursor()
-        cur.execute("SELECT MIN(recorded_at), MAX(recorded_at) FROM ecg_records")
-        mn, mx = cur.fetchone()
-        conn.close()
+        session = get_session(self.db_path)
+        try:
+            row = (session.query(func.min(ECGRecord.recorded_at),
+                                 func.max(ECGRecord.recorded_at))
+                   .first())
+        finally:
+            session.close()
+
+        mn, mx = row if row else (None, None)
         today = datetime.date.today().year
         self._min_year = int(mn[:4]) if mn else today
         self._max_year = max(int(mx[:4]) if mx else today, today)
@@ -425,13 +512,18 @@ class ECGViewerApp(ctk.CTk):
 
     def _load_athletes(self, select_id=None):
         try:
-            conn = get_connection(self.db_path)
-            cur = conn.cursor()
-            cur.execute("SELECT id, last_name, first_name, birth_date, gender, polar_id "
-                        "FROM athletes ORDER BY last_name, first_name")
-            self.athletes = [(aid, last, first, _calc_age(bd), gender, pid)
-                             for aid, last, first, bd, gender, pid in cur.fetchall()]
-            conn.close()
+            session = get_session(self.db_path)
+            try:
+                rows = (session.query(Athlete)
+                        .order_by(Athlete.last_name, Athlete.first_name)
+                        .all())
+                self.athletes = [
+                    (a.id, a.last_name, a.first_name,
+                     _calc_age(a.birth_date), a.gender, a.polar_id)
+                    for a in rows
+                ]
+            finally:
+                session.close()
 
             for item in self.tree_athletes.get_children():
                 self.tree_athletes.delete(item)
@@ -467,6 +559,9 @@ class ECGViewerApp(ctk.CTk):
             f"👤 {last} {first}\nВозраст: {age} лет\n"
             f"Пол: {'Мужской' if gender == 'M' else 'Женский'}\nPolar ID: {pid}"))
 
+    # =========================================================
+    # Графики (ORM)
+    # =========================================================
     @staticmethod
     def _style_ax(ax):
         ax.set_facecolor(COL_BG_DARK)
@@ -495,14 +590,15 @@ class ECGViewerApp(ctk.CTk):
         ax.set_xlim(0, 53)
 
     def _draw_tp(self, athlete_id):
-        conn = get_connection(self.db_path)
-        cur = conn.cursor()
-        cur.execute("PRAGMA table_info(ecg_records)")
-        cols = {r[1] for r in cur.fetchall()}
-        sel = "recorded_at, sdnn" + (", stress_si" if "stress_si" in cols else ", NULL")
-        cur.execute("SELECT " + sel + " FROM ecg_records WHERE athlete_id=?", (athlete_id,))
-        rows = cur.fetchall()
-        conn.close()
+        session = get_session(self.db_path)
+        try:
+            rows = (session.query(ECGRecord.recorded_at,
+                                  ECGRecord.sdnn,
+                                  ECGRecord.stress_si)
+                    .filter(ECGRecord.athlete_id == athlete_id)
+                    .all())
+        finally:
+            session.close()
 
         jan1 = datetime.date(self._view_year, 1, 1)
         dec31 = datetime.date(self._view_year, 12, 31)
@@ -578,12 +674,13 @@ class ECGViewerApp(ctk.CTk):
         return base
 
     def _draw_density(self, athlete_id):
-        conn = get_connection(self.db_path)
-        cur = conn.cursor()
-        cur.execute("SELECT recorded_at, status FROM ecg_records WHERE athlete_id=?",
-                    (athlete_id,))
-        rows = cur.fetchall()
-        conn.close()
+        session = get_session(self.db_path)
+        try:
+            rows = (session.query(ECGRecord.recorded_at, ECGRecord.status)
+                    .filter(ECGRecord.athlete_id == athlete_id)
+                    .all())
+        finally:
+            session.close()
 
         date_map, self._day_block_map = {}, {}
         for recorded_at, status in rows:
@@ -659,13 +756,11 @@ class ECGViewerApp(ctk.CTk):
         self.label_week_title.configure(text=f"Неделя {week_start:%d.%m}–{week_end:%d.%m}")
 
     def _select_week(self, w):
-        """Общий выбор недели: heatmap + недельные графики."""
         if not (0 <= w < 53):
             return
         self._selected_week = w
         self._draw_week(self._year_start + datetime.timedelta(weeks=w))
 
-        # Рамка выделения на годовом heatmap
         self.canvas_year.delete('sel')
         x = YEAR_X0 + w * self.step
         self.canvas_year.create_rectangle(x - 1, YEAR_Y0 - 1, x + self.cell + 1,
@@ -675,36 +770,30 @@ class ECGViewerApp(ctk.CTk):
             self._draw_tp(self.selected_athlete[0])
 
     def _on_year_click(self, event):
-        """Клик по heatmap года."""
         w = (event.x - YEAR_X0) // self.step
         self._select_week(w)
 
     def _on_tp_click(self, event):
-        """Клик по годовому графику TP или стресса (matplotlib)."""
-        # Реагируем только на клики внутри годовых осей
         if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
             return
         if event.xdata is None:
             return
         w = int(event.xdata)
-        # Откладываем перерисовку, чтобы не рисовать изнутри события mpl
         self.after(0, lambda: self._select_week(w))
 
-    def _on_week_double_click(self, event):
-        """Двойной клик по квадратику недельного heatmap → ЭКГ за 3 часа."""
+    def _on_week_click(self, event):
         d = (event.x - WEEK_X0) // self.step
         b = (event.y - WEEK_Y0) // self.step
         if not (0 <= d < 7 and 0 <= b < 8) or not self._week_start:
             return
+
         day = self._week_start + datetime.timedelta(days=d)
-        # 3-часовой блок: [b*3:00, (b+1)*3:00)
         dt_from = datetime.datetime.combine(day, datetime.time(b * 3, 0))
         dt_to = dt_from + datetime.timedelta(hours=3)
         title = f"ЭКГ за {day:%d.%m.%Y} {b*3:02d}:00–{(b*3+3)%24:02d}:00"
         self._open_ecg_list(dt_from, dt_to, title)
 
     def _on_week_plot_click(self, event):
-        """Клик по дневному столбику TP/ИС → ЭКГ за день."""
         if event.inaxes not in (self.ax_tp_week, self.ax_si_week):
             return
         if event.xdata is None or not self._week_start:
@@ -722,7 +811,6 @@ class ECGViewerApp(ctk.CTk):
         if not self.selected_athlete:
             return
 
-        # Если окно уже открыто — не открываем второе
         if getattr(self, "_ecg_list_dlg", None) is not None:
             try:
                 if self._ecg_list_dlg.winfo_exists():
@@ -740,11 +828,10 @@ class ECGViewerApp(ctk.CTk):
             on_change=self._on_ecg_list_changed)
 
     def _on_ecg_list_changed(self):
-        """Вызывается после удаления записи — обновляет все графики."""
         if self.selected_athlete:
             aid = self.selected_athlete[0]
             self._draw_density(aid)
-            self._draw_tp(aid)        
+            self._draw_tp(aid)
 
 
 if __name__ == '__main__':

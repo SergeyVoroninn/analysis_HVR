@@ -4,9 +4,10 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 from tkcalendar import DateEntry
 
+from models import get_session, Athlete, ECGRecord
+
 from theme import (COL_BG_DARK, COL_TEXT_LIGHT, COL_WEEKEND,
                    COL_ACCENT, COL_SELECTION)
-from database import get_connection
 
 
 class AthleteDialog(ctk.CTkToplevel):
@@ -107,8 +108,9 @@ class AthleteDialog(ctk.CTkToplevel):
                        "polar_id": self.entries["polar_id"].get().strip()}
         self.destroy()
 
+
 class ECGListDialog(ctk.CTkToplevel):
-    """Окно со списком ЭКГ за выбранный интервал."""
+    """Окно со списком ЭКГ за выбранный интервал (ORM-версия)."""
 
     DISPLAY_COLS = ("Время", "Профиль", "ЧСС", "RMSSD", "SDNN", "ИС", "Статус")
 
@@ -159,34 +161,36 @@ class ECGListDialog(ctk.CTkToplevel):
         self._load()
 
     def _load(self):
+        """Загружает ЭКГ за интервал через ORM."""
         for item in self.tree.get_children():
             self.tree.delete(item)
-        conn = get_connection(self.db_path)
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT id, recorded_at, profile, mean_hr, rmssd, sdnn,
-                      stress_si, status
-               FROM ecg_records
-               WHERE athlete_id=? AND recorded_at >= ? AND recorded_at < ?
-               ORDER BY recorded_at""",
-            (self.athlete_id,
-             self.date_from.isoformat(sep=" "),
-             self.date_to.isoformat(sep=" ")),
-        )
-        rows = cur.fetchall()
-        conn.close()
 
-        for r in rows:
-            rid, rec, prof, hr, rmssd, sdnn, si, status = r
-            self.tree.insert("", "end", iid=str(rid), values=(
-                rec[:16] if rec else "",
-                prof or "",
-                f"{hr:.0f}" if hr is not None else "",
-                f"{rmssd:.1f}" if rmssd is not None else "",
-                f"{sdnn:.1f}" if sdnn is not None else "",
-                f"{si:.0f}" if si is not None else "",
-                status or "",
-            ))
+        dt_from = self.date_from.isoformat(sep=" ")
+        dt_to = self.date_to.isoformat(sep=" ")
+
+        session = get_session(self.db_path)
+        try:
+            records = (
+                session.query(ECGRecord)
+                .filter(ECGRecord.athlete_id == self.athlete_id,
+                        ECGRecord.recorded_at >= dt_from,
+                        ECGRecord.recorded_at < dt_to)
+                .order_by(ECGRecord.recorded_at)
+                .all()
+            )
+
+            for rec in records:
+                self.tree.insert("", "end", iid=str(rec.id), values=(
+                    rec.recorded_at[:16] if rec.recorded_at else "",
+                    rec.profile or "",
+                    f"{rec.mean_hr:.0f}" if rec.mean_hr is not None else "",
+                    f"{rec.rmssd:.1f}" if rec.rmssd is not None else "",
+                    f"{rec.sdnn:.1f}" if rec.sdnn is not None else "",
+                    f"{rec.stress_si:.0f}" if rec.stress_si is not None else "",
+                    rec.status or "",
+                ))
+        finally:
+            session.close()
 
     def _on_select(self, event=None):
         sel = self.tree.selection()
@@ -199,18 +203,23 @@ class ECGListDialog(ctk.CTkToplevel):
         return int(sel[0]) if sel else None
 
     def _export(self):
+        """Экспорт записи в файл через ORM."""
         rid = self._selected_id()
         if rid is None:
             return
-        conn = get_connection(self.db_path)
-        cur = conn.cursor()
-        cur.execute("SELECT recorded_at, raw_data FROM ecg_records WHERE id=?", (rid,))
-        row = cur.fetchone()
-        conn.close()
-        if not row or not row[1]:
-            messagebox.showwarning("Экспорт", "Нет raw_data для этой записи.")
-            return
-        rec_at, raw = row
+
+        session = get_session(self.db_path)
+        try:
+            rec = session.get(ECGRecord, rid)
+            if rec is None or not rec.raw_data:
+                messagebox.showwarning("Экспорт", "Нет raw_data для этой записи.")
+                return
+
+            rec_at = rec.recorded_at
+            raw = rec.raw_data
+        finally:
+            session.close()
+
         default_name = rec_at.replace(":", "-").replace(" ", "_") + ".teamloggerh10"
         path = filedialog.asksaveasfilename(
             title="Сохранить запись ЭКГ",
@@ -226,15 +235,23 @@ class ECGListDialog(ctk.CTkToplevel):
             messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{e}")
 
     def _delete(self):
+        """Удаление записи через ORM."""
         rid = self._selected_id()
         if rid is None:
             return
         if not messagebox.askyesno("Удаление", "Удалить выбранную запись ЭКГ?"):
             return
-        conn = get_connection(self.db_path)
-        conn.execute("DELETE FROM ecg_records WHERE id=?", (rid,))
-        conn.commit()
-        conn.close()
+
+        session = get_session(self.db_path)
+        try:
+            rec = session.get(ECGRecord, rid)
+            if rec is None:
+                return
+            session.delete(rec)
+            session.commit()
+        finally:
+            session.close()
+
         self.tree.delete(str(rid))
         self._on_select()
         if self.on_change:

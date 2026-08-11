@@ -5,16 +5,17 @@
   - athlete_generator  (create_athlete)
   - ecg_generator      (create_record)
   - schedule_engine    (build_schedules, load_config)
-  - database           (get_connection, init_database, get_db_path)
+  - models             (ORM-модели и сессия)
 
-Записывает всё в SQLite. Путь к БД задаётся в config.yaml.
+Записывает всё в SQLite через SQLAlchemy. Путь к БД задаётся в config.yaml.
 """
 
 import os
-import sqlite3
 import random
 import sys
 import shutil
+
+from sqlalchemy import insert, func
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
@@ -22,7 +23,8 @@ CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 from schedule_engine import build_schedules, load_config
 from ecg_generator import create_record
 from analysis import parse_rr, calc_metrics, calc_stress
-from database import get_connection, init_database, get_db_path
+from database import get_db_path
+from models import get_session, Athlete, ECGRecord, Base
 
 
 # ============================================================
@@ -59,7 +61,7 @@ def _get_settings(cfg):
     s = cfg.get("settings", {})
     return {
         "duration_seconds": s.get("duration_seconds", 12.0),
-        "db_path":          s.get("db_path", None),  # None = дефолт
+        "db_path":          s.get("db_path", None),
         "store_raw_data":   s.get("store_raw_data", True),
         "seed":             s.get("seed", None),
     }
@@ -70,7 +72,7 @@ def _get_settings(cfg):
 # ============================================================
 def prepare_database(config_path="config.yaml"):
     """
-    Генерирует данные и пишет их в SQLite.
+    Генерирует данные и пишет их в SQLite через ORM.
     Путь к БД берётся из конфига (settings.db_path).
     """
     cfg = load_config(config_path)
@@ -83,8 +85,15 @@ def prepare_database(config_path="config.yaml"):
     db_path   = get_db_path(settings["db_path"])
     store_raw = settings["store_raw_data"]
 
-    # Инициализируем БД с удалением старых данных
-    db_path = init_database(db_path, drop_existing=True)
+    # Удаляем старую БД, чтобы создать чистую
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        print(f"🗑  Удалена старая база: {db_path}")
+
+    # Создаём директорию если нужно
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
 
     print("📋 Построение расписаний...")
     schedules = build_schedules(config_path)
@@ -92,36 +101,48 @@ def prepare_database(config_path="config.yaml"):
     total_records = sum(len(times) for _, _, times in schedules)
     print(f"   Спортсменов: {len(schedules)} | Записей к генерации: {total_records}\n")
 
-    conn = get_connection(db_path)
+    session = get_session(db_path)
+    try:
+        # --- Массовая вставка спортсменов (один батч) ---
+        athletes_data = []
+        for athlete, profile_name, times in schedules:
+            athletes_data.append({
+                "id":                  athlete["id"],
+                "last_name":           athlete["last_name"],
+                "first_name":          athlete["first_name"],
+                "middle_name":         athlete["middle_name"],
+                "gender":              athlete["gender"],
+                "birth_date":          athlete["birth_date"],
+                "height_cm":           athlete["height_cm"],
+                "weight_kg":           athlete["weight_kg"],
+                "resting_hr":          athlete["resting_hr"],
+                "max_hr":              athlete["max_hr"],
+                "hrv_rmssd_baseline":  athlete["hrv_rmssd_baseline"],
+                "avg_rr_ms":           athlete["avg_rr_ms"],
+                "polar_id":            athlete["polar_id"],
+            })
 
-    processed = 0
-    with conn:
+        if athletes_data:
+            session.execute(insert(Athlete), athletes_data)
+            session.commit()
+            print(f"✅ Спортсменов сохранено: {len(athletes_data)}")
+
+        # --- Генерация и массовая вставка ЭКГ (батчами по 100 записей) ---
+        processed = 0
+        BATCH_SIZE = 100
+        records_batch = []
+
         for athlete, profile_name, times in schedules:
             fio = f"{athlete['last_name']} {athlete['first_name']}"
 
-            conn.execute(
-                """INSERT INTO athletes
-                   (id, last_name, first_name, middle_name, gender, birth_date,
-                    height_cm, weight_kg, resting_hr, max_hr,
-                    hrv_rmssd_baseline, avg_rr_ms, polar_id)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (athlete["id"], athlete["last_name"], athlete["first_name"],
-                 athlete["middle_name"], athlete["gender"], athlete["birth_date"],
-                 athlete["height_cm"], athlete["weight_kg"],
-                 athlete["resting_hr"], athlete["max_hr"],
-                 athlete["hrv_rmssd_baseline"], athlete["avg_rr_ms"],
-                 athlete["polar_id"]),
-            )
-
-            rows = []
             for ts in times:
                 dt_str = ts.strftime("%Y.%m.%d %H:%M:%S")
                 raw_str = create_record(
                     device=athlete["polar_id"],
                     datetime_str=dt_str,
                     duration_seconds=duration,
-                    mean_rr_ms=athlete["avg_rr_ms"],            # из профиля спортсмена
-                    rmssd_ms=athlete["hrv_rmssd_baseline"],     # из профиля спортсмена
+                    mean_rr_ms=athlete["avg_rr_ms"],
+                    rmssd_ms=athlete["hrv_rmssd_baseline"],
                 )
 
                 rr = parse_rr(raw_str)
@@ -129,23 +150,41 @@ def prepare_database(config_path="config.yaml"):
                 s = calc_stress(rr)
                 raw = raw_str if store_raw else None
 
-                rows.append((athlete["id"], ts.isoformat(sep=" "),
-                             duration, profile_name, raw,
-                             m["mean_hr"], m["rmssd"], m["sdnn"], m["status"],
-                             s["si"] if s else None))
+                records_batch.append({
+                    "athlete_id":       athlete["id"],
+                    "recorded_at":      ts.isoformat(sep=" "),
+                    "duration_seconds": duration,
+                    "profile":          profile_name,
+                    "raw_data":         raw,
+                    "mean_hr":          m["mean_hr"],
+                    "rmssd":            m["rmssd"],
+                    "sdnn":             m["sdnn"],
+                    "status":           m["status"],
+                    "stress_si":        s["si"] if s else None,
+                })
 
                 processed += 1
-                _progress_bar(processed, total_records, prefix="⚙️  Генерация ЭКГ", suffix=fio)
+                _progress_bar(processed, total_records,
+                              prefix="⚙️  Генерация ЭКГ", suffix=fio)
 
-            conn.executemany(
-                """INSERT INTO ecg_records
-                   (athlete_id, recorded_at, duration_seconds, profile, raw_data,
-                    mean_hr, rmssd, sdnn, status, stress_si)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                rows,
-            )
+                # Сбрасываем батч в БД
+                if len(records_batch) >= BATCH_SIZE:
+                    session.execute(insert(ECGRecord), records_batch)
+                    session.commit()
+                    records_batch.clear()
 
-    conn.close()
+        # Остаток батча
+        if records_batch:
+            session.execute(insert(ECGRecord), records_batch)
+            session.commit()
+
+    except Exception as e:
+        session.rollback()
+        print(f"\n❌ Ошибка при генерации БД: {e}")
+        raise
+    finally:
+        session.close()
+
     print(f"\n✅ База: {db_path}")
     print(f"   Спортсменов: {len(schedules)}")
     print(f"   Записей ЭКГ: {total_records}")
@@ -156,33 +195,43 @@ def prepare_database(config_path="config.yaml"):
 # ПРОВЕРКА БАЗЫ ДАННЫХ
 # ============================================================
 def verify_database(db_path):
-    """Печатает сводку по содержимому базы."""
+    """Печатает сводку по содержимому базы (ORM-версия)."""
     if not os.path.exists(db_path):
         print(f"❌ Файл базы не найден: {db_path}")
         return
 
-    conn = get_connection(db_path)
-    cur = conn.cursor()
+    session = get_session(db_path)
+    try:
+        athletes_count = session.query(func.count(Athlete.id)).scalar()
+        records_count = session.query(func.count(ECGRecord.id)).scalar()
+        print(f"\nСпортсменов: {athletes_count}")
+        print(f"Записей ЭКГ: {records_count}")
 
-    cur.execute("SELECT COUNT(*) FROM athletes")
-    print(f"\nСпортсменов: {cur.fetchone()[0]}")
+        # Сводка по спортсменам
+        from sqlalchemy.orm import aliased
+        AthleteAlias = aliased(Athlete)
 
-    cur.execute("SELECT COUNT(*) FROM ecg_records")
-    print(f"Записей ЭКГ: {cur.fetchone()[0]}")
+        rows = (
+            session.query(
+                AthleteAlias.last_name,
+                AthleteAlias.first_name,
+                AthleteAlias.polar_id,
+                ECGRecord.profile,
+                func.count(ECGRecord.id).label("cnt"),
+            )
+            .join(ECGRecord, ECGRecord.athlete_id == AthleteAlias.id)
+            .group_by(AthleteAlias.id, ECGRecord.profile)
+            .order_by(func.count(ECGRecord.id).desc())
+            .all()
+        )
 
-    cur.execute("""
-        SELECT a.last_name, a.first_name, a.polar_id, e.profile, COUNT(e.id)
-        FROM athletes a
-        JOIN ecg_records e ON e.athlete_id = a.id
-        GROUP BY a.id
-        ORDER BY COUNT(e.id) DESC
-    """)
-    print(f"\n{'ФИО':22} | {'polar_id':8} | {'Профиль':22} | Записей")
-    print("-" * 75)
-    for last, first, pid, prof, cnt in cur.fetchall():
-        print(f"{last} {first:12} | {pid:8} | {prof:22} | {cnt}")
+        print(f"\n{'ФИО':22} | {'polar_id':8} | {'Профиль':22} | Записей")
+        print("-" * 75)
+        for last, first, pid, prof, cnt in rows:
+            print(f"{last} {first:12} | {pid:8} | {prof or '':22} | {cnt}")
 
-    conn.close()
+    finally:
+        session.close()
 
 
 # ============================================================
