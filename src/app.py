@@ -1,45 +1,28 @@
 """
-Приложение для просмотра базы данных ЭКГ (одна страница, без вкладки ЭКГ).
-ORM-версия: использует SQLAlchemy вместо сырого SQL.
+Приложение для просмотра базы данных ЭКГ.
+Один скрытый корень Tk: заставка и приложение — Toplevel-окна.
 """
 import os
 import sys
 import uuid
 import datetime
 
-import customtkinter as ctk
-from tkinter import ttk, messagebox, filedialog
 import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import customtkinter as ctk
 
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
-# ============================================================
-# ПУТИ — ДО импортов локальных модулей
-# ============================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
-
 sys.path.insert(0, SCRIPTS_DIR)
 
-# ============================================================
-# ИМПОРТЫ
-# ============================================================
-from sqlalchemy import func
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
-from analysis import parse_rr, calc_metrics, calc_stress, stress_level
-from athlete_generator import (
-    _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
-    _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd,
-    _calc_age)
-from database import get_db_path
-from models import get_session, Athlete, ECGRecord
-
+from splash import SplashScreen
 from theme import (COL_ACCENT, COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT,
                    COL_TEXT_DIM, COL_SPINE, COL_SELECTION, COL_WEEKDAY,
                    COL_WEEKEND, COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN,
                    COL_CRIT, COL_TP_YEAR, COL_TP_WEEK)
-from dialogs import AthleteDialog, ECGListDialog
 
 YEAR_X0, YEAR_Y0 = 5, 18
 WEEK_X0, WEEK_Y0 = 28, 5
@@ -48,13 +31,32 @@ MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн",
              "июл", "авг", "сен", "окт", "ноя", "дек"]
 DAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
 
+def _load_heavy():
+    """Тяжёлые импорты вызываются, когда заставка уже на экране."""
+    global Figure, FigureCanvasTkAgg, func
+    global parse_rr, calc_metrics, calc_stress, stress_level
+    global _generate_polar_id, _estimate_height_cm, _estimate_weight_kg
+    global _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd, _calc_age
+    global get_db_path, get_session, Athlete, ECGRecord
+    global AthleteDialog, ECGListDialog
 
-class ECGViewerApp(ctk.CTk):
-    def __init__(self, db_path=None):
-        super().__init__()
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from sqlalchemy import func
+    from analysis import parse_rr, calc_metrics, calc_stress, stress_level
+    from athlete_generator import (
+        _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
+        _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd, _calc_age)
+    from database import get_db_path
+    from models import get_session, Athlete, ECGRecord
+    from dialogs import AthleteDialog, ECGListDialog
+
+class ECGViewerApp(ctk.CTkToplevel):
+    def __init__(self, master, db_path=None):
+        super().__init__(master)
+
+        self.report_callback_exception = lambda *args: None
 
         if db_path is None:
             self.db_path = get_db_path()
@@ -64,7 +66,7 @@ class ECGViewerApp(ctk.CTk):
         self.title("Просмотр ЭКГ — Анализ ВРС")
         self.geometry("1400x800")
 
-        self.athletes = []          # список кортежей для treeview
+        self.athletes = []
         self.selected_athlete = None
 
         self.cell = 14
@@ -86,8 +88,10 @@ class ECGViewerApp(ctk.CTk):
         self._load_athletes()
 
     def _on_closing(self):
-        """Принудительно завершает процесс при закрытии окна."""
+        """Закрытие с подавлением Tcl-ошибок."""
         try:
+            # Подавляем ошибки от after callbacks
+            self.report_callback_exception = lambda *args: None
             self.quit()
         except Exception:
             pass
@@ -862,8 +866,19 @@ class ECGViewerApp(ctk.CTk):
 
 
 if __name__ == '__main__':
-    app = ECGViewerApp()
+    root = tk.Tk()
+    root.withdraw()
+    root.report_callback_exception = lambda *a: None
+
+    splash = SplashScreen(root, show_ms=1500, auto_close=False)
+    root.update()
+
+    _load_heavy()
+
+    splash.close_splash()
+
+    app = ECGViewerApp(root)  # ← передаём root как master
     try:
-        app.mainloop()
+        root.mainloop()
     finally:
         os._exit(0)
