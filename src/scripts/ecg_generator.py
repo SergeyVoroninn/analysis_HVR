@@ -239,18 +239,12 @@ def create_acc(duration_seconds):
 
 if __name__ == '__main__':
     # Тест: генерируем одну запись ЭКГ
-    #test_record = create_record(
-    #    device='TEST0001',
-    #    datetime_str=time.strftime("%Y.%m.%d %H:%M:%S"),
-    #    duration_seconds=300.0
-    #)
     test_record = create_record(
         device='TEST0001',
         datetime_str=time.strftime("%Y.%m.%d %H:%M:%S"),
-        duration_seconds=300.0,
-        mean_rr_ms=983,   # ← как у спортсмена из БД
-        rmssd_ms=79,      # ← как у спортсмена из БД
-    )    
+        duration_seconds=300.0
+    )
+   
 
     with open('test_ecg_record.teamloggerh10', 'w', encoding='utf-8') as f:
         f.write(test_record)
