@@ -380,7 +380,7 @@ class ECGViewerApp(ctk.CTk):
     def _import_ecg(self):
         path = filedialog.askopenfilename(
             title="Выберите файл записи ЭКГ",
-            filetypes=[("Polar H10", "*.teamloggerh10 *.txt"), ("Все файлы", "*.*")])
+            filetypes=[("Polar H10", "*.teamloggerh10"), ("Все файлы", "*.*")])
         if not path:
             return
         try:
