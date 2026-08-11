@@ -41,7 +41,7 @@ profiles:
     transient_start_value: 8000
     transient_end_value: -100
     baseline_mean: -150
-    baseline_respiratory_amplitude: 64
+    baseline_respiratory_amplitude: 41
     baseline_noise_range:
     - 0
     - 0

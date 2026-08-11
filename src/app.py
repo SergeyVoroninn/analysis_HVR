@@ -788,6 +788,11 @@ class ECGViewerApp(ctk.CTk):
             return
 
         day = self._week_start + datetime.timedelta(days=d)
+
+        # === НЕТ ЗАПИСЕЙ В БЛОКЕ — НЕ ОТКРЫВАЕМ ОКНО ===
+        if (day.isoformat(), b) not in self._day_block_map:
+            return
+
         dt_from = datetime.datetime.combine(day, datetime.time(b * 3, 0))
         dt_to = dt_from + datetime.timedelta(hours=3)
         title = f"ЭКГ за {day:%d.%m.%Y} {b*3:02d}:00–{(b*3+3)%24:02d}:00"
@@ -801,7 +806,14 @@ class ECGViewerApp(ctk.CTk):
         d = int(event.xdata)
         if not (0 <= d < 7):
             return
+
         day = self._week_start + datetime.timedelta(days=d)
+
+        # === НЕТ ЗАПИСЕЙ ЗА ДЕНЬ — НЕ ОТКРЫВАЕМ ОКНО ===
+        day_iso = day.isoformat()
+        if not any(k[0] == day_iso for k in self._day_block_map):
+            return
+
         dt_from = datetime.datetime.combine(day, datetime.time(0, 0))
         dt_to = datetime.datetime.combine(day, datetime.time(23, 59, 59))
         title = f"ЭКГ за {day:%d.%m.%Y}"
@@ -811,6 +823,21 @@ class ECGViewerApp(ctk.CTk):
         if not self.selected_athlete:
             return
 
+        # === Если в интервале нет записей — окно не открывается ===
+        session = get_session(self.db_path)
+        try:
+            count = (session.query(func.count(ECGRecord.id))
+                     .filter(ECGRecord.athlete_id == self.selected_athlete[0],
+                             ECGRecord.recorded_at >= dt_from.isoformat(sep=" "),
+                             ECGRecord.recorded_at < dt_to.isoformat(sep=" "))
+                     .scalar())
+        finally:
+            session.close()
+
+        if not count:
+            return
+
+        # Защита от повторного открытия
         if getattr(self, "_ecg_list_dlg", None) is not None:
             try:
                 if self._ecg_list_dlg.winfo_exists():
