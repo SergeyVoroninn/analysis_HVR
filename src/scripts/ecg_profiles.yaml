@@ -1,0 +1,110 @@
+profiles:
+  default:
+    description: Стандартное качество для общего использования
+    transient_duration: 146
+    transient_start_value: 13148
+    transient_end_value: -150
+    baseline_mean: -200
+    baseline_respiratory_amplitude: 80
+    baseline_noise_range:
+    - -6
+    - 6
+    baseline_respiratory_frequency: 0.05
+    heart_rate_period: 115
+    p_wave:
+      start: 0
+      end: 8
+      amplitude: 150
+    q_wave:
+      start: 10
+      end: 14
+      amplitude: -150
+    r_wave:
+      start: 14
+      end: 19
+      amplitude: 1300
+    s_wave:
+      start: 19
+      end: 25
+      amplitude: -1400
+    t_wave:
+      start: 35
+      end: 55
+      amplitude: 350
+    target:
+      min_snr: 15.0
+      max_artifact_pct: 2.0
+      max_baseline_drift: 50.0
+  high_quality:
+    description: Высокое качество для точного анализа ВРС
+    transient_duration: 100
+    transient_start_value: 8000
+    transient_end_value: -100
+    baseline_mean: -150
+    baseline_respiratory_amplitude: 64
+    baseline_noise_range:
+    - 0
+    - 0
+    baseline_respiratory_frequency: 0.04
+    heart_rate_period: 120
+    p_wave:
+      start: 0
+      end: 8
+      amplitude: 120
+    q_wave:
+      start: 10
+      end: 14
+      amplitude: -120
+    r_wave:
+      start: 14
+      end: 19
+      amplitude: 9283
+    s_wave:
+      start: 19
+      end: 25
+      amplitude: -4144
+    t_wave:
+      start: 35
+      end: 55
+      amplitude: 400
+    target:
+      min_snr: 20.0
+      max_artifact_pct: 1.0
+      max_baseline_drift: 30.0
+  fast:
+    description: Быстрая генерация с приемлемым качеством
+    transient_duration: 80
+    transient_start_value: 10000
+    transient_end_value: -120
+    baseline_mean: -180
+    baseline_respiratory_amplitude: 60
+    baseline_respiratory_frequency: 0.06
+    baseline_noise_range:
+    - -20
+    - 20
+    heart_rate_period: 110
+    p_wave:
+      start: 0
+      end: 7
+      amplitude: 130
+    q_wave:
+      start: 9
+      end: 13
+      amplitude: -130
+    r_wave:
+      start: 13
+      end: 18
+      amplitude: 1200
+    s_wave:
+      start: 18
+      end: 23
+      amplitude: -1300
+    t_wave:
+      start: 32
+      end: 50
+      amplitude: 320
+    target:
+      min_snr: 12.0
+      max_artifact_pct: 3.0
+      max_baseline_drift: 60.0
+active_profile: default
