@@ -7,6 +7,7 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 import tkinter as tk
 import datetime
+from tkcalendar import DateEntry
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -48,6 +49,8 @@ COL_CRIT = '#da3633'
 COL_TP_YEAR = '#4cc9f0'
 COL_TP_WEEK = "#468056"
 
+COL_ACCENT = '#1f6aa5'  
+
 YEAR_X0, YEAR_Y0 = 5, 18
 WEEK_X0, WEEK_Y0 = 28, 5
 
@@ -63,29 +66,55 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 
+from tkcalendar import DateEntry
+
+
 class AthleteDialog(ctk.CTkToplevel):
     def __init__(self, parent, title, data=None):
         super().__init__(parent)
         self.title(title)
-        self.geometry("380x440")
+        self.geometry("380x460")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
         self.result = None
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
-        fields = [("last_name", "Фамилия"), ("first_name", "Имя"),
-                  ("middle_name", "Отчество"),
-                  ("birth_date", "Дата рождения (ГГГГ-ММ-ДД)"),  # ← дата
-                  ("height_cm", "Рост (см)"), ("weight_kg", "Вес (кг)"),
-                  ("polar_id", "Polar ID")]
-        self.entries = {}
         row = 0
-        for key, label in fields:
+        fields_top = [("last_name", "Фамилия"), ("first_name", "Имя"),
+                      ("middle_name", "Отчество")]
+        fields_bottom = [("height_cm", "Рост (см)"), ("weight_kg", "Вес (кг)"),
+                         ("polar_id", "Polar ID")]
+
+        self.entries = {}
+        for key, label in fields_top:
             ctk.CTkLabel(self, text=label).grid(row=row, column=0, padx=12, pady=4, sticky="w")
             e = ctk.CTkEntry(self)
             e.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
             self.entries[key] = e
             row += 1
+
+        # === Дата рождения через календарь ===
+        ctk.CTkLabel(self, text="Дата рождения").grid(row=row, column=0, padx=12, pady=4, sticky="w")
+        self.birth_date_entry = DateEntry(
+            self, width=12, date_pattern='dd-mm-yyyy',
+            background=COL_BG_DARK,          # было '#2b2b2b'
+            foreground=COL_TEXT_LIGHT,       # было '#cccccc'
+            fieldbackground=COL_WEEKEND,     # было '#333333'
+            borderwidth=0,
+            selectbackground=COL_ACCENT,     # было '#1f6aa5'
+            selectforeground=COL_SELECTION,  # было 'white'
+            year=2005, month=1, day=1)
+        self.birth_date_entry.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
+        row += 1
+
+        for key, label in fields_bottom:
+            ctk.CTkLabel(self, text=label).grid(row=row, column=0, padx=12, pady=4, sticky="w")
+            e = ctk.CTkEntry(self)
+            e.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
+            self.entries[key] = e
+            row += 1
+
         self.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(self, text="Пол").grid(row=row, column=0, padx=12, pady=4, sticky="w")
@@ -100,11 +129,35 @@ class AthleteDialog(ctk.CTkToplevel):
         ctk.CTkButton(btns, text="Отмена", fg_color="gray",
                       command=self.destroy).pack(side="left", padx=6)
 
+        # === Заполнение при редактировании ===
         if data:
-            for key, _ in fields:
+            for key, _ in fields_top + fields_bottom:
                 if data.get(key) is not None:
                     self.entries[key].insert(0, str(data[key]))
+            if data.get("birth_date"):
+                try:
+                    # из БД ISO "2010-03-15" → календарь покажет 15-03-2010
+                    self.birth_date_entry.set_date(
+                        datetime.date.fromisoformat(str(data["birth_date"])))
+                except ValueError:
+                    pass
             self.gender_var.set(data.get("gender", "M"))
+
+    def _on_closing(self):
+        """
+        Принудительно завершает процесс при закрытии окна.
+        Обходит зависшие таймеры matplotlib/tkcalendar/CTk.
+        """
+        try:
+            self.quit()
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
+        # Главное: жёсткий выход из процесса
+        os._exit(0)
 
     def _on_save(self):
         last = self.entries["last_name"].get().strip()
@@ -113,14 +166,10 @@ class AthleteDialog(ctk.CTkToplevel):
             messagebox.showwarning("Проверка", "Фамилия и имя обязательны.")
             return
 
-        bd_str = self.entries["birth_date"].get().strip()
-        try:
-            bd = datetime.date.fromisoformat(bd_str)
-            if not datetime.date(1900, 1, 1) <= bd <= datetime.date.today():
-                raise ValueError
-        except ValueError:
-            messagebox.showwarning("Проверка",
-                                   "Некорректная дата (формат ГГГГ-ММ-ДД).")
+        # Календарь сам гарантирует корректную дату — остаётся проверить диапазон
+        bd = self.birth_date_entry.get_date()
+        if not datetime.date(1900, 1, 1) <= bd <= datetime.date.today():
+            messagebox.showwarning("Проверка", "Некорректная дата рождения.")
             return
 
         def opt_num(key, cast):
@@ -134,7 +183,7 @@ class AthleteDialog(ctk.CTkToplevel):
 
         self.result = {"last_name": last, "first_name": first,
                        "middle_name": self.entries["middle_name"].get().strip(),
-                       "birth_date": bd_str,
+                       "birth_date": bd.isoformat(),   # в БД всегда ISO
                        "gender": self.gender_var.get(),
                        "height_cm": opt_num("height_cm", int),
                        "weight_kg": opt_num("weight_kg", float),
@@ -765,9 +814,4 @@ if __name__ == '__main__':
     try:
         app.mainloop()
     finally:
-        try:
-            app.destroy()
-        except Exception:
-            pass
-        sys.stdout.flush()
         os._exit(0)
