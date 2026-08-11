@@ -1,25 +1,30 @@
 """
 Приложение для просмотра базы данных ЭКГ (одна страница, без вкладки ЭКГ).
 """
+import os
+import sys
 import sqlite3
 import uuid
+import datetime
+
 import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 import tkinter as tk
-import datetime
-from tkcalendar import DateEntry
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-import os
-import sys
-
+# ============================================================
+# ПУТИ — ДО импортов локальных модулей
+# ============================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
 
-sys.path.insert(0, SCRIPTS_DIR)
+sys.path.insert(0, SCRIPTS_DIR)   # ← сначала добавляем scripts/ в путь
 
+# ============================================================
+# ИМПОРТЫ ИЗ scripts/ И src/
+# ============================================================
 from analysis import parse_rr, calc_metrics, calc_stress, stress_level
 from athlete_generator import (
     _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
@@ -27,29 +32,11 @@ from athlete_generator import (
     _calc_age)
 from database import get_connection, get_db_path
 
-# ============================================================
-# ЦВЕТА ИНТЕРФЕЙСА
-# ============================================================
-COL_BG_DARK = '#2b2b2b'
-COL_BG_WIDGET = '#2b2b2b'
-COL_TEXT_LIGHT = '#cccccc'
-COL_TEXT_DIM = '#9a9a9a'
-COL_SPINE = '#555555'
-COL_SELECTION = 'white'
-
-COL_WEEKDAY = '#4a4a4a'
-COL_WEEKEND = '#333333'
-COL_FUTURE = '#242424'
-
-COL_ONE = "#45a056"
-COL_MULTI = "#04811b"
-COL_WARN = '#d29922'
-COL_CRIT = '#da3633'
-
-COL_TP_YEAR = '#4cc9f0'
-COL_TP_WEEK = "#468056"
-
-COL_ACCENT = '#1f6aa5'  
+from theme import (COL_ACCENT, COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT,
+                   COL_TEXT_DIM, COL_SPINE, COL_SELECTION, COL_WEEKDAY, 
+                   COL_WEEKEND, COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN, 
+                   COL_CRIT, COL_TP_YEAR, COL_TP_WEEK)
+from dialogs import AthleteDialog, ECGListDialog   # ← ПОСЛЕ sys.path.insert
 
 YEAR_X0, YEAR_Y0 = 5, 18
 WEEK_X0, WEEK_Y0 = 28, 5
@@ -67,128 +54,6 @@ ctk.set_default_color_theme("blue")
 
 
 from tkcalendar import DateEntry
-
-
-class AthleteDialog(ctk.CTkToplevel):
-    def __init__(self, parent, title, data=None):
-        super().__init__(parent)
-        self.title(title)
-        self.geometry("380x460")
-        self.resizable(False, False)
-        self.transient(parent)
-        self.grab_set()
-        self.result = None
-        self.protocol("WM_DELETE_WINDOW", self._on_closing)
-
-        row = 0
-        fields_top = [("last_name", "Фамилия"), ("first_name", "Имя"),
-                      ("middle_name", "Отчество")]
-        fields_bottom = [("height_cm", "Рост (см)"), ("weight_kg", "Вес (кг)"),
-                         ("polar_id", "Polar ID")]
-
-        self.entries = {}
-        for key, label in fields_top:
-            ctk.CTkLabel(self, text=label).grid(row=row, column=0, padx=12, pady=4, sticky="w")
-            e = ctk.CTkEntry(self)
-            e.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
-            self.entries[key] = e
-            row += 1
-
-        # === Дата рождения через календарь ===
-        ctk.CTkLabel(self, text="Дата рождения").grid(row=row, column=0, padx=12, pady=4, sticky="w")
-        self.birth_date_entry = DateEntry(
-            self, width=12, date_pattern='dd-mm-yyyy',
-            background=COL_BG_DARK,          # было '#2b2b2b'
-            foreground=COL_TEXT_LIGHT,       # было '#cccccc'
-            fieldbackground=COL_WEEKEND,     # было '#333333'
-            borderwidth=0,
-            selectbackground=COL_ACCENT,     # было '#1f6aa5'
-            selectforeground=COL_SELECTION,  # было 'white'
-            year=2005, month=1, day=1)
-        self.birth_date_entry.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
-        row += 1
-
-        for key, label in fields_bottom:
-            ctk.CTkLabel(self, text=label).grid(row=row, column=0, padx=12, pady=4, sticky="w")
-            e = ctk.CTkEntry(self)
-            e.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
-            self.entries[key] = e
-            row += 1
-
-        self.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(self, text="Пол").grid(row=row, column=0, padx=12, pady=4, sticky="w")
-        self.gender_var = ctk.StringVar(value="M")
-        ctk.CTkOptionMenu(self, values=["M", "F"], variable=self.gender_var
-                          ).grid(row=row, column=1, padx=12, pady=4, sticky="ew")
-        row += 1
-
-        btns = ctk.CTkFrame(self, fg_color="transparent")
-        btns.grid(row=row, column=0, columnspan=2, pady=12)
-        ctk.CTkButton(btns, text="Сохранить", command=self._on_save).pack(side="left", padx=6)
-        ctk.CTkButton(btns, text="Отмена", fg_color="gray",
-                      command=self.destroy).pack(side="left", padx=6)
-
-        # === Заполнение при редактировании ===
-        if data:
-            for key, _ in fields_top + fields_bottom:
-                if data.get(key) is not None:
-                    self.entries[key].insert(0, str(data[key]))
-            if data.get("birth_date"):
-                try:
-                    # из БД ISO "2010-03-15" → календарь покажет 15-03-2010
-                    self.birth_date_entry.set_date(
-                        datetime.date.fromisoformat(str(data["birth_date"])))
-                except ValueError:
-                    pass
-            self.gender_var.set(data.get("gender", "M"))
-
-    def _on_closing(self):
-        """
-        Принудительно завершает процесс при закрытии окна.
-        Обходит зависшие таймеры matplotlib/tkcalendar/CTk.
-        """
-        try:
-            self.quit()
-        except Exception:
-            pass
-        try:
-            self.destroy()
-        except Exception:
-            pass
-        # Главное: жёсткий выход из процесса
-        os._exit(0)
-
-    def _on_save(self):
-        last = self.entries["last_name"].get().strip()
-        first = self.entries["first_name"].get().strip()
-        if not last or not first:
-            messagebox.showwarning("Проверка", "Фамилия и имя обязательны.")
-            return
-
-        # Календарь сам гарантирует корректную дату — остаётся проверить диапазон
-        bd = self.birth_date_entry.get_date()
-        if not datetime.date(1900, 1, 1) <= bd <= datetime.date.today():
-            messagebox.showwarning("Проверка", "Некорректная дата рождения.")
-            return
-
-        def opt_num(key, cast):
-            v = self.entries[key].get().strip()
-            if not v:
-                return None
-            try:
-                return cast(v)
-            except ValueError:
-                return None
-
-        self.result = {"last_name": last, "first_name": first,
-                       "middle_name": self.entries["middle_name"].get().strip(),
-                       "birth_date": bd.isoformat(),   # в БД всегда ISO
-                       "gender": self.gender_var.get(),
-                       "height_cm": opt_num("height_cm", int),
-                       "weight_kg": opt_num("weight_kg", float),
-                       "polar_id": self.entries["polar_id"].get().strip()}
-        self.destroy()
 
 
 class ECGViewerApp(ctk.CTk):
@@ -307,6 +172,9 @@ class ECGViewerApp(ctk.CTk):
         self.label_week_title.pack()
         self.canvas_week = tk.Canvas(self.week_box, bg=COL_BG_DARK, highlightthickness=0)
         self.canvas_week.pack()
+        # И одинарный, и двойной клик открывают список ЭКГ за 3 часа
+        self.canvas_week.bind("<Button-1>", self._on_week_click)
+        self.canvas_week.bind("<Double-Button-1>", self._on_week_click)
 
         self.tp_frame = ctk.CTkFrame(self.right_panel)
         self.tp_frame.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
@@ -335,8 +203,22 @@ class ECGViewerApp(ctk.CTk):
         self.plt_area.bind("<Configure>", self._on_tp_configure)
         # Клик по годовому графику TP/ИС → переключение недели
         self.canvas_tp.mpl_connect("button_press_event", self._on_tp_click)
+        self.canvas_tp.mpl_connect("button_press_event", self._on_week_plot_click)
 
         self._apply_canvas_sizes()
+
+    def _on_week_click(self, event):
+        """Клик (одинарный или двойной) по квадрату недели → ЭКГ за 3 часа."""
+        d = (event.x - WEEK_X0) // self.step
+        b = (event.y - WEEK_Y0) // self.step
+        if not (0 <= d < 7 and 0 <= b < 8) or not self._week_start:
+            return
+
+        day = self._week_start + datetime.timedelta(days=d)
+        dt_from = datetime.datetime.combine(day, datetime.time(b * 3, 0))
+        dt_to = dt_from + datetime.timedelta(hours=3)
+        title = f"ЭКГ за {day:%d.%m.%Y} {b*3:02d}:00–{(b*3+3)%24:02d}:00"
+        self._open_ecg_list(dt_from, dt_to, title)        
 
     def _apply_canvas_sizes(self):
         s = self.step
@@ -807,6 +689,62 @@ class ECGViewerApp(ctk.CTk):
         w = int(event.xdata)
         # Откладываем перерисовку, чтобы не рисовать изнутри события mpl
         self.after(0, lambda: self._select_week(w))
+
+    def _on_week_double_click(self, event):
+        """Двойной клик по квадратику недельного heatmap → ЭКГ за 3 часа."""
+        d = (event.x - WEEK_X0) // self.step
+        b = (event.y - WEEK_Y0) // self.step
+        if not (0 <= d < 7 and 0 <= b < 8) or not self._week_start:
+            return
+        day = self._week_start + datetime.timedelta(days=d)
+        # 3-часовой блок: [b*3:00, (b+1)*3:00)
+        dt_from = datetime.datetime.combine(day, datetime.time(b * 3, 0))
+        dt_to = dt_from + datetime.timedelta(hours=3)
+        title = f"ЭКГ за {day:%d.%m.%Y} {b*3:02d}:00–{(b*3+3)%24:02d}:00"
+        self._open_ecg_list(dt_from, dt_to, title)
+
+    def _on_week_plot_click(self, event):
+        """Клик по дневному столбику TP/ИС → ЭКГ за день."""
+        if event.inaxes not in (self.ax_tp_week, self.ax_si_week):
+            return
+        if event.xdata is None or not self._week_start:
+            return
+        d = int(event.xdata)
+        if not (0 <= d < 7):
+            return
+        day = self._week_start + datetime.timedelta(days=d)
+        dt_from = datetime.datetime.combine(day, datetime.time(0, 0))
+        dt_to = datetime.datetime.combine(day, datetime.time(23, 59, 59))
+        title = f"ЭКГ за {day:%d.%m.%Y}"
+        self.after(0, lambda: self._open_ecg_list(dt_from, dt_to, title))
+
+    def _open_ecg_list(self, dt_from, dt_to, title):
+        if not self.selected_athlete:
+            return
+
+        # Если окно уже открыто — не открываем второе
+        if getattr(self, "_ecg_list_dlg", None) is not None:
+            try:
+                if self._ecg_list_dlg.winfo_exists():
+                    self._ecg_list_dlg.focus_set()
+                    return
+            except tk.TclError:
+                self._ecg_list_dlg = None
+
+        self._ecg_list_dlg = ECGListDialog(
+            self,
+            athlete_id=self.selected_athlete[0],
+            date_from=dt_from,
+            date_to=dt_to,
+            title=title,
+            on_change=self._on_ecg_list_changed)
+
+    def _on_ecg_list_changed(self):
+        """Вызывается после удаления записи — обновляет все графики."""
+        if self.selected_athlete:
+            aid = self.selected_athlete[0]
+            self._draw_density(aid)
+            self._draw_tp(aid)        
 
 
 if __name__ == '__main__':
