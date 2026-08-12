@@ -643,7 +643,7 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._style_ax(self.ax_tp_year)
         xs = [w for w in range(53) if w in week_tp]
         ys = [self._mean(week_tp[w]) for w in xs]
-        self.ax_tp_year.bar(xs, ys, width=1.0, color=COL_TP_YEAR)
+        self.ax_tp_year.bar(xs, ys, width=1.0, color=COL_TP_YEAR, align='edge')
         self._set_month_ticks(self.ax_tp_year)
         self.ax_tp_year.set_ylabel("мс²", color=COL_TEXT_LIGHT)
         self.ax_tp_year.set_title(f"TP по неделям, {self._view_year}",
@@ -653,7 +653,7 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._style_ax(self.ax_tp_week)
         ys7 = [self._mean(day_tp.get((self._week_start + datetime.timedelta(days=d)).isoformat()))
                for d in range(7)] if self._week_start else [0] * 7
-        self.ax_tp_week.bar(range(7), ys7, color=COL_TP_WEEK)
+        self.ax_tp_week.bar(range(7), ys7, color=COL_TP_WEEK, align='edge')
         self.ax_tp_week.set_xticks(range(7))
         self.ax_tp_week.set_xticklabels([d[0] for d in DAYS_RU], fontsize=7)
         if self._week_start:
@@ -665,7 +665,7 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._style_ax(self.ax_si_year)
         xs = [w for w in range(53) if w in week_si]
         ys = [self._mean(week_si[w]) for w in xs]
-        self.ax_si_year.bar(xs, ys, width=1.0, color=[self._si_color(v) for v in ys])
+        self.ax_si_year.bar(xs, ys, width=1.0, color=[self._si_color(v) for v in ys], align='edge')
         self._set_month_ticks(self.ax_si_year)
         self.ax_si_year.set_ylabel("ИС", color=COL_TEXT_LIGHT)
         self.ax_si_year.set_title(f"Стресс по неделям, {self._view_year}",
@@ -675,7 +675,7 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._style_ax(self.ax_si_week)
         ys7 = [self._mean(day_si.get((self._week_start + datetime.timedelta(days=d)).isoformat()))
                for d in range(7)] if self._week_start else [0] * 7
-        self.ax_si_week.bar(range(7), ys7, color=[self._si_color(v) for v in ys7])
+        self.ax_si_week.bar(range(7), ys7, color=[self._si_color(v) for v in ys7], align='edge')
         self.ax_si_week.set_xticks(range(7))
         self.ax_si_week.set_xticklabels([d[0] for d in DAYS_RU], fontsize=7)
         if self._week_start:
