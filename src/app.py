@@ -871,13 +871,17 @@ if __name__ == '__main__':
     root.report_callback_exception = lambda *a: None
 
     splash = SplashScreen(root, show_ms=1500, auto_close=False)
-    root.update()
+    root.update()                      # заставка на экране
 
-    _load_heavy()
+    _load_heavy()                      # импорты под заставкой
 
-    splash.close_splash()
+    # Окно строится, ПОКА заставка ещё видна
+    app = ECGViewerApp(root)
+    app.withdraw()                     # окно готово, но спрятано
 
-    app = ECGViewerApp(root)  # ← передаём root как master
+    splash.close_splash()              # заставка уходит
+    app.deiconify()                    # окно появляется МГНОВЕННО
+
     try:
         root.mainloop()
     finally:
