@@ -32,15 +32,8 @@ MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн",
 DAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
 
-def _load_heavy():
+def _load_heavy(pump=None):
     """Тяжёлые импорты вызываются, когда заставка уже на экране."""
-    global Figure, FigureCanvasTkAgg, func
-    global parse_rr, calc_metrics, calc_stress, stress_level
-    global _generate_polar_id, _estimate_height_cm, _estimate_weight_kg
-    global _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd, _calc_age
-    global get_db_path, get_session, Athlete, ECGRecord
-    global AthleteDialog, ECGListDialog
-
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
     from sqlalchemy import func
@@ -51,6 +44,33 @@ def _load_heavy():
     from database import get_db_path
     from models import get_session, Athlete, ECGRecord
     from dialogs import AthleteDialog, ECGListDialog
+
+    # Явно присваиваем глобальным переменным
+    globals().update({
+        'Figure': Figure,
+        'FigureCanvasTkAgg': FigureCanvasTkAgg,
+        'func': func,
+        'parse_rr': parse_rr,
+        'calc_metrics': calc_metrics,
+        'calc_stress': calc_stress,
+        'stress_level': stress_level,
+        '_generate_polar_id': _generate_polar_id,
+        '_estimate_height_cm': _estimate_height_cm,
+        '_estimate_weight_kg': _estimate_weight_kg,
+        '_estimate_resting_hr': _estimate_resting_hr,
+        '_estimate_max_hr': _estimate_max_hr,
+        '_estimate_hrv_rmssd': _estimate_hrv_rmssd,
+        '_calc_age': _calc_age,
+        'get_db_path': get_db_path,
+        'get_session': get_session,
+        'Athlete': Athlete,
+        'ECGRecord': ECGRecord,
+        'AthleteDialog': AthleteDialog,
+        'ECGListDialog': ECGListDialog,
+    })
+
+    if pump:
+        pump()
 
 class ECGViewerApp(ctk.CTkToplevel):
     def __init__(self, master, db_path=None):
@@ -864,7 +884,6 @@ class ECGViewerApp(ctk.CTkToplevel):
             self._draw_density(aid)
             self._draw_tp(aid)
 
-
 if __name__ == '__main__':
     root = tk.Tk()
     root.withdraw()
@@ -873,7 +892,7 @@ if __name__ == '__main__':
     splash = SplashScreen(root, show_ms=1500, auto_close=False)
     root.update()                      # заставка на экране
 
-    _load_heavy()                      # импорты под заставкой
+    _load_heavy(pump=root.update)
 
     # Окно строится, ПОКА заставка ещё видна
     app = ECGViewerApp(root)
