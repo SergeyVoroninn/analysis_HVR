@@ -1,15 +1,7 @@
 """
 Главный скрипт подготовки тестовой базы данных.
-
-Импортирует:
-  - athlete_generator  (create_athlete)
-  - ecg_generator      (create_record)
-  - schedule_engine    (build_schedules, load_config)
-  - models             (ORM-модели и сессия)
-
 Записывает всё в SQLite через SQLAlchemy. Путь к БД задаётся в config.yaml.
 """
-
 import os
 import random
 import sys
@@ -27,7 +19,7 @@ from schedule_engine import build_schedules, load_config
 from ecg_generator import create_record
 from analysis import parse_rr, calc_metrics, calc_stress
 from database import get_db_path
-from models import get_session, Athlete, ECGRecord, Base
+from models import get_session, Athlete, ECGRecord, ECGRaw
 
 
 # ============================================================
@@ -74,10 +66,6 @@ def _get_settings(cfg):
 # ОСНОВНАЯ ФУНКЦИЯ
 # ============================================================
 def prepare_database(config_path="config.yaml"):
-    """
-    Генерирует данные и пишет их в SQLite через ORM.
-    Путь к БД берётся из конфига (settings.db_path).
-    """
     cfg = load_config(config_path)
     settings = _get_settings(cfg)
 
@@ -88,12 +76,10 @@ def prepare_database(config_path="config.yaml"):
     db_path   = get_db_path(settings["db_path"])
     store_raw = settings["store_raw_data"]
 
-    # Удаляем старую БД, чтобы создать чистую
     if os.path.exists(db_path):
         os.remove(db_path)
         print(f"🗑  Удалена старая база: {db_path}")
 
-    # Создаём директорию если нужно
     db_dir = os.path.dirname(db_path)
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
@@ -106,10 +92,9 @@ def prepare_database(config_path="config.yaml"):
 
     session = get_session(db_path)
     try:
-        # --- Массовая вставка спортсменов (один батч) ---
-        athletes_data = []
-        for athlete, profile_name, times in schedules:
-            athletes_data.append({
+        # --- Спортсмены (один батч) ---
+        athletes_data = [
+            {
                 "id":                  athlete["id"],
                 "last_name":           athlete["last_name"],
                 "first_name":          athlete["first_name"],
@@ -123,17 +108,16 @@ def prepare_database(config_path="config.yaml"):
                 "hrv_rmssd_baseline":  athlete["hrv_rmssd_baseline"],
                 "avg_rr_ms":           athlete["avg_rr_ms"],
                 "polar_id":            athlete["polar_id"],
-            })
-
+            }
+            for athlete, _, _ in schedules
+        ]
         if athletes_data:
             session.execute(insert(Athlete), athletes_data)
             session.commit()
             print(f"✅ Спортсменов сохранено: {len(athletes_data)}")
 
-        # --- Генерация и массовая вставка ЭКГ (батчами по 100 записей) ---
+        # --- ЭКГ: по одной (нужен id для связи с ECGRaw) ---
         processed = 0
-        BATCH_SIZE = 100
-        records_batch = []
 
         for athlete, profile_name, times in schedules:
             fio = f"{athlete['last_name']} {athlete['first_name']}"
@@ -151,35 +135,32 @@ def prepare_database(config_path="config.yaml"):
                 rr = parse_rr(raw_str)
                 m = calc_metrics(rr)
                 s = calc_stress(rr)
-                raw = raw_str if store_raw else None
 
-                records_batch.append({
-                    "athlete_id":       athlete["id"],
-                    "recorded_at":      ts.isoformat(sep=" "),
-                    "duration_seconds": duration,
-                    "profile":          profile_name,
-                    "raw_data":         raw,
-                    "mean_hr":          m["mean_hr"],
-                    "rmssd":            m["rmssd"],
-                    "sdnn":             m["sdnn"],
-                    "status":           m["status"],
-                    "stress_si":        s["si"] if s else None,
-                })
+                # 1) Создаём лёгкую запись (без raw)
+                rec = ECGRecord(
+                    athlete_id=athlete["id"],
+                    recorded_at=ts.isoformat(sep=" "),
+                    duration_seconds=duration,
+                    profile=profile_name,
+                    mean_hr=m["mean_hr"],
+                    rmssd=m["rmssd"],
+                    sdnn=m["sdnn"],
+                    status=m["status"],
+                    stress_si=s["si"] if s else None,
+                )
+                session.add(rec)
+                session.flush()  # ← получаем rec.id
+
+                # 2) Если нужно — сохраняем raw в отдельной таблице
+                if store_raw and raw_str:
+                    raw = ECGRaw(record_id=rec.id, raw_data=raw_str)
+                    session.add(raw)
+
+                session.commit()
 
                 processed += 1
                 _progress_bar(processed, total_records,
                               prefix="⚙️  Генерация ЭКГ", suffix=fio)
-
-                # Сбрасываем батч в БД
-                if len(records_batch) >= BATCH_SIZE:
-                    session.execute(insert(ECGRecord), records_batch)
-                    session.commit()
-                    records_batch.clear()
-
-        # Остаток батча
-        if records_batch:
-            session.execute(insert(ECGRecord), records_batch)
-            session.commit()
 
     except Exception as e:
         session.rollback()
@@ -191,6 +172,10 @@ def prepare_database(config_path="config.yaml"):
     print(f"\n✅ База: {db_path}")
     print(f"   Спортсменов: {len(schedules)}")
     print(f"   Записей ЭКГ: {total_records}")
+    if store_raw:
+        print(f"   Raw данные:   в отдельной таблице ecg_raw")
+    else:
+        print(f"   Raw данные:   НЕ сохранялись")
     return db_path
 
 
@@ -198,7 +183,6 @@ def prepare_database(config_path="config.yaml"):
 # ПРОВЕРКА БАЗЫ ДАННЫХ
 # ============================================================
 def verify_database(db_path):
-    """Печатает сводку по содержимому базы (ORM-версия)."""
     if not os.path.exists(db_path):
         print(f"❌ Файл базы не найден: {db_path}")
         return
@@ -207,10 +191,12 @@ def verify_database(db_path):
     try:
         athletes_count = session.query(func.count(Athlete.id)).scalar()
         records_count = session.query(func.count(ECGRecord.id)).scalar()
+        raw_count = session.query(func.count(ECGRaw.record_id)).scalar()
+
         print(f"\nСпортсменов: {athletes_count}")
         print(f"Записей ЭКГ: {records_count}")
+        print(f"С raw_data:  {raw_count}")
 
-        # Сводка по спортсменам
         from sqlalchemy.orm import aliased
         AthleteAlias = aliased(Athlete)
 
@@ -221,6 +207,8 @@ def verify_database(db_path):
                 AthleteAlias.polar_id,
                 ECGRecord.profile,
                 func.count(ECGRecord.id).label("cnt"),
+                func.avg(ECGRecord.rmssd).label("avg_rmssd"),
+                func.avg(ECGRecord.stress_si).label("avg_si"),
             )
             .join(ECGRecord, ECGRecord.athlete_id == AthleteAlias.id)
             .group_by(AthleteAlias.id, ECGRecord.profile)
@@ -228,18 +216,16 @@ def verify_database(db_path):
             .all()
         )
 
-        print(f"\n{'ФИО':22} | {'polar_id':8} | {'Профиль':22} | Записей")
-        print("-" * 75)
-        for last, first, pid, prof, cnt in rows:
-            print(f"{last} {first:12} | {pid:8} | {prof or '':22} | {cnt}")
+        print(f"\n{'ФИО':22} | {'polar_id':8} | {'Профиль':15} | Зап | RMSSD |  ИС")
+        print("-" * 90)
+        for last, first, pid, prof, cnt, rmssd, si in rows:
+            print(f"{last} {first:12} | {pid:8} | {prof or '':15} | "
+                  f"{cnt:3} | {rmssd or 0:5.0f} | {si or 0:3.0f}")
 
     finally:
         session.close()
 
 
-# ============================================================
-# ТОЧКА ВХОДА
-# ============================================================
 if __name__ == '__main__':
     db_path = prepare_database(CONFIG_PATH)
     verify_database(db_path)

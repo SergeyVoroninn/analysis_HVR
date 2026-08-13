@@ -33,6 +33,8 @@ DAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
 def _load_heavy(pump=None):
     """Тяжёлые импорты вызываются, когда заставка уже на экране."""
+
+    from models import get_session, Athlete, ECGRecord, ECGRaw    
     # Получаем путь к текущему файлу
     if getattr(sys, 'frozen', False):
         # Запущено из exe
@@ -48,8 +50,6 @@ def _load_heavy(pump=None):
         if path not in sys.path:
             sys.path.insert(0, path)
     
-    print(f"📂 Пути для импорта: {sys.path[:3]}")  # для отладки
-
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
     from sqlalchemy import func
@@ -504,12 +504,12 @@ class ECGViewerApp(ctk.CTkToplevel):
             s = calc_stress(rr) if rr else None
             duration = sum(rr) / 1000.0 if rr else 0.0
 
+            # 1) Создаём запись без raw
             rec = ECGRecord(
                 athlete_id=aid,
                 recorded_at=recorded_at,
                 duration_seconds=duration,
                 profile="import",
-                raw_data=raw,
                 mean_hr=m["mean_hr"] if m else None,
                 rmssd=m["rmssd"] if m else None,
                 sdnn=m["sdnn"] if m else None,
@@ -517,6 +517,11 @@ class ECGViewerApp(ctk.CTkToplevel):
                 stress_si=s["si"] if s else None,
             )
             session.add(rec)
+            session.flush()  # получаем rec.id
+
+            # 2) Сырые данные — в отдельной таблице
+            rec.raw = ECGRaw(record_id=rec.id, raw_data=raw)
+
             session.commit()
 
         except Exception as e:

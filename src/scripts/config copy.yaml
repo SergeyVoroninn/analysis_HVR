@@ -90,15 +90,15 @@ profiles:
 # КОМАНДА: каждый спортсмен ссылается на профиль по имени
 # ============================================================
 team:
-  - { birth_year: 2008, gender: M, profile: random_3_per_week }
+  - { birth_year: 2008, gender: M, profile: regular_mwf_morning }
   - { birth_year: 2010, gender: F, profile: random_3_per_week }
-  - { birth_year: 2005, gender: M, profile: random_3_per_week }
-  - { birth_year: 2012, gender: F, profile: random_3_per_week }
-  - { birth_year: 2006, gender: M, profile: random_3_per_week }
-  - { birth_year: 2009, gender: F, profile: random_3_per_week }
-  - { birth_year: 2004, gender: M, profile: random_3_per_week }
-  - { birth_year: 2011, gender: F, profile: random_3_per_week }
-  - { birth_year: 2003, gender: M, profile: random_3_per_week }
-  - { birth_year: 2007, gender: M, profile: random_3_per_week }
-  - { birth_year: 2013, gender: F, profile: random_3_per_week }
-  - { birth_year: 2002, gender: M, profile: random_3_per_week }
+  - { birth_year: 2005, gender: M, profile: summer_daily_morning }
+  - { birth_year: 2012, gender: F, profile: summer_daily_random }
+  - { birth_year: 2006, gender: M, profile: month_3x_fixed }
+  - { birth_year: 2009, gender: F, profile: month_3x_random }
+  - { birth_year: 2004, gender: M, profile: two_years_monday }
+  - { birth_year: 2011, gender: F, profile: two_years_random_day }
+  - { birth_year: 2003, gender: M, profile: intensive_2x_day }
+  - { birth_year: 2007, gender: M, profile: training_weekdays }
+  - { birth_year: 2013, gender: F, profile: chaotic }
+  - { birth_year: 2002, gender: M, profile: weekends_only }

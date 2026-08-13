@@ -4,7 +4,7 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 from tkcalendar import DateEntry
 
-from models import get_session, Athlete, ECGRecord
+from models import get_session, Athlete, ECGRecord, ECGRaw  # ← добавлен ECGRaw
 
 from theme import (COL_BG_DARK, COL_TEXT_LIGHT, COL_WEEKEND,
                    COL_ACCENT, COL_SELECTION)
@@ -203,7 +203,7 @@ class ECGListDialog(ctk.CTkToplevel):
         return int(sel[0]) if sel else None
 
     def _export(self):
-        """Экспорт записи в файл через ORM."""
+        """Экспорт записи в файл через ORM (raw теперь в ECGRaw)."""
         rid = self._selected_id()
         if rid is None:
             return
@@ -211,12 +211,17 @@ class ECGListDialog(ctk.CTkToplevel):
         session = get_session(self.db_path)
         try:
             rec = session.get(ECGRecord, rid)
-            if rec is None or not rec.raw_data:
-                messagebox.showwarning("Экспорт", "Нет raw_data для этой записи.")
+            # raw теперь в связанной таблице ECGRaw через rec.raw
+            if rec is None or rec.raw is None or not rec.raw.raw_data:
+                messagebox.showwarning(
+                    "Экспорт",
+                    "Для этой записи нет сырых данных (raw_data).\n"
+                    "Запись была создана без сохранения raw."
+                )
                 return
 
             rec_at = rec.recorded_at
-            raw = rec.raw_data
+            raw = rec.raw.raw_data   # ← было: rec.raw_data
         finally:
             session.close()
 

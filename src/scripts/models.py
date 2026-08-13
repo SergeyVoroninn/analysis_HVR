@@ -1,22 +1,14 @@
-"""
-ORM-модели и подключение к БД.
-"""
+"""ORM-модели и подключение к БД."""
 import os
-import sys
 from sqlalchemy import (
-    create_engine, Column, String, Integer, Float, DateTime, Text, ForeignKey, event
+    create_engine, Column, String, Integer, Float, Text,
+    ForeignKey, event
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from datetime import datetime
 
-# ============================================================
-# ДЕКЛАРАТИВНАЯ БАЗА
-# ============================================================
 Base = declarative_base()
 
-# ============================================================
-# МОДЕЛИ
-# ============================================================
+
 class Athlete(Base):
     __tablename__ = "athletes"
 
@@ -45,11 +37,11 @@ class ECGRecord(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     athlete_id = Column(String, ForeignKey("athletes.id", ondelete="CASCADE"),
-                        nullable=False)
+                        nullable=False, index=True)
     recorded_at = Column(String, nullable=False, index=True)
     duration_seconds = Column(Float)
     profile = Column(String)
-    raw_data = Column(Text)
+    # raw_data больше НЕ хранится здесь
     mean_hr = Column(Float)
     rmssd = Column(Float)
     sdnn = Column(Float)
@@ -57,6 +49,25 @@ class ECGRecord(Base):
     stress_si = Column(Float)
 
     athlete = relationship("Athlete", back_populates="ecg_records")
+    # Ленивая связь 1-к-1 с сырыми данными
+    raw = relationship(
+        "ECGRaw", back_populates="record",
+        uselist=False, cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class ECGRaw(Base):
+    """Тяжёлая таблица с сырыми данными ЭКГ. Загружается только при обращении."""
+    __tablename__ = "ecg_raw"
+
+    record_id = Column(
+        Integer,
+        ForeignKey("ecg_records.id", ondelete="CASCADE"),
+        primary_key=True
+    )
+    raw_data = Column(Text, nullable=False)
+
+    record = relationship("ECGRecord", back_populates="raw")
 
 
 # ============================================================
@@ -67,20 +78,14 @@ _SessionLocal = None
 
 
 def _set_sqlite_pragma(dbapi_conn, connection_record):
-    """Включает внешние ключи для SQLite (иначе CASCADE не работает)."""
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
 
 def get_session(db_path: str):
-    """
-    Возвращает сессию SQLAlchemy.
-    Создаёт БД, таблицы и папку data/ при необходимости.
-    """
     global _engine, _SessionLocal
 
-    # === Создаём директорию для БД, если её нет ===
     db_dir = os.path.dirname(db_path)
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
@@ -88,13 +93,11 @@ def get_session(db_path: str):
     url = f"sqlite:///{db_path}"
 
     if _engine is None or str(_engine.url) != url:
-        _engine = create_engine(url, echo=False)
-        
-        # === Включаем внешние ключи для SQLite ===
-        if url.startswith("sqlite"):
-            event.listen(_engine, "connect", _set_sqlite_pragma)
-        
+        if _engine is not None:
+            _engine.dispose()
+        _engine = create_engine(url, echo=False, pool_pre_ping=True)
+        event.listen(_engine, "connect", _set_sqlite_pragma)
         Base.metadata.create_all(_engine)
-        _SessionLocal = sessionmaker(bind=_engine)
+        _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
     return _SessionLocal()
