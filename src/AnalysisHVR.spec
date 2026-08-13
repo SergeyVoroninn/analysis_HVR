@@ -1,16 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('logo21.png', '.'), ('scripts\\ecg_profiles.yaml', '.'), ('scripts\\config.yaml', '.'), ('scripts\\athlete_generator.py', 'scripts'), ('scripts\\ecg_generator.py', 'scripts'), ('analysis.py', '.'), ('scripts\\database.py', 'scripts'), ('scripts\\models.py', 'scripts'), ('scripts\\schedule_engine.py', 'scripts'), ('scripts\\calibrate_ecg.py', 'scripts'), ('splash.py', '.'), ('theme.py', '.'), ('dialogs.py', '.'), ('analysis.py', '.')]
+datas = [('logo21.png', '.'), ('scripts\\ecg_profiles.yaml', '.'), ('scripts\\config.yaml', '.')]
 binaries = []
-hiddenimports = ['tkcalendar', 'babel', 'sqlalchemy', 'athlete_generator', 'analysis', 'ecg_generator', 'schedule_engine', 'models', 'database', 'theme', 'dialogs', 'splash']
+hiddenimports = ['splash', 'theme', 'dialogs', 'analysis', 'athlete_generator', 'ecg_generator', 'schedule_engine', 'models', 'database', 'tkcalendar', 'babel', 'sqlalchemy']
 tmp_ret = collect_all('customtkinter')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
     ['app.py'],
-    pathex=[],
+    pathex=['scripts'],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

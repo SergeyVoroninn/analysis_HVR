@@ -648,6 +648,12 @@ pip install pyinstaller
 cd \analysis_HVR\src
 build.bat
 ```
+
+```txt
+build.bat          ← тесты + сборка (полный цикл)
+build.bat --fast   ← только сборка (если тесты уже прогоняли)
+```
+
 ## Что означают флаги
 | Флаг | Назначение |
 | --- | --- |
