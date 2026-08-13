@@ -682,6 +682,47 @@ cd dist
 tar -a -cf AnalysisHVR.zip AnalysisHVR
 ```
 
-
-
-
+## Клон профиля реальной диаграммы
+```bash
+python fit_profile_from_real.py "..\..\C8208E2E_2026-6..teamloggerh10" --name real_c8208e2e --activate
+```
+### Результат в в файле ecg_profiles.yaml появился профиль
+```yaml
+real_c8208e2e:
+    transient_duration: 303
+    transient_start_value: 13148
+    transient_end_value: 24
+    baseline_mean: -117
+    baseline_respiratory_amplitude: 67
+    baseline_respiratory_frequency: 0.0226
+    baseline_noise_range:
+    - -60
+    - 60
+    heart_rate_period: 136
+    p_wave:
+      start: 0
+      end: 8
+      amplitude: 60
+    q_wave:
+      start: 10
+      end: 14
+      amplitude: -50
+    r_wave:
+      start: 14
+      end: 19
+      amplitude: 1459
+    s_wave:
+      start: 19
+      end: 25
+      amplitude: -938
+    t_wave:
+      start: 35
+      end: 55
+      amplitude: 497
+    target:
+      min_snr: 15.0
+      max_artifact_pct: 2.0
+      max_baseline_drift: 50.0
+    description: Спортивный профиль по реальной записи C8208E2E от 2026.05.05 06:52:21
+active_profile: real_c8208e2e
+```
