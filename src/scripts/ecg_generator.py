@@ -4,13 +4,16 @@
 
 Использует профили качества из ecg_profiles.yaml.
 """
-
 import os
 import sys
 import time
 import math
 import random
 import yaml
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.dirname(BASE_DIR)  # путь к src/
+sys.path.insert(0, SRC_DIR)
 
 # ============================================================
 # ЗАГРУЗКА ПРОФИЛЕЙ

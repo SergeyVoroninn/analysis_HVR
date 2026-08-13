@@ -31,21 +31,45 @@ MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн",
              "июл", "авг", "сен", "окт", "ноя", "дек"]
 DAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
-
 def _load_heavy(pump=None):
     """Тяжёлые импорты вызываются, когда заставка уже на экране."""
+    # Получаем путь к текущему файлу
+    if getattr(sys, 'frozen', False):
+        # Запущено из exe
+        app_dir = os.path.dirname(sys.executable)
+        scripts_dir = os.path.join(app_dir, '_internal', 'scripts')
+    else:
+        # Запущено из исходников
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        scripts_dir = os.path.join(app_dir, "scripts")
+    
+    # Добавляем все возможные пути
+    for path in [app_dir, scripts_dir]:
+        if path not in sys.path:
+            sys.path.insert(0, path)
+    
+    print(f"📂 Пути для импорта: {sys.path[:3]}")  # для отладки
+
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
     from sqlalchemy import func
     from analysis import parse_rr, calc_metrics, calc_stress, stress_level
-    from athlete_generator import (
-        _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
-        _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd, _calc_age)
+    
+    try:
+        from athlete_generator import (
+            _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
+            _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd, _calc_age)
+    except ImportError as e:
+        print(f"❌ athlete_generator не найден!")
+        print(f"   Проверяем файлы:")
+        print(f"   - {os.path.join(app_dir, 'athlete_generator.py')}: {'✅' if os.path.exists(os.path.join(app_dir, 'athlete_generator.py')) else '❌'}")
+        print(f"   - {os.path.join(scripts_dir, 'athlete_generator.py')}: {'✅' if os.path.exists(os.path.join(scripts_dir, 'athlete_generator.py')) else '❌'}")
+        raise
+
     from database import get_db_path
     from models import get_session, Athlete, ECGRecord
     from dialogs import AthleteDialog, ECGListDialog
 
-    # Явно присваиваем глобальным переменным
     globals().update({
         'Figure': Figure,
         'FigureCanvasTkAgg': FigureCanvasTkAgg,

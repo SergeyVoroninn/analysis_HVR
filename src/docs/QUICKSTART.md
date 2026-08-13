@@ -2,7 +2,7 @@
 ## Стартап датчики контроля состояния спортсмена
 
 Для запуска проекта нужны 6 внешних библиотек. Всё остальное (os, sys, sqlite3, datetime, uuid, random, math) входит в стандартную библиотеку Python.
-
+### Основные зависимости
 | Библиотека | Для чего |
 | --- | --- |
 | customtkinter | GUI приложения (app.py, dialogs.py) |
@@ -11,6 +11,15 @@
 | sqlalchemy | ORM для работы с БД (models.py) |
 | pyyaml | Чтение config.yaml и ecg_profiles.yaml |
 | numpy | Анализ сигнала ЭКГ и RR-интервалов |
+
+### 🛠 Опциональные для разработки
+Эти библиотеки не нужны конечному пользователю, но используются при разработке:
+| Библиотека | Назначение | Установка |
+| --- | --- | --- |
+| `pytest` | Автотесты  | `pip install pytest` |
+| `pyinstaller` | Сборка в `AnalysisHVR.exe` | `pip install pyinstaller` |
+| `pillow` | Прозрачный фон логотипа в заставке (необязательно) | `pip install pillow` |
+
 
 ### Установка одной командой
 
@@ -625,6 +634,47 @@ python -m pytest tests/test_analysis.py -v   # один файл
 python -m pytest tests -k consistency -v     # по имени
 ```
 
+# 📦 Создание EXE-файла приложения
+Используем PyInstaller — он соберёт Python + все библиотеки + данные в один исполняемый файл.
+
+
+## Установка PyInstaller
+В exe-версии база данных должна лежать рядом с exe, а не внутри архива. 
+```bash
+pip install pyinstaller
+```
+## Запуск сборки:
+```bash
+cd \analysis_HVR\src
+build.bat
+```
+## Что означают флаги
+| Флаг | Назначение |
+| --- | --- |
+| `--onedir` | Папка с exe + файлами (быстрый старт, проще отлаживать) |
+| `--windowed` | Без чёрного окна консоли |
+| `--add-data "logo21.png;."` | Логотип внутрь сборки |
+| `--add-data "scripts\ecg_profiles.yaml;."` | Профили ЭКГ внутрь сборки |
+| `--collect-all customtkinter` | Темы и шрифты customtkinter |
+| `--hidden-import ...` | Модули, которые PyInstaller не нашёл сам |
+
+
+
+## Результат
+```txt
+dist/
+└── AnalysisHVR/
+    ├── AnalysisHVR.exe      ← запуск
+    ├── _internal/           ← библиотеки и данные
+    └── data/
+        └── ecg.db           ← база данных
+```
+
+## Раздача пользователям
+```bah
+cd dist
+tar -a -cf AnalysisHVR.zip AnalysisHVR
+```
 
 
 

@@ -111,7 +111,7 @@ def analyze_ecg_quality(raw_str: str, skip_transient: int = 200,
     art_thr = max(30, 3 * noise_std)
     artifact_pct = float(np.mean(np.abs(noise_res) > art_thr) * 100)
 
-    from analysis import parse_rr, calc_metrics
+    # === ИСПРАВЛЕНО: используем уже импортированные функции ===
     rr = parse_rr(raw_str)
     rr_quality = None
     if rr:

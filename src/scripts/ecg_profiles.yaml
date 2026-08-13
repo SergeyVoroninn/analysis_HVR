@@ -7,8 +7,8 @@ profiles:
     baseline_mean: -200
     baseline_respiratory_amplitude: 92
     baseline_noise_range:
-    - -8
-    - 8
+    - -6
+    - 6
     baseline_respiratory_frequency: 0.05
     heart_rate_period: 115
     p_wave:

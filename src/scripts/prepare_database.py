@@ -20,6 +20,9 @@ from sqlalchemy import insert, func
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 
+SRC_DIR = os.path.dirname(BASE_DIR)
+sys.path.insert(0, SRC_DIR)
+
 from schedule_engine import build_schedules, load_config
 from ecg_generator import create_record
 from analysis import parse_rr, calc_metrics, calc_stress

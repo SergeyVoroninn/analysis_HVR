@@ -8,14 +8,14 @@
 Всё остальное (схема, подключения, индексы) теперь в models.py.
 """
 import os
+import sys
 from typing import Optional
-
 
 # ============================================================
 # КОНФИГУРАЦИЯ ПУТЕЙ
 # ============================================================
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_DB_RELATIVE = "../data/ecg.db"  # относительно scripts/
+DEFAULT_DB_RELATIVE = "../data/ecg.db"
 
 
 # ============================================================
@@ -25,9 +25,15 @@ def get_db_path(relative_path: Optional[str] = None) -> str:
     """
     Возвращает абсолютный путь к файлу БД.
 
-    :param relative_path: относительный путь (от scripts/) или None для дефолта
-    :return: абсолютный путь к файлу БД
+    В режиме exe (--onedir): база лежит рядом с exe в папке data/.
+    В обычном режиме (python app.py): ../data/ecg.db относительно scripts/.
     """
+    # === РЕЖИМ EXE ===
+    if getattr(sys, "frozen", False) and relative_path is None:
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        return os.path.normpath(os.path.join(exe_dir, "data", "ecg.db"))
+
+    # === ОБЫЧНЫЙ РЕЖИМ ===
     if relative_path is None:
         relative_path = DEFAULT_DB_RELATIVE
 
