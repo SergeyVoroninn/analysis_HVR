@@ -917,10 +917,40 @@ tar -a -cf AnalysisHVR.zip AnalysisHVR
 ---
 
 ## Клонирование профиля из реальной записи
-
-```bash
-python fit_profile_from_real.py "..\..\C8208E2E_2026-6..teamloggerh10" --name real_c8208e2e --activate
+### Краткая сводка
 ```
+python fit_profile_from_real.py <ФАЙЛ> [--name ИМЯ] [--activate]
+```
+| Аргумент | Обязательный | По умолчанию | Назначение |
+| --- | --- | --- | --- |
+| `file` | ✅ | — | Путь к файлу записи Polar H10 (`.teamloggerh10` или `.txt`) |
+| `--name` | ❌ | `real_sport` | Имя профиля в `ecg_profiles.yaml` |
+| `--activate` | ❌ | выкл. | Сделать этот профиль активным (запишет `active_profile: ИМЯ`) |
+
+### Примеры использования
+#### 1. Базовый запуск — профиль с именем по умолчанию
+```bash
+python fit_profile_from_real.py "C8208E2E_2026-6.txt"
+```
+##### Результат:
+- В ecg_profiles.yaml появится профиль real_sport
+- Активный профиль не меняется (остаётся тот, что был)
+
+#### 2. Своё имя профиля
+```bash
+python fit_profile_from_real.py "C8208E2E_2026-6.txt" --name ivanov_morning
+```
+##### Результат:
+- В ecg_profiles.yaml появится профиль ivanov_morning
+- Активный профиль не меняется
+
+#### 3. Создать профиль и сразу сделать активным
+```bash
+python fit_profile_from_real.py "C8208E2E_2026-6.txt" --name real_c8208e2e --activate
+```
+##### Результат:
+- В ecg_profiles.yaml появится профиль real_c8208e2e
+- active_profile: real_c8208e2e — следующий запуск ecg_generator.py будет использовать его
 
 В файле `ecg_profiles.yaml` появится профиль:
 
@@ -964,3 +994,86 @@ real_c8208e2e:
 
 active_profile: real_c8208e2e
 ```
+
+#### 4. Файл с пробелами в пути
+```bash
+python fit_profile_from_real.py "C:\записи\моя запись.txt" --name test --activate
+```
+⚠️ Путь с пробелами или кириллицей обязательно в кавычках.
+#### 5. Файл из другой директории
+```bash
+cd C:\s21\projects\analysis_HVR\src\scripts
+python fit_profile_from_real.py "..\..\data\recordings\morning_session.txt" --name morning --activate
+```
+### Что делает скрипт по шагам
+```
+1. Читает файл записи Polar H10
+   ├── [Header] → polar_id, datetime
+   ├── [ECG]    → массив значений сигнала
+   └── [RR]     → массив RR-интервалов
+
+2. Извлекает параметры сигнала:
+   ├── transient (переходный процесс): длительность, start/end значения
+   ├── baseline (базовая линия): mean, дыхание, шум
+   ├── heart_rate_period (период сердечного ритма)
+   └── P/Q/R/S/T волны: амплитуды усреднённого комплекса
+
+3. Считает ВРС-метрики из RR-интервалов:
+   ├── Mean RR → средняя длина интервала
+   ├── SDNN    → стандартное отклонение RR
+   └── RMSSD   → среднеквадратичная разница соседних RR
+
+4. Записывает профиль в scripts/ecg_profiles.yaml
+   └── (опционально) обновляет active_profile
+
+5. Выводит сводку параметров в консоль
+```
+
+### Ожидаемый вывод консоли
+```
+✅ Профиль 'real_c8208e2e' сохранён в ecg_profiles.yaml
+
+=== Извлечённые параметры сигнала ===
+  transient_duration                  = 303
+  transient_start_value               = 13148
+  transient_end_value                 = 24
+  baseline_mean                       = -117
+  baseline_respiratory_amplitude      = 67
+  baseline_respiratory_frequency      = 0.0226
+  baseline_noise_range                = [-30, 30]
+  heart_rate_period                   = 136
+  p_wave                              = 100
+  q_wave                              = -120
+  r_wave                              = 1459
+  s_wave                              = -938
+  t_wave                              = 497
+
+=== ВРС спортсмена (для карточки в БД) ===
+  Mean RR  = 1046 мс  (ЧСС ≈ 57 уд/мин)
+  SDNN     = 150 мс
+  RMSSD    = 130 мс  → hrv_rmssd_baseline
+  ```
+
+  ### Типичные ошибки
+  | Ошибка | Причина | Решение |
+| --- | --- | --- |
+| `FileNotFoundError` | Неверный путь к файлу | Укажите полный путь или проверьте рабочую директорию |
+| `ValueError: invalid literal for int()` | Файл не в формате Polar H10 | Проверьте наличие секций `[ECG]` и `[RR]` |
+| `IndexError: list index out of range` | Слишком короткая запись (<500 отсчётов) | Нужна запись длительностью ≥5 секунд |
+| Профиль не появляется в GUI | Не перегенерирована БД | Запустите `python prepare_database.py` после создания профиля |
+
+### Связь с другими скриптами
+```bash
+# 1. Создали профиль из реальной записи
+python fit_profile_from_real.py "record.txt" --name real --activate
+
+# 2. Перегенерировали БД — все записи будут использовать этот профиль
+python prepare_database.py
+
+# 3. (Опционально) Докалибровали профиль под целевые метрики
+python calibrate_ecg.py --profile real --iterations 5
+
+# 4. Проверили результат
+python ecg_generator.py
+```
+После шага 2 все спортсмены в БД будут иметь ЭКГ с формой сигнала, «снятой» с реальной записи Polar H10, но с индивидуальными ВРС-параметрами (RMSSD, RR) из карточки каждого спортсмена.
