@@ -86,6 +86,120 @@ python app.py
 ![Главное окно приложения](images/app_import.png)
 *Рисунок 5. Импорт файла записи с датчика*
 
+
+## Структура проекта
+```txt
+analysis_HVR\src\
+|   analysis.py                    Парсинг RR-интервалов, расчёт ВРС-метрик (SDNN, RMSSD) и индекса стресса
+|   app.py                         Главное окно приложения: список спортсменов, тепловые карты, графики TP/ИС
+|   build.bat                      Скрипт сборки AnalysisHVR.exe через PyInstaller с прогоном тестов
+|   dialogs.py                     Диалоги AthleteDialog (создание/редактирование) и ECGListDialog (список ЭКГ)
+|   logo21.png                     Логотип 512×512 для заставки при запуске приложения
+|   pytest.ini                     Конфигурация pytest: пути к тестам, маркеры, опции запуска
+|   splash.py                      SplashScreen — полноэкранная заставка с прогрессом загрузки модулей
+|   theme.py                       Цветовая палитра и константы стилей для единого оформления GUI
+|
++---data
+|       ecg.db                     SQLite-база данных: таблицы athletes, ecg_records и ecg_raw
+|
++---docs
+|   |   QUICKSTART.md              Руководство по быстрому старту: установка, генерация БД, запуск
+|   |
+|   \---images
+|           app_import.png         Скриншот диалога импорта записи ЭКГ из файла
+|           app_main.png           Скриншот главного окна приложения с тепловой картой года
+|           athlet_edit.png        Скриншот формы редактирования карточки спортсмена
+|           ecg_list.png           Скриншот списка записей ЭКГ за выбранный интервал
+|           prepare_database.png   Скриншот вывода скрипта prepare_database.py
+|           week_heatmap.png       Скриншот недельной тепловой карты (7 дней × 8 блоков)
+|           year_heatmap.png       Скриншот годовой тепловой карты (53 недели × 7 дней)
+|
++---scripts
+|   |   athlete_generator.py       Генерация тестовых спортсменов: ФИО, антропометрия, оценки ВРС по возрасту
+|   |   calibrate_ecg.py           Автокалибровка профилей ЭКГ по целевым метрикам качества (SNR, дрейф)
+|   |   config.yaml                Настройки генерации БД: длительность, сид, список спортсменов, расписание
+|   |   database.py                Менеджер пути к БД с учётом режима запуска (exe/исходники/тесты)
+|   |   db_info.py                 Диагностика БД: размер файла, количество записей, средние метрики ВРС
+|   |   db_schema.py               Вывод полной схемы БД: таблицы, колонки, индексы, внешние ключи
+|   |   ecg_generator.py           Генерация синтетических ЭКГ в формате TeamLoggerH10 по профилю
+|   |   ecg_profiles.yaml          Профили формы сигнала ЭКГ: default, high_quality, fast, real_c8208e2e
+|   |   fit_profile_from_real.py   Извлечение профиля ЭКГ из реальной записи Polar H10
+|   |   migrate_split_raw.py       Миграция: вынос raw_data из ecg_records в отдельную таблицу ecg_raw
+|   |   models.py                  ORM-модели SQLAlchemy: Athlete, ECGRecord, ECGRaw и get_session
+|   |   prepare_database.py        Главный скрипт подготовки тестовой БД с прогресс-баром
+|   |   python                     Служебный/временный файл (не используется)
+|   |   schedule_engine.py         Построение расписаний записей ЭКГ для каждого спортсмена
+|   |
+\---tests
+        conftest.py                Фикстуры pytest: временная БД, тестовые спортсмены и записи
+        test_analysis.py           Тесты парсинга RR и расчёта ВРС-метрик (SDNN, RMSSD, ИС)
+        test_app_gui.py            Smoke-тест главного окна приложения
+        test_database.py           Тесты CRUD-операций и каскадного удаления через SQLAlchemy
+        test_ecg_generator.py      Тесты генератора ЭКГ: границы RR, длительность, согласованность секций
+```
+
+## Структура бд
+```txt
+┌─ athletes
+│
+│  Колонки:
+│    id                        VARCHAR          [PK, NOT NULL]
+│    last_name                 VARCHAR          [NOT NULL]
+│    first_name                VARCHAR          [NOT NULL]
+│    middle_name               VARCHAR
+│    gender                    VARCHAR
+│    birth_date                VARCHAR
+│    height_cm                 INTEGER
+│    weight_kg                 FLOAT
+│    resting_hr                INTEGER
+│    max_hr                    INTEGER
+│    hrv_rmssd_baseline        INTEGER
+│    avg_rr_ms                 INTEGER
+│    polar_id                  VARCHAR
+│
+│  Индексы:
+│    UNIQUE sqlite_autoindex_athletes_2              (polar_id)
+│    UNIQUE sqlite_autoindex_athletes_1              (id)
+└──────────────────────────────────────────────────────────────────────
+
+┌─ ecg_records
+│
+│  Колонки:
+│    id                        INTEGER          [PK, NOT NULL]
+│    athlete_id                VARCHAR          [NOT NULL]
+│    recorded_at               VARCHAR          [NOT NULL]
+│    duration_seconds          FLOAT
+│    profile                   VARCHAR
+│    mean_hr                   FLOAT
+│    rmssd                     FLOAT
+│    sdnn                      FLOAT
+│    status                    VARCHAR
+│    stress_si                 FLOAT
+│
+│  Foreign Keys:
+│    athlete_id → athletes.id  ON DELETE CASCADE
+│
+│  Индексы:
+│    ix_ecg_records_recorded_at               (recorded_at)
+│    ix_ecg_records_athlete_id                (athlete_id)
+└──────────────────────────────────────────────────────────────────────
+
+┌─ ecg_raw
+│
+│  Колонки:
+│    record_id                 INTEGER          [PK, NOT NULL]
+│    raw_data                  TEXT             [NOT NULL]
+│
+│  Foreign Keys:
+│    record_id → ecg_records.id  ON DELETE CASCADE
+└──────────────────────────────────────────────────────────────────────
+
+======================================================================
+=== Связи (ER-диаграмма) ===
+
+  ecg_records.athlete_id  ──→  athletes.id
+  ecg_raw.record_id  ──→  ecg_records.id
+```
 ## Настрока тестового профиля атлета
 
 ```txt
