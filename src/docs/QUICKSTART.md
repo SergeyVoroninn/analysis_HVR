@@ -930,25 +930,25 @@ python fit_profile_from_real.py <ФАЙЛ> [--name ИМЯ] [--activate]
 ### Примеры использования
 #### 1. Базовый запуск — профиль с именем по умолчанию
 ```bash
-python fit_profile_from_real.py "C8208E2E_2026-6.txt"
+python fit_profile_from_real.py "C8208E2E_2026-6.teamloggerh10"
 ```
-##### Результат:
+**Результат:**
 - В ecg_profiles.yaml появится профиль real_sport
 - Активный профиль не меняется (остаётся тот, что был)
 
 #### 2. Своё имя профиля
 ```bash
-python fit_profile_from_real.py "C8208E2E_2026-6.txt" --name ivanov_morning
+python fit_profile_from_real.py "C8208E2E_2026-6.teamloggerh10" --name ivanov_morning
 ```
-##### Результат:
+**Результат:**
 - В ecg_profiles.yaml появится профиль ivanov_morning
 - Активный профиль не меняется
 
 #### 3. Создать профиль и сразу сделать активным
 ```bash
-python fit_profile_from_real.py "C8208E2E_2026-6.txt" --name real_c8208e2e --activate
+python fit_profile_from_real.py "C8208E2E_2026-6.teamloggerh10" --name real_c8208e2e --activate
 ```
-##### Результат:
+**Результат:**
 - В ecg_profiles.yaml появится профиль real_c8208e2e
 - active_profile: real_c8208e2e — следующий запуск ecg_generator.py будет использовать его
 
@@ -997,13 +997,13 @@ active_profile: real_c8208e2e
 
 #### 4. Файл с пробелами в пути
 ```bash
-python fit_profile_from_real.py "C:\записи\моя запись.txt" --name test --activate
+python fit_profile_from_real.py "C:\записи\моя запись.teamloggerh10" --name test --activate
 ```
 ⚠️ Путь с пробелами или кириллицей обязательно в кавычках.
 #### 5. Файл из другой директории
 ```bash
 cd C:\s21\projects\analysis_HVR\src\scripts
-python fit_profile_from_real.py "..\..\data\recordings\morning_session.txt" --name morning --activate
+python fit_profile_from_real.py "..\..\data\recordings\morning_session.teamloggerh10" --name morning --activate
 ```
 ### Что делает скрипт по шагам
 ```
@@ -1029,7 +1029,10 @@ python fit_profile_from_real.py "..\..\data\recordings\morning_session.txt" --na
 5. Выводит сводку параметров в консоль
 ```
 
-### Ожидаемый вывод консоли
+### Ожидаемый вывод консоли (иллюстративный)
+
+*Пример вывода — значения условные и могут отличаться от вашего файла записи.*
+
 ```
 ✅ Профиль 'real_c8208e2e' сохранён в ecg_profiles.yaml
 
@@ -1054,18 +1057,19 @@ python fit_profile_from_real.py "..\..\data\recordings\morning_session.txt" --na
   RMSSD    = 130 мс  → hrv_rmssd_baseline
   ```
 
-  ### Типичные ошибки
-  | Ошибка | Причина | Решение |
+### Типичные ошибки
+
+| Ошибка | Причина | Решение |
 | --- | --- | --- |
 | `FileNotFoundError` | Неверный путь к файлу | Укажите полный путь или проверьте рабочую директорию |
-| `ValueError: invalid literal for int()` | Файл не в формате Polar H10 | Проверьте наличие секций `[ECG]` и `[RR]` |
-| `IndexError: list index out of range` | Слишком короткая запись (<500 отсчётов) | Нужна запись длительностью ≥5 секунд |
+| `ValueError: can't extend empty axis 0…` | Файл не в формате Polar H10 — сигнал пустой | Проверьте наличие секций `[ECG]` и `[RR]` в файле |
+| `RuntimeWarning: Mean of empty slice` → `ValueError: cannot convert float NaN to integer` | Слишком короткая запись — R-пики не найдены | Нужна запись длительностью ≥5 секунд |
 | Профиль не появляется в GUI | Не перегенерирована БД | Запустите `python prepare_database.py` после создания профиля |
 
 ### Связь с другими скриптами
 ```bash
 # 1. Создали профиль из реальной записи
-python fit_profile_from_real.py "record.txt" --name real --activate
+python fit_profile_from_real.py "record.teamloggerh10" --name real --activate
 
 # 2. Перегенерировали БД — все записи будут использовать этот профиль
 python prepare_database.py
