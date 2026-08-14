@@ -169,7 +169,6 @@ analysis_HVR\src\
 |   |   migrate_split_raw.py       Миграция: вынос raw_data из ecg_records в отдельную таблицу ecg_raw
 |   |   models.py                  ORM-модели SQLAlchemy: Athlete, ECGRecord, ECGRaw и get_session
 |   |   prepare_database.py        Главный скрипт подготовки тестовой БД с прогресс-баром
-|   |   python                     Служебный/временный файл (не используется)
 |   |   schedule_engine.py         Построение расписаний записей ЭКГ для каждого спортсмена
 |   |
 \---tests
