@@ -6,6 +6,7 @@ import os
 import sys
 import uuid
 import datetime
+import time
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -104,7 +105,9 @@ class ECGViewerApp(ctk.CTkToplevel):
     def __init__(self, master, db_path=None):
         super().__init__(master)
 
-        self.report_callback_exception = lambda *args: None
+        import traceback
+        self.report_callback_exception = lambda *a: (print("❌ ОШИБКА в callback:"),
+                                                     traceback.print_exception(*a))
 
         if db_path is None:
             self.db_path = get_db_path()
@@ -114,8 +117,20 @@ class ECGViewerApp(ctk.CTkToplevel):
         self.title("Просмотр ЭКГ — Анализ ВРС")
         self.geometry("1400x800")
 
+        self._zoom_timer = None       # таймер debouncing зума
+        self._zoom_preview_active = False
+
+        self._year_colors = []    # последний цвет каждой клетки
+        self._month_labels = []   # id подписей месяцев
+        self._week_data = []        
+        self._year_cells = []         
+        self._cache = {} 
         self.athletes = []
         self.selected_athlete = None
+
+        self._tp_click_t = 0.0     # время последнего клика по годовому графику
+        self._tp_click_x = -1.0
+        self._tp_click_y = -1.0
 
         self.cell = 14
         self.step = self.cell + 1
@@ -129,11 +144,67 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._max_year = self._view_year
 
         self._tp_last = None
+        self._total_weeks = 53
+        self._year_xlim = (0.0, 53.0)
 
         self._create_widgets()
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
         self._load_year_range()
         self._load_athletes()
+
+    def _get_data(self, athlete_id):
+        """Кэш агрегатов спортсмена: первый раз из БД, дальше из памяти."""
+        if athlete_id in self._cache:
+            return self._cache[athlete_id]
+
+        session = get_session(self.db_path)
+        try:
+            rows = (session.query(ECGRecord.recorded_at, ECGRecord.status,
+                                  ECGRecord.sdnn, ECGRecord.stress_si)
+                    .filter(ECGRecord.athlete_id == athlete_id)
+                    .all())
+        finally:
+            session.close()
+
+        date_map, block_map = {}, {}
+        week_tp, week_si, day_tp, day_si = {}, {}, {}, {}
+        for recorded_at, status, sdnn, si in rows:
+            dt = datetime.datetime.fromisoformat(recorded_at)
+            dkey = dt.date().isoformat()
+            bkey = (dkey, dt.hour // 3)
+            for m in (date_map.setdefault(dkey, {"count": 0, "worst": None}),
+                      block_map.setdefault(bkey, {"count": 0, "worst": None})):
+                m["count"] += 1
+                if status == 'crit':
+                    m["worst"] = 'crit'
+                elif status == 'warn' and m["worst"] != 'crit':
+                    m["worst"] = 'warn'
+            w = self._global_week(dt.date())
+            if sdnn is not None:
+                tp = sdnn * sdnn
+                week_tp.setdefault(w, []).append(tp)
+                day_tp.setdefault(dkey, []).append(tp)
+            if si is not None:
+                week_si.setdefault(w, []).append(si)
+                day_si.setdefault(dkey, []).append(si)
+
+        data = {
+            "date_map":  date_map,
+            "block_map": block_map,
+            "week_data": [(w, self._mean(week_tp.get(w, [])), self._mean(week_si.get(w, [])))
+                          for w in sorted(set(week_tp) | set(week_si))],
+            "day_tp":    {k: self._mean(v) for k, v in day_tp.items()},
+            "day_si":    {k: self._mean(v) for k, v in day_si.items()},
+        }
+        self._cache[athlete_id] = data
+        return data
+
+    def _invalidate_cache(self, athlete_id=None):
+        """Сброс кэша: после импорта/удаления записей."""
+        if athlete_id is None:
+            self._cache.clear()
+        else:
+            self._cache.pop(athlete_id, None)
 
     def _set_status(self, text):
         """Показывает сообщение в статус-баре (автоочистка через 8 сек)."""
@@ -145,8 +216,11 @@ class ECGViewerApp(ctk.CTkToplevel):
 
     def _on_closing(self):
         """Корректное закрытие: отключаем matplotlib, закрываем все окна."""
-        # 1. Подавляем все отложенные callback-ошибки
-        self.report_callback_exception = lambda *args: None
+
+        def _show_err(*args):
+            import traceback
+            traceback.print_exception(*args)
+        self.report_callback_exception = _show_err
 
         # 2. Закрываем дочернее окно ECGListDialog, если открыто
         if getattr(self, "_ecg_list_dlg", None) is not None:
@@ -293,6 +367,8 @@ class ECGViewerApp(ctk.CTkToplevel):
         self.plt_area.bind("<Configure>", self._on_tp_configure)
         self.canvas_tp.mpl_connect("button_press_event", self._on_tp_click)
         self.canvas_tp.mpl_connect("button_press_event", self._on_week_plot_click)
+        self.canvas_tp.mpl_connect("scroll_event", self._on_tp_scroll)
+        self.canvas_tp.mpl_connect("button_press_event", self._on_tp_right_click)    
 
         self._apply_canvas_sizes()
 
@@ -321,6 +397,7 @@ class ECGViewerApp(ctk.CTkToplevel):
             self.cell = cell
             self.step = cell + 1
             self._apply_canvas_sizes()
+            self._year_cells = []   # ← ДОБАВИТЬ
             if self.selected_athlete:
                 self._draw_density(self.selected_athlete[0])
 
@@ -333,6 +410,28 @@ class ECGViewerApp(ctk.CTkToplevel):
                                     forward=False)
         self.fig_tp.tight_layout()
         self.canvas_tp.draw_idle()
+
+    def _on_tp_double_click(self, event):
+        """Двойной клик по годовому графику: масштаб = 53 недели кликнутого года."""
+        if not event.dblclick:
+            return
+        if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
+            return
+        if event.xdata is None:
+            return
+        w = int(event.xdata)
+        if not (0 <= w < self._total_weeks):
+            return
+
+        d = self._date_from_global_week(w)
+        jan1 = datetime.date(d.year, 1, 1)
+        year_monday = jan1 - datetime.timedelta(days=jan1.weekday())
+        lo = float(self._global_week(year_monday))
+        hi = min(float(self._total_weeks), lo + 53.0)
+
+        self._year_xlim = (lo, hi)          # ровно 53 недели этого года
+        self._update_year_bars()
+        self._set_status(f"🔍 Масштаб: 53 недели — {d.year}")
 
     # =========================================================
     # CRUD спортсмена (ORM)
@@ -468,12 +567,14 @@ class ECGViewerApp(ctk.CTkToplevel):
                 return
             session.delete(a)
             session.commit()
+            self._invalidate_cache(aid)             
         except Exception as e:
             session.rollback()
             messagebox.showerror("Ошибка", f"Не удалось удалить:\n{e}")
             return
         finally:
             session.close()
+
 
         self._set_status(f"🗑 Удалён: {fio}")
         self._load_athletes()
@@ -517,8 +618,11 @@ class ECGViewerApp(ctk.CTkToplevel):
                 stats[status] += 1
                 if aid:
                     changed_aid = aid
-                self._set_status(f"⏳ Импорт... {stats['added'] + stats['dup'] + stats['skip'] + stats['err']}/{len(paths)}")
-                self.update_idletasks()
+                # Обновляем статус только каждые 10 файлов
+                total = stats['added'] + stats['dup'] + stats['skip'] + stats['err']
+                if total % 10 == 0 or total == len(paths):
+                    self._set_status(f"⏳ Импорт... {total}/{len(paths)}")
+                    self.update_idletasks()
 
             # Вместо messagebox — статус-бар
             msg = (f"✅ Импорт завершён: {stats['added']} добавлено, "
@@ -588,6 +692,7 @@ class ECGViewerApp(ctk.CTkToplevel):
             session.flush()
             rec.raw = ECGRaw(record_id=rec.id, raw_data=raw)
             session.commit()
+            self._invalidate_cache(aid) 
         except Exception as e:
             session.rollback()
             if interactive:
@@ -620,11 +725,26 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._min_year = int(mn[:4]) if mn else today
         self._max_year = max(int(mx[:4]) if mx else today, today)
 
+        # === Сквозная шкала недель через все годы ===
+        jan1 = datetime.date(self._min_year, 1, 1)
+        self._global_start = jan1 - datetime.timedelta(days=jan1.weekday())
+        dec31 = datetime.date(self._max_year, 12, 31)
+        self._total_weeks = (dec31 - self._global_start).days // 7 + 1
+        self._year_xlim = (0.0, float(self._total_weeks))
+
+    def _global_week(self, d):
+        """Номер недели на сквозной шкале всех лет."""
+        return (d - self._global_start).days // 7
+
+    def _date_from_global_week(self, w):
+        return self._global_start + datetime.timedelta(weeks=w)
+
     def _change_year(self, delta):
         new = self._view_year + delta
         if self._min_year <= new <= self._max_year:
             self._view_year = new
             self._selected_week = None
+            # self._year_cells = []  ← УБРАТЬ: геометрия сетки одинакова для всех лет
             if self.selected_athlete:
                 self._draw_density(self.selected_athlete[0])
                 self._draw_tp(self.selected_athlete[0])
@@ -725,56 +845,94 @@ class ECGViewerApp(ctk.CTkToplevel):
                 "высокий": "#ff8c42", "перенапряжение": COL_CRIT
                 }.get(stress_level(si), COL_TEXT_DIM)
 
-    def _set_month_ticks(self, ax):
-        ticks, names = [], []
-        for m in range(1, 13):
-            w = (datetime.date(self._view_year, m, 1) - self._year_start).days // 7
-            if 0 <= w < 53:
-                ticks.append(w)
-                names.append(MONTHS_RU[m - 1])
-        ax.set_xticks(ticks)
-        ax.set_xticklabels(names)
-        ax.set_xlim(0, 53)
+    def _set_year_ticks(self, ax):
+        lo, hi = self._year_xlim
+        ax.set_xlim(lo, hi)
+        span = hi - lo
 
-    def _draw_tp(self, athlete_id):
-        session = get_session(self.db_path)
-        try:
-            rows = (session.query(ECGRecord.recorded_at,
-                                  ECGRecord.sdnn,
-                                  ECGRecord.stress_si)
-                    .filter(ECGRecord.athlete_id == athlete_id)
-                    .all())
-        finally:
-            session.close()
+        if span > 100:
+            # Далеко отдалено: подписываем НАЧАЛА ЛЕТ
+            ticks, names = [], []
+            for y in range(self._min_year, self._max_year + 1):
+                w = self._global_week(datetime.date(y, 1, 1))
+                if lo - 1 <= w <= hi + 1:
+                    ticks.append(w)
+                    names.append(str(y))
+            ax.set_xticks(ticks)
+            ax.set_xticklabels(names, fontsize=9)
+        elif span > 20:
+            # Средний зум: месяцы, январь подписываем годом
+            ticks, names = [], []
+            d0 = self._date_from_global_week(int(max(lo, 0)))
+            d1 = self._date_from_global_week(int(min(hi, self._total_weeks)))
+            y, m = d0.year, d0.month
+            while (y, m) <= (d1.year, d1.month):
+                ticks.append(self._global_week(datetime.date(y, m, 1)))
+                names.append(str(y) if m == 1 else MONTHS_RU[m - 1])
+                m += 1
+                if m > 12: m, y = 1, y + 1
+            ax.set_xticks(ticks)
+            ax.set_xticklabels(names, fontsize=8)
+        else:
+            # Сильный зум: даты недель
+            step = 2 if span > 10 else 1
+            ticks = list(range(int(max(lo, 0)), int(min(hi, self._total_weeks)) + 1, step))
+            ax.set_xticks(ticks)
+            ax.set_xticklabels([self._date_from_global_week(w).strftime("%d.%m.%y")
+                                for w in ticks], fontsize=7)
 
-        jan1 = datetime.date(self._view_year, 1, 1)
-        dec31 = datetime.date(self._view_year, 12, 31)
-        week_tp, day_tp, week_si, day_si = {}, {}, {}, {}
-        for recorded_at, sdnn, si in rows:
-            d = datetime.datetime.fromisoformat(recorded_at).date()
-            if sdnn is not None:
-                tp = sdnn * sdnn
-                day_tp.setdefault(d.isoformat(), []).append(tp)
-                if jan1 <= d <= dec31:
-                    week_tp.setdefault((d - self._year_start).days // 7, []).append(tp)
-            if si is not None:
-                day_si.setdefault(d.isoformat(), []).append(si)
-                if jan1 <= d <= dec31:
-                    week_si.setdefault((d - self._year_start).days // 7, []).append(si)
+    def _update_year_bars(self):
+        """Годовые бары: видимый диапазон бьётся на ≤53 корзин, в каждой — МАКСИМУМ."""
+        lo, hi = self._year_xlim
+        span = hi - lo
+        step = span / 53.0 if span > 53 else 1.0
+        n = int(span // step) + 1
+
+        tp_max, si_max, hit = [0.0] * n, [0.0] * n, [False] * n
+        for w, tp, si in self._week_data:
+            if not (lo <= w < hi):
+                continue
+            i = min(n - 1, int((w - lo) / step))
+            hit[i] = True
+            if tp > tp_max[i]: tp_max[i] = tp
+            if si > si_max[i]: si_max[i] = si
+
+        xs  = [lo + i * step for i in range(n) if hit[i]]
+        tps = [tp_max[i] for i in range(n) if hit[i]]
+        sis = [si_max[i] for i in range(n) if hit[i]]
+
+        yr_label = (str(self._view_year) if self._min_year == self._max_year
+                    else f"{self._min_year}–{self._max_year}")
 
         self.ax_tp_year.clear()
         self._style_ax(self.ax_tp_year)
-        xs = [w for w in range(53) if w in week_tp]
-        ys = [self._mean(week_tp[w]) for w in xs]
-        self.ax_tp_year.bar(xs, ys, width=1.0, color=COL_TP_YEAR, align='edge')
-        self._set_month_ticks(self.ax_tp_year)
+        self.ax_tp_year.bar(xs, tps, width=step, color=COL_TP_YEAR, align='edge')
+        self._set_year_ticks(self.ax_tp_year)
         self.ax_tp_year.set_ylabel("мс²", color=COL_TEXT_LIGHT)
-        self.ax_tp_year.set_title(f"TP по неделям, {self._view_year}",
+        self.ax_tp_year.set_title(f"TP по неделям ({yr_label})",
                                   color=COL_TEXT_LIGHT, fontsize=9)
 
+        self.ax_si_year.clear()
+        self._style_ax(self.ax_si_year)
+        self.ax_si_year.bar(xs, sis, width=step,
+                            color=[self._si_color(v) for v in sis], align='edge')
+        self._set_year_ticks(self.ax_si_year)
+        self.ax_si_year.set_ylabel("ИС", color=COL_TEXT_LIGHT)
+        self.ax_si_year.set_title(f"Стресс по неделям ({yr_label})",
+                                  color=COL_TEXT_LIGHT, fontsize=9)
+        
+        self.canvas_tp.draw_idle()   # ← ОСТАВИТЬ
+
+    def _draw_tp(self, athlete_id):
+        """Отрисовка графиков TP/ИС из кэша."""
+        data = self._get_data(athlete_id)
+        self._week_data = data["week_data"]
+        day_tp, day_si = data["day_tp"], data["day_si"]
+
+        # --- Недельные мини-графики TP/ИС (из кэша) ---
         self.ax_tp_week.clear()
         self._style_ax(self.ax_tp_week)
-        ys7 = [self._mean(day_tp.get((self._week_start + datetime.timedelta(days=d)).isoformat()))
+        ys7 = [day_tp.get((self._week_start + datetime.timedelta(days=d)).isoformat(), 0)
                for d in range(7)] if self._week_start else [0] * 7
         self.ax_tp_week.bar(range(7), ys7, color=COL_TP_WEEK, align='edge')
         self.ax_tp_week.set_xticks(range(7))
@@ -784,19 +942,9 @@ class ECGViewerApp(ctk.CTkToplevel):
             self.ax_tp_week.set_title(f"{self._week_start:%d.%m}–{we:%d.%m}",
                                       color=COL_TEXT_LIGHT, fontsize=7)
 
-        self.ax_si_year.clear()
-        self._style_ax(self.ax_si_year)
-        xs = [w for w in range(53) if w in week_si]
-        ys = [self._mean(week_si[w]) for w in xs]
-        self.ax_si_year.bar(xs, ys, width=1.0, color=[self._si_color(v) for v in ys], align='edge')
-        self._set_month_ticks(self.ax_si_year)
-        self.ax_si_year.set_ylabel("ИС", color=COL_TEXT_LIGHT)
-        self.ax_si_year.set_title(f"Стресс по неделям, {self._view_year}",
-                                  color=COL_TEXT_LIGHT, fontsize=9)
-
         self.ax_si_week.clear()
         self._style_ax(self.ax_si_week)
-        ys7 = [self._mean(day_si.get((self._week_start + datetime.timedelta(days=d)).isoformat()))
+        ys7 = [day_si.get((self._week_start + datetime.timedelta(days=d)).isoformat(), 0)
                for d in range(7)] if self._week_start else [0] * 7
         self.ax_si_week.bar(range(7), ys7, color=[self._si_color(v) for v in ys7], align='edge')
         self.ax_si_week.set_xticks(range(7))
@@ -806,8 +954,65 @@ class ECGViewerApp(ctk.CTkToplevel):
             self.ax_si_week.set_title(f"{self._week_start:%d.%m}–{we:%d.%m}",
                                       color=COL_TEXT_LIGHT, fontsize=7)
 
-        self.fig_tp.tight_layout()
+        # --- Годовые бары (метод сам делает draw_idle) ---
+        self._update_year_bars()
+
+    def _on_tp_scroll(self, event):
+        """Зум колесом с debouncing: мгновенный preview + финальная перерисовка."""
+        if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
+            return
+        if event.xdata is None:
+            return
+
+        # === 1. Вычисляем новый xlim ===
+        lo, hi = self._year_xlim
+        span = hi - lo
+        factor = 0.85 if event.button == "up" else 1.18  # мягче для плавности
+
+        new_span = min(float(self._total_weeks), max(4.0, span * factor))
+        if new_span >= self._total_weeks:
+            self._year_xlim = (0.0, float(self._total_weeks))
+        else:
+            x = event.xdata
+            ratio = (x - lo) / span
+            new_lo = x - ratio * new_span
+            new_hi = new_lo + new_span
+            if new_lo < 0:
+                new_lo, new_hi = 0.0, new_span
+            if new_hi > self._total_weeks:
+                new_hi, new_lo = float(self._total_weeks), self._total_weeks - new_span
+            self._year_xlim = (new_lo, new_hi)
+
+        # === 2. Мгновенный preview: меняем только xlim (без перерисовки баров) ===
+        self._apply_zoom_preview()
+
+        # === 3. Debouncing: финальная перерисовка через 80 мс тишины ===
+        if self._zoom_timer is not None:
+            self.after_cancel(self._zoom_timer)
+        self._zoom_timer = self.after(80, self._finalize_zoom)
+
+    def _apply_zoom_preview(self):
+        """Быстрое обновление: только xlim + тики, без перерисовки баров."""
+        lo, hi = self._year_xlim
+        for ax in (self.ax_tp_year, self.ax_si_year):
+            ax.set_xlim(lo, hi)
+            self._set_year_ticks(ax)
+        # blit=False, draw_idle — только для видимых изменений осей
         self.canvas_tp.draw_idle()
+        self._zoom_preview_active = True
+
+    def _finalize_zoom(self):
+        self._zoom_timer = None
+        self._zoom_preview_active = False
+        self._update_year_bars()
+
+    def _on_tp_right_click(self, event):
+        if event.button != 3:
+            return
+        if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
+            return
+        self._year_xlim = (0.0, float(self._total_weeks))
+        self._update_year_bars()   # полная перерисовка
 
     def _cell_color(self, count, worst, base):
         if worst == 'crit':
@@ -821,26 +1026,10 @@ class ECGViewerApp(ctk.CTkToplevel):
         return base
 
     def _draw_density(self, athlete_id):
-        session = get_session(self.db_path)
-        try:
-            rows = (session.query(ECGRecord.recorded_at, ECGRecord.status)
-                    .filter(ECGRecord.athlete_id == athlete_id)
-                    .all())
-        finally:
-            session.close()
-
-        date_map, self._day_block_map = {}, {}
-        for recorded_at, status in rows:
-            dt = datetime.datetime.fromisoformat(recorded_at)
-            dkey = dt.date().isoformat()
-            bkey = (dkey, dt.hour // 3)
-            for m in (date_map.setdefault(dkey, {"count": 0, "worst": None}),
-                      self._day_block_map.setdefault(bkey, {"count": 0, "worst": None})):
-                m["count"] += 1
-                if status == 'crit':
-                    m["worst"] = 'crit'
-                elif status == 'warn' and m["worst"] != 'crit':
-                    m["worst"] = 'warn'
+        """Отрисовка heatmap из кэша."""
+        data = self._get_data(athlete_id)
+        date_map = data["date_map"]
+        self._day_block_map = data["block_map"]
 
         today = datetime.date.today()
         jan1 = datetime.date(self._view_year, 1, 1)
@@ -849,36 +1038,59 @@ class ECGViewerApp(ctk.CTkToplevel):
         self.label_year.configure(text=str(self._view_year))
 
         s, c = self.step, self.cell
-        self.canvas_year.delete('all')
-        for m in range(1, 13):
-            w = (datetime.date(self._view_year, m, 1) - self._year_start).days // 7
+
+        # === Сетка создаётся ОДИН РАЗ (геометрия не зависит от года) ===
+        if len(self._year_cells) != 53 * 7:
+            self.canvas_year.delete('all')
+            self._year_cells, self._year_colors, self._month_labels = [], [], []
+            for w in range(53):
+                for d in range(7):
+                    x, y = YEAR_X0 + w * s, YEAR_Y0 + d * s
+                    cid = self.canvas_year.create_rectangle(
+                        x, y, x + c, y + c, fill=COL_BG_DARK, outline='')
+                    self._year_cells.append(cid)
+                    self._year_colors.append(None)
+            for m in range(12):
+                tid = self.canvas_year.create_text(
+                    -100, 8, text=MONTHS_RU[m], fill=COL_TEXT_DIM,
+                    anchor='w', font=('Segoe UI', 9))
+                self._month_labels.append(tid)
+
+        # === Подписи месяцев: только двигаем ===
+        for m in range(12):
+            w = (datetime.date(self._view_year, m + 1, 1) - self._year_start).days // 7
             if 0 <= w < 53:
-                self.canvas_year.create_text(YEAR_X0 + w * s, 8, text=MONTHS_RU[m - 1],
-                                             fill=COL_TEXT_DIM, anchor='w', font=('Segoe UI', 9))
+                self.canvas_year.coords(self._month_labels[m], YEAR_X0 + w * s, 8)
+            else:
+                self.canvas_year.coords(self._month_labels[m], -100, 8)
+
+        # === Цвета клеток: itemconfigure только для изменившихся ===
+        idx = 0
         for w in range(53):
             for d in range(7):
                 day = self._year_start + datetime.timedelta(weeks=w, days=d)
-                x, y = YEAR_X0 + w * s, YEAR_Y0 + d * s
                 if day > today or day < jan1 or day > dec31:
                     color = COL_FUTURE
                 else:
                     base = COL_WEEKEND if d >= 5 else COL_WEEKDAY
                     info = date_map.get(day.isoformat())
                     color = self._cell_color(info["count"], info["worst"], base) if info else base
-                self.canvas_year.create_rectangle(x, y, x + c, y + c, fill=color, outline='')
+                if self._year_colors[idx] != color:
+                    self.canvas_year.itemconfigure(self._year_cells[idx], fill=color)
+                    self._year_colors[idx] = color
+                idx += 1
 
+        # === Рамка выбранной недели ===
+        self.canvas_year.delete('sel')
+        # === Рамка выбранной недели ===
+        self.canvas_year.delete('sel')
         if self._selected_week is not None:
             x = YEAR_X0 + self._selected_week * s
             self.canvas_year.create_rectangle(x - 1, YEAR_Y0 - 1, x + c + 1,
                                               YEAR_Y0 + 7 * s, outline=COL_SELECTION,
-                                              width=1, tags='sel')
-
-        if self._selected_week is None:
-            anchor = dec31 if self._view_year < today.year else today - datetime.timedelta(days=7)
-            self._draw_week(anchor - datetime.timedelta(days=anchor.weekday()))
-        else:
+                                              width=2, tags='sel')
             self._draw_week(self._year_start + datetime.timedelta(weeks=self._selected_week))
-
+            
     def _draw_week(self, week_start):
         self._week_start = week_start
         today = datetime.date.today()
@@ -908,7 +1120,7 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._selected_week = w
         self._draw_week(self._year_start + datetime.timedelta(weeks=w))
 
-        self.canvas_year.delete('sel')
+        self.canvas_year.delete('sel')    # выбранная неделя убирает пунктирный якорь
         x = YEAR_X0 + w * self.step
         self.canvas_year.create_rectangle(x - 1, YEAR_Y0 - 1, x + self.cell + 1,
                                           YEAR_Y0 + 7 * self.step,
@@ -921,12 +1133,61 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._select_week(w)
 
     def _on_tp_click(self, event):
+        if event.button != 1:
+            return
         if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
             return
         if event.xdata is None:
             return
         w = int(event.xdata)
-        self.after(0, lambda: self._select_week(w))
+        if not (0 <= w < self._total_weeks):
+            return
+
+        # === Ручная детекция двойного клика (TkAgg не даёт event.dblclick) ===
+        now = time.monotonic()
+        is_dbl = (now - self._tp_click_t < 0.45 and
+                  abs(event.x - self._tp_click_x) < 6 and
+                  abs(event.y - self._tp_click_y) < 6)
+        self._tp_click_t = now
+        self._tp_click_x = event.x
+        self._tp_click_y = event.y
+
+        if is_dbl:
+            # Зум = 53 недели кликнутого года
+            d = self._date_from_global_week(w)
+            jan1 = datetime.date(d.year, 1, 1)
+            year_monday = jan1 - datetime.timedelta(days=jan1.weekday())
+            lo = float(self._global_week(year_monday))
+            hi = min(float(self._total_weeks), lo + 53.0)
+            self._year_xlim = (lo, hi)
+            self._update_year_bars()
+            self._set_status(f"🔍 Масштаб: 53 недели — {d.year}")
+            return
+
+        # Одинарный клик — выбор недели (как раньше)
+        week_start = self._date_from_global_week(w)
+        self.after(0, lambda: self._select_week_by_date(week_start))
+
+    def _select_week_by_date(self, week_start):
+        """Клик по годовому графику: переключает год и выделяет неделю."""
+        if not self.selected_athlete:
+            return
+        aid = self.selected_athlete[0]
+
+        # Неделя внутри года кликнутой даты
+        jan1 = datetime.date(week_start.year, 1, 1)
+        year_start = jan1 - datetime.timedelta(days=jan1.weekday())
+        w = (week_start - year_start).days // 7
+        if not (0 <= w < 53):
+            return
+
+        # Год переключаем ДО перерисовки
+        self._view_year = week_start.year
+        # Рамка выставляется ДО перерисовки — _draw_density нарисует её сам
+        self._selected_week = w
+
+        self._draw_density(aid)   # сетка + рамка 'sel' + недельная панель
+        self._draw_tp(aid)        # графики TP/ИС
 
     def _week_day_has_records(self, day):
         """Есть ли у выбранного спортсмена записи в этот день."""
@@ -1037,10 +1298,16 @@ class ECGViewerApp(ctk.CTkToplevel):
             on_change=self._on_ecg_list_changed)
 
     def _on_ecg_list_changed(self):
+        self._invalidate_cache()  
         if self.selected_athlete:
             aid = self.selected_athlete[0]
             self._draw_density(aid)
             self._draw_tp(aid)
+
+    def _clear_week_frames(self):
+        """Удаляет ОБЕ рамки: и выделение, и якорь."""
+        self.canvas_year.delete('sel')
+        self.canvas_year.delete('anchor')            
 
 if __name__ == '__main__':
     root = tk.Tk()
