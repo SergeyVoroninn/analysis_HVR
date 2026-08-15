@@ -135,19 +135,58 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._load_year_range()
         self._load_athletes()
 
+    def _set_status(self, text):
+        """Показывает сообщение в статус-баре (автоочистка через 8 сек)."""
+        self.status_var.set(text)
+        # Сбрасываем предыдущий таймер, если был
+        if hasattr(self, "_status_timer") and self._status_timer:
+            self.after_cancel(self._status_timer)
+        self._status_timer = self.after(8000, lambda: self.status_var.set("Готово"))        
+
     def _on_closing(self):
-        """Закрытие с подавлением Tcl-ошибок."""
+        """Корректное закрытие: отключаем matplotlib, закрываем все окна."""
+        # 1. Подавляем все отложенные callback-ошибки
+        self.report_callback_exception = lambda *args: None
+
+        # 2. Закрываем дочернее окно ECGListDialog, если открыто
+        if getattr(self, "_ecg_list_dlg", None) is not None:
+            try:
+                if self._ecg_list_dlg.winfo_exists():
+                    self._ecg_list_dlg.destroy()
+            except Exception:
+                pass
+            self._ecg_list_dlg = None
+
+        # 3. Отключаем matplotlib canvas (освобождает Tk-ресурсы)
         try:
-            # Подавляем ошибки от after callbacks
-            self.report_callback_exception = lambda *args: None
-            self.quit()
+            if hasattr(self, 'canvas_tp'):
+                self.canvas_tp.get_tk_widget().destroy()
         except Exception:
             pass
+
+        # 4. Удаляем все отложенные after() callbacks
+        try:
+            for after_id in self.tk.eval('after info').split():
+                try:
+                    self.after_cancel(after_id)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # 5. Закрываем текущее окно
         try:
             self.destroy()
         except Exception:
             pass
-        os._exit(0)
+
+        # 6. Закрываем корневое окно (скрытый Tk())
+        try:
+            if self.master is not None:
+                self.master.quit()
+                self.master.destroy()
+        except Exception:
+            pass
 
     # =========================================================
     # Интерфейс
@@ -172,6 +211,7 @@ class ECGViewerApp(ctk.CTkToplevel):
         self.tree_athletes.column("Возраст", width=60, anchor="center")
         self.tree_athletes.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         self.tree_athletes.bind("<<TreeviewSelect>>", self._on_athlete_select)
+        self.tree_athletes.bind("<Double-Button-1>", self._on_athlete_double_click)        
 
         mgmt = ctk.CTkFrame(self.left_panel, fg_color="transparent")
         mgmt.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
@@ -223,8 +263,8 @@ class ECGViewerApp(ctk.CTkToplevel):
         self.label_week_title.pack()
         self.canvas_week = tk.Canvas(self.week_box, bg=COL_BG_DARK, highlightthickness=0)
         self.canvas_week.pack()
-        self.canvas_week.bind("<Button-1>", self._on_week_click)
-        self.canvas_week.bind("<Double-Button-1>", self._on_week_click)
+        self.canvas_week.bind("<Button-1>", self._on_week_single_click)
+        self.canvas_week.bind("<Double-Button-1>", self._on_week_double_click)
 
         self.tp_frame = ctk.CTkFrame(self.right_panel)
         self.tp_frame.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
@@ -255,6 +295,15 @@ class ECGViewerApp(ctk.CTkToplevel):
         self.canvas_tp.mpl_connect("button_press_event", self._on_week_plot_click)
 
         self._apply_canvas_sizes()
+
+        # === Статус-бар внизу окна ===
+        self.status_var = tk.StringVar(value="Готово")
+        self.status_bar = ctk.CTkLabel(
+            self, textvariable=self.status_var,
+            font=ctk.CTkFont(size=11), anchor="w",
+            fg_color=COL_BG_WIDGET, corner_radius=0,
+            padx=10, pady=4)
+        self.status_bar.grid(row=1, column=0, columnspan=2, sticky="ew")        
 
     def _apply_canvas_sizes(self):
         s = self.step
@@ -357,62 +406,76 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._load_athletes(select_id=new_id)
 
     def _edit_athlete(self):
+        # Защита от повторного входа (мигание окна)
+        if getattr(self, "_edit_busy", False):
+            return
         if not self.selected_athlete:
             return
-        aid = self.selected_athlete[0]
-        full = self._get_athlete_full(aid)
-        if not full:
-            return
-        dlg = AthleteDialog(self, "Редактирование спортсмена", data=full)
-        self.wait_window(dlg)
-        if not dlg.result:
-            return
-        d = dlg.result
 
-        session = get_session(self.db_path)
+        self._edit_busy = True
         try:
-            a = session.get(Athlete, aid)
-            if a is None:
+            aid = self.selected_athlete[0]
+            full = self._get_athlete_full(aid)
+            if not full:
                 return
-            a.last_name = d["last_name"]
-            a.first_name = d["first_name"]
-            a.middle_name = d["middle_name"]
-            a.gender = d["gender"]
-            a.birth_date = d["birth_date"]
-            a.height_cm = d["height_cm"]
-            a.weight_kg = d["weight_kg"]
-            a.polar_id = d["polar_id"] or full["polar_id"]
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{e}")
-        finally:
-            session.close()
 
-        self._load_athletes(select_id=aid)
+            dlg = AthleteDialog(self, "Редактирование спортсмена", data=full)
+            self.wait_window(dlg)
+
+            if not dlg.result:
+                # === ОТМЕНА: дорисовываем графики выбранного спортсмена ===
+                # (отложенный рендер был отменён двойным кликом)
+                self._show_athlete_details()
+                self._do_render(aid)
+                return
+
+            d = dlg.result
+
+            session = get_session(self.db_path)
+            try:
+                a = session.get(Athlete, aid)
+                if a is None:
+                    return
+                a.last_name = d["last_name"]
+                a.first_name = d["first_name"]
+                a.middle_name = d["middle_name"]
+                a.gender = d["gender"]
+                a.birth_date = d["birth_date"]
+                a.height_cm = d["height_cm"]
+                a.weight_kg = d["weight_kg"]
+                a.polar_id = d["polar_id"] or full["polar_id"]
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{e}")
+            finally:
+                session.close()
+
+            self._load_athletes(select_id=aid)
+        finally:
+            self._edit_busy = False
 
     def _delete_athlete(self):
         if not self.selected_athlete:
             return
         aid = self.selected_athlete[0]
         fio = f"{self.selected_athlete[1]} {self.selected_athlete[2]}"
-        if not messagebox.askyesno("Удаление", f"Удалить {fio} и все его записи ЭКГ?"):
-            return
 
         session = get_session(self.db_path)
         try:
             a = session.get(Athlete, aid)
             if a is None:
                 return
-            # cascade="all, delete-orphan" удалит связанные ecg_records
             session.delete(a)
             session.commit()
         except Exception as e:
             session.rollback()
             messagebox.showerror("Ошибка", f"Не удалось удалить:\n{e}")
+            return
         finally:
             session.close()
 
+        self._set_status(f"🗑 Удалён: {fio}")
         self._load_athletes()
 
     # =========================================================
@@ -430,85 +493,86 @@ class ECGViewerApp(ctk.CTkToplevel):
         return dt_str, polar
 
     def _import_ecg(self):
-        path = filedialog.askopenfilename(
-            title="Выберите файл записи ЭКГ",
-            filetypes=[("Polar H10", "*.teamloggerh10"), ("Все файлы", "*.*")])
-        if not path:
+        if getattr(self, "_import_busy", False):
             return
+        self._import_busy = True
+        try:
+            paths = filedialog.askopenfilenames(
+                title="Выберите файлы записей ЭКГ (Ctrl/Shift — несколько)",
+                filetypes=[("Polar H10", "*.teamloggerh10"), ("Все файлы", "*.*")])
+            if not paths:
+                return
+            paths = list(paths)
+
+            if len(paths) == 1:
+                self._import_one(paths[0], interactive=True)
+                return
+
+            # === ПАКЕТНЫЙ РЕЖИМ ===
+            stats = {"added": 0, "dup": 0, "skip": 0, "err": 0}
+            changed_aid = None
+
+            for p in paths:
+                status, aid = self._import_one(p, interactive=False)
+                stats[status] += 1
+                if aid:
+                    changed_aid = aid
+                self._set_status(f"⏳ Импорт... {stats['added'] + stats['dup'] + stats['skip'] + stats['err']}/{len(paths)}")
+                self.update_idletasks()
+
+            # Вместо messagebox — статус-бар
+            msg = (f"✅ Импорт завершён: {stats['added']} добавлено, "
+                   f"{stats['dup']} дубл., {stats['skip']} пропущ., {stats['err']} ошиб.")
+            self._set_status(msg)
+
+            if changed_aid:
+                self._load_year_range()
+                self._load_athletes(select_id=changed_aid)
+        finally:
+            self._import_busy = False
+
+    def _import_one(self, path, interactive=True):
+        """Импортирует один файл. Возвращает (статус, athlete_id).
+        Статусы: 'added' | 'dup' | 'skip' | 'err'
+        """
         try:
             with open(path, "r", encoding="utf-8") as f:
                 raw = f.read()
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось прочитать файл:\n{e}")
-            return
+            if interactive:
+                messagebox.showerror("Ошибка", f"Не удалось прочитать файл:\n{e}")
+            return "err", None
 
         dt_str, polar = self._parse_header(raw)
         try:
             dt = datetime.datetime.strptime(dt_str, "%Y.%m.%d %H:%M:%S")
         except Exception:
             dt = datetime.datetime.now().replace(microsecond=0)
-
         recorded_at = dt.isoformat(sep=" ")
 
         session = get_session(self.db_path)
         try:
-            # === Ищем запись ТОЛЬКО по времени (без спортсмена) ===
+            # --- Дубликат по времени? Тихо пропускаем ---
             existing = (session.query(ECGRecord)
                         .filter(ECGRecord.recorded_at == recorded_at)
                         .first())
-
             if existing:
-                # Запись с таким временем уже есть
-                if existing.athlete_id == (self.selected_athlete[0] if self.selected_athlete else None):
-                    # Тот же спортсмен — это дубликат
-                    messagebox.showinfo("Импорт", "Эта запись уже есть в базе.")
-                    return
-                else:
-                    # Другой спортсмен — спрашиваем про перепривязку
-                    other_athlete = session.get(Athlete, existing.athlete_id)
-                    other_fio = f"{other_athlete.last_name} {other_athlete.first_name}" if other_athlete else "неизвестный"
-                    
-                    current_fio = f"{self.selected_athlete[1]} {self.selected_athlete[2]}" if self.selected_athlete else "не выбран"
-                    
-                    if messagebox.askyesno(
-                        "Запись уже существует",
-                        f"Запись от {dt:%d.%m.%Y %H:%M} уже привязана к спортсмену «{other_fio}».\n\n"
-                        f"Перенести её к «{current_fio}»?"
-                    ):
-                        # Перепривязываем
-                        if self.selected_athlete:
-                            existing.athlete_id = self.selected_athlete[0]
-                            session.commit()
-                            messagebox.showinfo("Импорт", f"Запись перенесена к «{current_fio}».")
-                            self._load_year_range()
-                            self._view_year = min(max(dt.year, self._min_year), self._max_year)
-                            self._load_athletes(select_id=self.selected_athlete[0])
-                        return
-                    else:
-                        return
+                return "dup", None
 
-            # === Записи нет — добавляем новую ===
-            # Поиск спортсмена по polar_id
+            # --- Поиск спортсмена по polar_id ---
             athlete = next((a for a in self.athletes if a[5] == polar), None)
             if athlete is None:
+                # Нет в базе — привязываем к выбранному (или пропускаем, если не выбран)
                 if not self.selected_athlete:
-                    messagebox.showwarning("Внимание", "Устройство не найдено, спортсмен не выбран.")
-                    return
-                fio = f"{self.selected_athlete[1]} {self.selected_athlete[2]}"
-                if messagebox.askyesno("Устройство не найдено",
-                                       f"Устройство {polar} отсутствует.\nПривязать к «{fio}»?"):
-                    athlete = self.selected_athlete
-                else:
-                    return
+                    return "skip", None
+                athlete = self.selected_athlete
 
             aid = athlete[0]
-
             rr = parse_rr(raw)
             m = calc_metrics(rr) if rr else None
             s = calc_stress(rr) if rr else None
             duration = sum(rr) / 1000.0 if rr else 0.0
 
-            # 1) Создаём запись без raw
             rec = ECGRecord(
                 athlete_id=aid,
                 recorded_at=recorded_at,
@@ -521,25 +585,23 @@ class ECGViewerApp(ctk.CTkToplevel):
                 stress_si=s["si"] if s else None,
             )
             session.add(rec)
-            session.flush()  # получаем rec.id
-
-            # 2) Сырые данные — в отдельной таблице
+            session.flush()
             rec.raw = ECGRaw(record_id=rec.id, raw_data=raw)
-
             session.commit()
-
         except Exception as e:
             session.rollback()
-            messagebox.showerror("Ошибка", f"Не удалось сохранить запись:\n{e}")
-            return
+            if interactive:
+                messagebox.showerror("Ошибка", f"Не удалось сохранить запись:\n{e}")
+            return "err", None
         finally:
             session.close()
 
-        messagebox.showinfo("Импорт", f"Запись добавлена:\n{dt:%d.%m.%Y %H:%M}")
-
-        self._load_year_range()
-        self._view_year = min(max(dt.year, self._min_year), self._max_year)
-        self._load_athletes(select_id=aid)
+        if interactive:
+            self._set_status(f"✅ Запись добавлена: {dt:%d.%m.%Y %H:%M}")
+            self._load_year_range()
+            self._view_year = min(max(dt.year, self._min_year), self._max_year)
+            self._load_athletes(select_id=aid)
+        return "added", aid
 
     # =========================================================
     # Загрузка диапазонов и списка спортсменов
@@ -597,6 +659,24 @@ class ECGViewerApp(ctk.CTkToplevel):
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось загрузить данные:\n{e}")
 
+    def _on_athlete_double_click(self, event):
+        """Двойной клик по спортсмену — редактирование без артефактов."""
+        item = self.tree_athletes.identify_row(event.y)
+        if not item:
+            return
+
+        # 1. Отменяем отложенный рендеринг от первого клика
+        if getattr(self, "_render_timer", None):
+            self.after_cancel(self._render_timer)
+            self._render_timer = None
+
+        # 2. Запоминаем спортсмена.
+        #    НЕ трогаем selection_set() — не дёргаем <<TreeviewSelect>> лишний раз
+        self.selected_athlete = next((a for a in self.athletes if a[0] == item), None)
+
+        # 3. Открываем диалог ТОЛЬКО после завершения всей последовательности кликов
+        self.after(30, self._edit_athlete)
+
     def _on_athlete_select(self, event):
         sel = self.tree_athletes.selection()
         if not sel:
@@ -604,7 +684,17 @@ class ECGViewerApp(ctk.CTkToplevel):
         athlete_id = sel[0]
         self.selected_athlete = next((a for a in self.athletes if a[0] == athlete_id), None)
         if self.selected_athlete:
+            # Детали показываем сразу (это быстро)
             self._show_athlete_details()
+            # Рендеринг графиков откладываем на 250 мс — ждём, не будет ли двойного клика
+            if hasattr(self, '_render_timer') and self._render_timer:
+                self.after_cancel(self._render_timer)
+            self._render_timer = self.after(250, self._do_render, athlete_id)
+
+    def _do_render(self, athlete_id):
+        """Отложенный рендеринг графиков после проверки на двойной клик."""
+        self._render_timer = None
+        if self.selected_athlete and self.selected_athlete[0] == athlete_id:
             self._draw_density(athlete_id)
             self._draw_tp(athlete_id)
 
@@ -838,7 +928,13 @@ class ECGViewerApp(ctk.CTkToplevel):
         w = int(event.xdata)
         self.after(0, lambda: self._select_week(w))
 
-    def _on_week_click(self, event):
+    def _week_day_has_records(self, day):
+        """Есть ли у выбранного спортсмена записи в этот день."""
+        day_iso = day.isoformat()
+        return any(k[0] == day_iso for k in self._day_block_map)
+
+    def _on_week_single_click(self, event):
+        """Клик по недельной карте: блок 3 ч, а если клетка пустая — весь день."""
         d = (event.x - WEEK_X0) // self.step
         b = (event.y - WEEK_Y0) // self.step
         if not (0 <= d < 7 and 0 <= b < 8) or not self._week_start:
@@ -846,14 +942,43 @@ class ECGViewerApp(ctk.CTkToplevel):
 
         day = self._week_start + datetime.timedelta(days=d)
 
-        # === НЕТ ЗАПИСЕЙ В БЛОКЕ — НЕ ОТКРЫВАЕМ ОКНО ===
-        if (day.isoformat(), b) not in self._day_block_map:
+        if (day.isoformat(), b) in self._day_block_map:
+            # Клик по заполненной клетке — список за 3-часовой блок
+            dt_from = datetime.datetime.combine(day, datetime.time(b * 3, 0))
+            dt_to = dt_from + datetime.timedelta(hours=3)
+            title = f"ЭКГ за {day:%d.%m.%Y} {b*3:02d}:00–{(b*3+3)%24:02d}:00"
+        elif self._week_day_has_records(day):
+            # Клетка пустая, но в дне есть записи — список за весь день
+            dt_from = datetime.datetime.combine(day, datetime.time(0, 0))
+            dt_to = datetime.datetime.combine(day, datetime.time(23, 59, 59))
+            title = f"ЭКГ за {day:%d.%m.%Y}"
+        else:
+            return  # день без записей
+
+        if getattr(self, "_week_click_timer", None):
+            self.after_cancel(self._week_click_timer)
+        self._week_click_timer = self.after(
+            250, lambda: self._open_ecg_list(dt_from, dt_to, title))
+
+    def _on_week_double_click(self, event):
+        """Двойной клик по колонке дня — список за весь день."""
+        # Отменяем отложенный одинарный клик
+        if getattr(self, "_week_click_timer", None):
+            self.after_cancel(self._week_click_timer)
+            self._week_click_timer = None
+
+        d = (event.x - WEEK_X0) // self.step
+        if not (0 <= d < 7) or not self._week_start:
             return
 
-        dt_from = datetime.datetime.combine(day, datetime.time(b * 3, 0))
-        dt_to = dt_from + datetime.timedelta(hours=3)
-        title = f"ЭКГ за {day:%d.%m.%Y} {b*3:02d}:00–{(b*3+3)%24:02d}:00"
-        self._open_ecg_list(dt_from, dt_to, title)
+        day = self._week_start + datetime.timedelta(days=d)
+        if not self._week_day_has_records(day):
+            return
+
+        dt_from = datetime.datetime.combine(day, datetime.time(0, 0))
+        dt_to = datetime.datetime.combine(day, datetime.time(23, 59, 59))
+        title = f"ЭКГ за {day:%d.%m.%Y}"
+        self.after(30, lambda: self._open_ecg_list(dt_from, dt_to, title))
 
     def _on_week_plot_click(self, event):
         if event.inaxes not in (self.ax_tp_week, self.ax_si_week):
@@ -923,18 +1048,32 @@ if __name__ == '__main__':
     root.report_callback_exception = lambda *a: None
 
     splash = SplashScreen(root, show_ms=1500, auto_close=False)
-    root.update()                      # заставка на экране
+    root.update()
 
     _load_heavy(pump=root.update)
 
-    # Окно строится, ПОКА заставка ещё видна
     app = ECGViewerApp(root)
-    app.withdraw()                     # окно готово, но спрятано
+    app.withdraw()
 
-    splash.close_splash()              # заставка уходит
-    app.deiconify()                    # окно появляется МГНОВЕННО
+    splash.close_splash()
+    app.deiconify()
 
     try:
         root.mainloop()
-    finally:
-        os._exit(0)
+    except Exception:
+        pass
+
+    # === ПРАВИЛЬНОЕ ЗАВЕРШЕНИЕ ===
+    # НЕ используем os._exit(0) — он конфликтует с Tcl
+    # Вместо этого явно закрываем root и даём Python завершиться самому
+    try:
+        if root.winfo_exists():
+            root.destroy()
+    except Exception:
+        pass
+
+    # Принудительный выход только если что-то ещё держит процесс
+    # (например, неотключённый matplotlib thread)
+    import atexit
+    atexit._run_exitfuncs()
+    sys.exit(0)

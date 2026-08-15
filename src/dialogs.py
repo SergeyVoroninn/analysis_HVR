@@ -114,8 +114,7 @@ class ECGListDialog(ctk.CTkToplevel):
 
     DISPLAY_COLS = ("Время", "Профиль", "ЧСС", "RMSSD", "SDNN", "ИС", "Статус")
 
-    def __init__(self, parent, athlete_id, date_from, date_to, title,
-                 on_change=None):
+    def __init__(self, parent, athlete_id, date_from, date_to, title, on_change=None):
         super().__init__(parent)
         self.title(title)
         self.geometry("720x480")
@@ -159,6 +158,36 @@ class ECGListDialog(ctk.CTkToplevel):
                       command=self.destroy).pack(side="left", padx=4)
 
         self._load()
+        # Корректное закрытие при уничтожении родителя
+        self.protocol("WM_DELETE_WINDOW", self._safe_close)
+        # Следим за уничтожением родителя
+        self._parent_watch = self.after(200, self._check_parent)        
+
+    def _check_parent(self):
+        """Периодически проверяет, жив ли родитель."""
+        try:
+            if not self.master.winfo_exists():
+                self.destroy()
+                return
+        except Exception:
+            try:
+                self.destroy()
+            except Exception:
+                pass
+            return
+        self._parent_watch = self.after(200, self._check_parent)
+
+    def _safe_close(self):
+        """Безопасное закрытие диалога."""
+        try:
+            if hasattr(self, '_parent_watch'):
+                self.after_cancel(self._parent_watch)
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
 
     def _load(self):
         """Загружает ЭКГ за интервал через ORM."""
