@@ -34,7 +34,10 @@ DAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 def _load_heavy(pump=None):
     """Тяжёлые импорты вызываются, когда заставка уже на экране."""
 
-    from models import get_session, Athlete, ECGRecord, ECGRaw    
+    from database import get_db_path
+    from models import get_session, Athlete, ECGRecord, ECGRaw
+    from dialogs import AthleteDialog, ECGListDialog
+
     # Получаем путь к текущему файлу
     if getattr(sys, 'frozen', False):
         # Запущено из exe
@@ -89,6 +92,7 @@ def _load_heavy(pump=None):
         'get_session': get_session,
         'Athlete': Athlete,
         'ECGRecord': ECGRecord,
+        'ECGRaw': ECGRaw,          # ← ДОБАВИТЬ ЭТУ СТРОКУ
         'AthleteDialog': AthleteDialog,
         'ECGListDialog': ECGListDialog,
     })
