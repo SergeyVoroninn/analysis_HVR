@@ -411,28 +411,6 @@ class ECGViewerApp(ctk.CTkToplevel):
         self.fig_tp.tight_layout()
         self.canvas_tp.draw_idle()
 
-    def _on_tp_double_click(self, event):
-        """Двойной клик по годовому графику: масштаб = 53 недели кликнутого года."""
-        if not event.dblclick:
-            return
-        if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
-            return
-        if event.xdata is None:
-            return
-        w = int(event.xdata)
-        if not (0 <= w < self._total_weeks):
-            return
-
-        d = self._date_from_global_week(w)
-        jan1 = datetime.date(d.year, 1, 1)
-        year_monday = jan1 - datetime.timedelta(days=jan1.weekday())
-        lo = float(self._global_week(year_monday))
-        hi = min(float(self._total_weeks), lo + 53.0)
-
-        self._year_xlim = (lo, hi)          # ровно 53 недели этого года
-        self._update_year_bars()
-        self._set_status(f"🔍 Масштаб: 53 недели — {d.year}")
-
     # =========================================================
     # CRUD спортсмена (ORM)
     # =========================================================
@@ -881,10 +859,72 @@ class ECGViewerApp(ctk.CTkToplevel):
             ax.set_xticklabels([self._date_from_global_week(w).strftime("%d.%m.%y")
                                 for w in ticks], fontsize=7)
 
+    def _update_daily_bars(self, lo, hi):
+        """Дневные бары при глубоком зуме."""
+        d0 = self._date_from_global_week(lo)
+        d1 = self._date_from_global_week(hi)
+
+        xs, tps, sis = [], [], []
+        day = d0
+        while day <= d1:
+            key = day.isoformat()
+            tp = getattr(self, "_day_tp", {}).get(key)
+            si = getattr(self, "_day_si", {}).get(key)
+            if tp is not None or si is not None:
+                xs.append((day - self._global_start).days / 7.0)
+                tps.append(tp if tp is not None else 0.0)
+                sis.append(si if si is not None else 0.0)
+            day += datetime.timedelta(days=1)
+
+        width = 1.0 / 7.0
+        label = f"{d0:%d.%m}–{d1:%d.%m}"
+
+        self.ax_tp_year.clear()
+        self._style_ax(self.ax_tp_year)
+        self.ax_tp_year.bar(xs, tps, width=width, color=COL_TP_YEAR, align='edge')
+        self._set_daily_ticks(self.ax_tp_year, lo, hi)
+        self.ax_tp_year.set_ylabel("мс²", color=COL_TEXT_LIGHT)
+        self.ax_tp_year.set_title(f"TP по дням ({label})",
+                                  color=COL_TEXT_LIGHT, fontsize=9)
+
+        self.ax_si_year.clear()
+        self._style_ax(self.ax_si_year)
+        self.ax_si_year.bar(xs, sis, width=width,
+                            color=[self._si_color(v) for v in sis], align='edge')
+        self._set_daily_ticks(self.ax_si_year, lo, hi)
+        self.ax_si_year.set_ylabel("ИС", color=COL_TEXT_LIGHT)
+        self.ax_si_year.set_title(f"Стресс по дням ({label})",
+                                  color=COL_TEXT_LIGHT, fontsize=9)
+
+        self.canvas_tp.draw_idle()
+
+    def _set_daily_ticks(self, ax, lo, hi):
+        """Подписи оси X датами: шаг 1/2/7 дней в зависимости от глубины."""
+        ax.set_xlim(lo, hi)
+        days = int((hi - lo) * 7)
+        step = 1 if days <= 16 else (2 if days <= 35 else 7)
+        ticks, names = [], []
+        day = self._date_from_global_week(lo)
+        i = 0
+        while (day - self._global_start).days / 7.0 <= hi:
+            if i % step == 0:
+                ticks.append((day - self._global_start).days / 7.0)
+                names.append(day.strftime("%d.%m"))
+            day += datetime.timedelta(days=1)
+            i += 1
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(names, fontsize=7)
+
     def _update_year_bars(self):
-        """Годовые бары: видимый диапазон бьётся на ≤53 корзин, в каждой — МАКСИМУМ."""
+        """Годовые бары: ≤53 корзин с максимумом; при span ≤ 8 недель — дневные."""
         lo, hi = self._year_xlim
         span = hi - lo
+
+        # === Глубокий зум → дневные бары ===
+        if span <= 8.0:
+            self._update_daily_bars(lo, hi)
+            return
+
         step = span / 53.0 if span > 53 else 1.0
         n = int(span // step) + 1
 
@@ -920,13 +960,15 @@ class ECGViewerApp(ctk.CTkToplevel):
         self.ax_si_year.set_ylabel("ИС", color=COL_TEXT_LIGHT)
         self.ax_si_year.set_title(f"Стресс по неделям ({yr_label})",
                                   color=COL_TEXT_LIGHT, fontsize=9)
-        
-        self.canvas_tp.draw_idle()   # ← ОСТАВИТЬ
+
+        self.canvas_tp.draw_idle()
 
     def _draw_tp(self, athlete_id):
         """Отрисовка графиков TP/ИС из кэша."""
         data = self._get_data(athlete_id)
         self._week_data = data["week_data"]
+        self._day_tp = data["day_tp"]     # ← дневной кэш для глубокого зума
+        self._day_si = data["day_si"]     # ←
         day_tp, day_si = data["day_tp"], data["day_si"]
 
         # --- Недельные мини-графики TP/ИС (из кэша) ---
@@ -1080,9 +1122,7 @@ class ECGViewerApp(ctk.CTkToplevel):
                     self._year_colors[idx] = color
                 idx += 1
 
-        # === Рамка выбранной недели ===
-        self.canvas_year.delete('sel')
-        # === Рамка выбранной недели ===
+        # === Рамка выбранной недели / недельная панель по умолчанию ===
         self.canvas_year.delete('sel')
         if self._selected_week is not None:
             x = YEAR_X0 + self._selected_week * s
@@ -1090,7 +1130,20 @@ class ECGViewerApp(ctk.CTkToplevel):
                                               YEAR_Y0 + 7 * s, outline=COL_SELECTION,
                                               width=2, tags='sel')
             self._draw_week(self._year_start + datetime.timedelta(weeks=self._selected_week))
-            
+        else:
+            # Выделения нет: панель показывает последнюю неделю с данными (рамки нет)
+            d = min(dec31, today) if self._view_year == today.year else dec31
+            anchor = None
+            while d >= jan1:
+                if d.isoformat() in date_map:
+                    anchor = d - datetime.timedelta(days=d.weekday())
+                    break
+                d -= datetime.timedelta(days=1)
+            if anchor is None:
+                anchor = min(dec31, today) if self._view_year == today.year else dec31
+                anchor -= datetime.timedelta(days=anchor.weekday())
+            self._draw_week(anchor)
+                        
     def _draw_week(self, week_start):
         self._week_start = week_start
         today = datetime.date.today()
@@ -1303,11 +1356,6 @@ class ECGViewerApp(ctk.CTkToplevel):
             aid = self.selected_athlete[0]
             self._draw_density(aid)
             self._draw_tp(aid)
-
-    def _clear_week_frames(self):
-        """Удаляет ОБЕ рамки: и выделение, и якорь."""
-        self.canvas_year.delete('sel')
-        self.canvas_year.delete('anchor')            
 
 if __name__ == '__main__':
     root = tk.Tk()
