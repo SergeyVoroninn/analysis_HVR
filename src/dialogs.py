@@ -119,7 +119,8 @@ class ECGListDialog(ctk.CTkToplevel):
         self.title(title)
         self.geometry("720x480")
         self.transient(parent)
-        self.grab_set()
+        self._calendar_open = False
+        self._setup_grab()
 
         self.db_path = parent.db_path
         self.athlete_id = athlete_id
@@ -162,6 +163,21 @@ class ECGListDialog(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self._safe_close)
         # Следим за уничтожением родителя
         self._parent_watch = self.after(200, self._check_parent)        
+
+    def _setup_grab(self):
+        """Grab_set включается только когда календарь закрыт."""
+        if not self.winfo_exists():
+            return
+        try:
+            # Проверяем, открыто ли окно календаря
+            for w in self.master.winfo_children():
+                if hasattr(w, 'calendar') and w.winfo_exists():
+                    self._calendar_open = True
+                    return
+            self._calendar_open = False
+            self.grab_set()
+        except Exception:
+            pass
 
     def _check_parent(self):
         """Периодически проверяет, жив ли родитель."""
