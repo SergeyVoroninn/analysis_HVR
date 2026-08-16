@@ -1,16 +1,20 @@
 [
   {
-    "file": "tests/reference/C821EB2E_2026_08_11_08_48_16_teamloggerh10.teamloggerh10",
-    "polar_id": "C821EB2E",
-    "source": "Омега.Диагностика, выделенная строка 13.08.2026 8:43:46",
+    "file": "tests/reference/C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10",
+    "polar_id": "C821E528",
+    "source": "Омега.Диагностика, строка 10.08.2026 8:33:14",
     "expected": {
-      "rmssd":     { "value": 70.5, "tol": 0.10 },
-      "stress_si": { "value": 21.4, "tol": 0.15 },
-      "tp":        { "value": 8586, "tol": 0.20 }
+      "rmssd":     { "value": 167.5, "tol": 0.10 },
+      "stress_si": { "value": 6.5,   "tol": 0.25 },
+      "mo_ms":     { "value": 920,   "tol": 0.05 },
+      "nn50":      { "value": 152,   "tol": 0.15 },
+      "pnn50":     { "value": 69.1,  "tol": 0.15 },
+      "tp":        { "value": 42578, "tol": 0.20 }
     },
     "reference_full": {
-      "ИН": 21.4, "Мо": 840, "RMSSD": 70.5, "NN50": 142, "pNN50": 41.4,
-      "HF": 1582, "TP": 8586, "LF": 3181, "LF/HF": 2.01, "VLF": 3822
-    }
+      "ИН": 6.5, "Мо": 920, "RMSSD": 167.5, "NN50": 152, "pNN50": 69.1,
+      "HF": 9743, "TP": 42578, "LF": 8598, "LF/HF": 0.88, "VLF": 24237
+    },
+    "not_compared": ["HF", "LF", "VLF", "LF/HF"]
   }
 ]

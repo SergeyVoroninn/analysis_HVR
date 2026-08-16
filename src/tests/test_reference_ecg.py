@@ -11,6 +11,7 @@ sys.path.insert(0, SRC)
 sys.path.insert(0, os.path.join(SRC, "scripts"))
 
 import app as app_module
+import analysis as hrv   # compute_psd для спектрального TP
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ETALONS = os.path.join(os.path.dirname(__file__), "etalons.json")
@@ -42,13 +43,27 @@ def app(_heavy, tmp_path):
 
 
 def _metrics_from_record(rec):
-    """Имя метрики -> значение из сохранённой записи (что умеем сравнивать)."""
+    """Метрики из сохранённой записи (БД)."""
     return {
         "rmssd": rec.rmssd,
         "stress_si": rec.stress_si,
         "mean_hr": rec.mean_hr,
         "sdnn": rec.sdnn,
-        "tp": (rec.sdnn * rec.sdnn) if rec.sdnn is not None else None,
+    }
+
+
+def _metrics_from_rr(rr):
+    """Метрики на лету из RR: Мо, NN50, pNN50 и спектральный TP (VLF+LF+HF)."""
+    s = app_module.calc_stress(rr) or {}
+    diffs = [abs(b - a) for a, b in zip(rr, rr[1:])]
+    nn50 = sum(1 for d in diffs if d > 50)
+    pnn50 = 100.0 * nn50 / len(diffs) if diffs else 0.0
+    _, _, bands = hrv.compute_psd(rr)
+    return {
+        "mo_ms": s.get("mo_ms"),
+        "nn50": nn50,
+        "pnn50": pnn50,
+        "tp": bands.get("tp"),
     }
 
 
@@ -80,13 +95,24 @@ def test_reference_ecg(app, etalon):
     status, _ = app._import_one(path, interactive=False)
     assert status == "added", f"Импорт не выполнен: статус '{status}'"
 
-    # === 2. Читаем сохранённые метрики ===
+    # === 2. Наши метрики: БД + на лету из RR ===
     session = app_module.get_session(app.db_path)
     try:
         rec = session.query(app_module.ECGRecord).filter_by(athlete_id=aid).one()
         ours = _metrics_from_record(rec)
     finally:
         session.close()
+
+    with open(path, encoding="utf-8") as f:
+        rr = app_module.parse_rr(f.read())
+    ours.update(_metrics_from_rr(rr))
+
+    # === Наша строка в формате Омеги (для поиска соответствия в таблице) ===
+    print(f"\n=== НАША СТРОКА (формат Омеги) ===")
+    print(f"ИН={ours['stress_si']:.1f}  Мо={ours['mo_ms']:.0f}  "
+          f"RMSSD={ours['rmssd']:.1f}  NN50={ours['nn50']}  "
+          f"pNN50={ours['pnn50']:.1f}  TP={ours['tp']:.0f}  "
+          f"ЧСС={ours['mean_hr']:.0f}")
 
     # === 3. Сверка с эталоном ===
     problems = []
