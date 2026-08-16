@@ -25,6 +25,7 @@ from theme import (COL_ACCENT, COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT,
                    COL_WEEKEND, COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN,
                    COL_CRIT, COL_TP_YEAR, COL_TP_WEEK)
 
+DAILY_ZOOM_WEEKS = 12.0   # при span ≤ этого значения (в неделях) — дневные бары
 YEAR_X0, YEAR_Y0 = 5, 18
 WEEK_X0, WEEK_Y0 = 28, 5
 
@@ -921,7 +922,7 @@ class ECGViewerApp(ctk.CTkToplevel):
         span = hi - lo
 
         # === Глубокий зум → дневные бары ===
-        if span <= 8.0:
+        if span <= DAILY_ZOOM_WEEKS:
             self._update_daily_bars(lo, hi)
             return
 
@@ -1000,7 +1001,7 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._update_year_bars()
 
     def _on_tp_scroll(self, event):
-        """Зум колесом с debouncing: мгновенный preview + финальная перерисовка."""
+        """Зум колесом с debouncing: перерисовка через 80 мс тишины."""
         if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
             return
         if event.xdata is None:
@@ -1009,7 +1010,7 @@ class ECGViewerApp(ctk.CTkToplevel):
         # === 1. Вычисляем новый xlim ===
         lo, hi = self._year_xlim
         span = hi - lo
-        factor = 0.85 if event.button == "up" else 1.18  # мягче для плавности
+        factor = 0.85 if event.button == "up" else 1.18
 
         new_span = min(float(self._total_weeks), max(4.0, span * factor))
         if new_span >= self._total_weeks:
@@ -1025,28 +1026,10 @@ class ECGViewerApp(ctk.CTkToplevel):
                 new_hi, new_lo = float(self._total_weeks), self._total_weeks - new_span
             self._year_xlim = (new_lo, new_hi)
 
-        # === 2. Мгновенный preview: меняем только xlim (без перерисовки баров) ===
-        self._apply_zoom_preview()
-
-        # === 3. Debouncing: финальная перерисовка через 80 мс тишины ===
+        # === 2. Debouncing: перерисовка через 80 мс тишины ===
         if self._zoom_timer is not None:
             self.after_cancel(self._zoom_timer)
-        self._zoom_timer = self.after(80, self._finalize_zoom)
-
-    def _apply_zoom_preview(self):
-        """Быстрое обновление: только xlim + тики, без перерисовки баров."""
-        lo, hi = self._year_xlim
-        for ax in (self.ax_tp_year, self.ax_si_year):
-            ax.set_xlim(lo, hi)
-            self._set_year_ticks(ax)
-        # blit=False, draw_idle — только для видимых изменений осей
-        self.canvas_tp.draw_idle()
-        self._zoom_preview_active = True
-
-    def _finalize_zoom(self):
-        self._zoom_timer = None
-        self._zoom_preview_active = False
-        self._update_year_bars()
+        self._zoom_timer = self.after(80, self._update_year_bars)
 
     def _on_tp_right_click(self, event):
         if event.button != 3:
@@ -1143,7 +1126,7 @@ class ECGViewerApp(ctk.CTkToplevel):
                 anchor = min(dec31, today) if self._view_year == today.year else dec31
                 anchor -= datetime.timedelta(days=anchor.weekday())
             self._draw_week(anchor)
-                        
+
     def _draw_week(self, week_start):
         self._week_start = week_start
         today = datetime.date.today()
