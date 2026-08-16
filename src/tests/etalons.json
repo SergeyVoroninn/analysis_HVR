@@ -1,0 +1,16 @@
+[
+  {
+    "file": "tests/reference/C821EB2E_2026_08_11_08_48_16_teamloggerh10.teamloggerh10",
+    "polar_id": "C821EB2E",
+    "source": "Омега.Диагностика, выделенная строка 13.08.2026 8:43:46",
+    "expected": {
+      "rmssd":     { "value": 70.5, "tol": 0.10 },
+      "stress_si": { "value": 21.4, "tol": 0.15 },
+      "tp":        { "value": 8586, "tol": 0.20 }
+    },
+    "reference_full": {
+      "ИН": 21.4, "Мо": 840, "RMSSD": 70.5, "NN50": 142, "pNN50": 41.4,
+      "HF": 1582, "TP": 8586, "LF": 3181, "LF/HF": 2.01, "VLF": 3822
+    }
+  }
+]
