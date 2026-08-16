@@ -901,6 +901,12 @@ class ECGViewerApp(ctk.CTkToplevel):
         self.ax_si_year.set_title(f"Стресс по дням ({label})",
                                   color=COL_TEXT_LIGHT, fontsize=9)
 
+        # === Пунктирные разделители недель (понедельники) ===
+        for wx in range(int(lo) + 1, int(hi) + 1):
+            for ax in (self.ax_tp_year, self.ax_si_year):
+                ax.axvline(wx, color=COL_TEXT_DIM, linewidth=0.8,
+                           linestyle=(0, (3, 3)), alpha=0.55)
+
         self.canvas_tp.draw_idle()
 
     def _set_daily_ticks(self, ax, lo, hi):
