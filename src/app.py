@@ -903,7 +903,7 @@ class ECGViewerApp(ctk.CTkToplevel):
         """Подписи оси X датами: шаг 1/2/7 дней в зависимости от глубины."""
         ax.set_xlim(lo, hi)
         days = int((hi - lo) * 7)
-        step = 1 if days <= 16 else (2 if days <= 35 else 7)
+        step = 1 if days <= 21 else (2 if days <= 42 else 7)
         ticks, names = [], []
         day = self._date_from_global_week(lo)
         i = 0
