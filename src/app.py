@@ -120,6 +120,8 @@ class ECGViewerApp(ctk.CTkToplevel):
 
         self._zoom_timer = None       # таймер debouncing зума
         self._zoom_preview_active = False
+        self._pan_press = None   # (x_пиксель, lo0, hi0) на момент нажатия
+        self._panning = False
 
         self._year_colors = []    # последний цвет каждой клетки
         self._month_labels = []   # id подписей месяцев
@@ -366,7 +368,9 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._tp_widget.pack(fill="both", expand=True)
 
         self.plt_area.bind("<Configure>", self._on_tp_configure)
-        self.canvas_tp.mpl_connect("button_press_event", self._on_tp_click)
+        self.canvas_tp.mpl_connect("button_press_event", self._on_tp_press)
+        self.canvas_tp.mpl_connect("motion_notify_event", self._on_tp_motion)
+        self.canvas_tp.mpl_connect("button_release_event", self._on_tp_release)
         self.canvas_tp.mpl_connect("button_press_event", self._on_week_plot_click)
         self.canvas_tp.mpl_connect("scroll_event", self._on_tp_scroll)
         self.canvas_tp.mpl_connect("button_press_event", self._on_tp_right_click)    
@@ -1168,18 +1172,17 @@ class ECGViewerApp(ctk.CTkToplevel):
         w = (event.x - YEAR_X0) // self.step
         self._select_week(w)
 
-    def _on_tp_click(self, event):
+    def _on_tp_press(self, event):
+        """Нажатие ЛКМ: запоминаем старт для pan/клика; дабл-клик — зум года."""
         if event.button != 1:
             return
         if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
             return
-        if event.xdata is None:
-            return
-        w = int(event.xdata)
-        if not (0 <= w < self._total_weeks):
-            return
 
-        # === Ручная детекция двойного клика (TkAgg не даёт event.dblclick) ===
+        self._pan_press = (event.x, self._year_xlim[0], self._year_xlim[1])
+        self._panning = False
+
+        # --- ручная детекция двойного клика (зум = 53 недели года) ---
         now = time.monotonic()
         is_dbl = (now - self._tp_click_t < 0.45 and
                   abs(event.x - self._tp_click_x) < 6 and
@@ -1188,19 +1191,64 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._tp_click_x = event.x
         self._tp_click_y = event.y
 
-        if is_dbl:
-            # Зум = 53 недели кликнутого года
-            d = self._date_from_global_week(w)
-            jan1 = datetime.date(d.year, 1, 1)
-            year_monday = jan1 - datetime.timedelta(days=jan1.weekday())
-            lo = float(self._global_week(year_monday))
-            hi = min(float(self._total_weeks), lo + 53.0)
-            self._year_xlim = (lo, hi)
-            self._update_year_bars()
-            self._set_status(f"🔍 Масштаб: 53 недели — {d.year}")
-            return
+        if is_dbl and event.xdata is not None:
+            w = int(event.xdata)
+            if 0 <= w < self._total_weeks:
+                d = self._date_from_global_week(w)
+                jan1 = datetime.date(d.year, 1, 1)
+                year_monday = jan1 - datetime.timedelta(days=jan1.weekday())
+                lo = float(self._global_week(year_monday))
+                hi = min(float(self._total_weeks), lo + 53.0)
+                self._year_xlim = (lo, hi)
+                self._update_year_bars()
+                self._set_status(f"🔍 Масштаб: 53 недели — {d.year}")
+                self._pan_press = None   # это был дабл-клик, не pan/клик
 
-        # Одинарный клик — выбор недели (как раньше)
+    def _on_tp_motion(self, event):
+        """Перетаскивание: сдвиг окна по оси X."""
+        if self._pan_press is None or event.button != 1:
+            return
+        x0, lo0, hi0 = self._pan_press
+        # порог 5 px — отличаем клик от перетаскивания
+        if not self._panning and abs(event.x - x0) < 5:
+            return
+        self._panning = True
+
+        width_px = self.ax_tp_year.get_window_extent().width
+        if width_px <= 1:
+            return
+        dpp = (hi0 - lo0) / width_px          # недель на пиксель
+        shift = (x0 - event.x) * dpp          # тянем вправо → окно влево
+        span0 = hi0 - lo0
+        lo, hi = lo0 + shift, lo0 + shift + span0
+        if lo < 0:
+            lo, hi = 0.0, span0
+        if hi > self._total_weeks:
+            hi, lo = float(self._total_weeks), self._total_weeks - span0
+        self._year_xlim = (lo, hi)
+        self._update_year_bars()              # бары пересчитываются на лету
+
+    def _on_tp_release(self, event):
+        """Отпускание ЛКМ: если не тащили — это клик, выбираем неделю."""
+        if event.button != 1:
+            return
+        if self._pan_press is None:
+            self._panning = False
+            return
+        was_panning = self._panning
+        self._pan_press = None
+        self._panning = False
+        if was_panning:
+            return                            # было перетаскивание — без выбора
+
+        # --- обычный клик: выбор недели ---
+        if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
+            return
+        if event.xdata is None:
+            return
+        w = int(event.xdata)
+        if not (0 <= w < self._total_weeks):
+            return
         week_start = self._date_from_global_week(w)
         self.after(0, lambda: self._select_week_by_date(week_start))
 
