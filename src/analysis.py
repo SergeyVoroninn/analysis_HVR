@@ -134,6 +134,9 @@ def calc_metrics(rr):
     mean_hr = 60000 / mean_rr
     status = _status(mean_hr, rmssd)
 
+    # === Спектральные компоненты (Вельч) ===
+    _, _, bands = compute_psd(rr) if len(rr) >= 16 else (None, None, {"vlf": 0, "lf": 0, "hf": 0, "tp": 0})
+
     return {
         "mean_hr": mean_hr,
         "min_hr": 60000 / max(rr),
@@ -143,6 +146,11 @@ def calc_metrics(rr):
         "rmssd": rmssd,
         "count": n,
         "status": status,
+        "tp_spectral": bands["tp"],
+        "vlf": bands["vlf"],
+        "lf": bands["lf"],
+        "hf": bands["hf"],
+        "lf_hf": bands["lf"] / bands["hf"] if bands["hf"] > 0 else 0,
     }
 
 def parse_ecg(raw_data):

@@ -670,6 +670,11 @@ class ECGViewerApp(ctk.CTkToplevel):
                 sdnn=m["sdnn"] if m else None,
                 status=m["status"] if m else "ok",
                 stress_si=s["si"] if s else None,
+                tp_spectral=m.get("tp_spectral") if m else None,
+                vlf=m.get("vlf") if m else None,
+                lf=m.get("lf") if m else None,
+                hf=m.get("hf") if m else None,
+                lf_hf=m.get("lf_hf") if m else None,
             )
             session.add(rec)
             session.flush()

@@ -42,13 +42,17 @@ def app(_heavy, tmp_path):
 
 
 def _metrics_from_record(rec):
-    """Имя метрики -> значение из сохранённой записи (что умеем сравнивать)."""
     return {
         "rmssd": rec.rmssd,
         "stress_si": rec.stress_si,
         "mean_hr": rec.mean_hr,
         "sdnn": rec.sdnn,
-        "tp": (rec.sdnn * rec.sdnn) if rec.sdnn is not None else None,
+        "tp": rec.tp_spectral,         # ← спектральный TP для сверки с эталоном
+        "tp_sdnn2": (rec.sdnn ** 2) if rec.sdnn else None,
+        "vlf": rec.vlf,
+        "lf": rec.lf,
+        "hf": rec.hf,
+        "lf_hf": rec.lf_hf,
     }
 
 

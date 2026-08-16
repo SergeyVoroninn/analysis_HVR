@@ -112,7 +112,7 @@ class AthleteDialog(ctk.CTkToplevel):
 class ECGListDialog(ctk.CTkToplevel):
     """Окно со списком ЭКГ за выбранный интервал (ORM-версия)."""
 
-    DISPLAY_COLS = ("Время", "Профиль", "ЧСС", "RMSSD", "SDNN", "ИС", "Статус")
+    DISPLAY_COLS = ("Время", "Профиль", "ЧСС", "RMSSD", "SDNN", "ИС", "VLF", "LF", "HF", "Статус")
 
     def __init__(self, parent, athlete_id, date_from, date_to, title, on_change=None):
         super().__init__(parent)
@@ -232,6 +232,9 @@ class ECGListDialog(ctk.CTkToplevel):
                     f"{rec.rmssd:.1f}" if rec.rmssd is not None else "",
                     f"{rec.sdnn:.1f}" if rec.sdnn is not None else "",
                     f"{rec.stress_si:.0f}" if rec.stress_si is not None else "",
+                    f"{rec.vlf:.0f}" if rec.vlf is not None else "",
+                    f"{rec.lf:.0f}" if rec.lf is not None else "",
+                    f"{rec.hf:.0f}" if rec.hf is not None else "",                    
                     rec.status or "",
                 ))
         finally:
