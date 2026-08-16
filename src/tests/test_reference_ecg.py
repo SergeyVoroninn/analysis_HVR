@@ -88,9 +88,41 @@ def test_reference_ecg(app, etalon):
     session = app_module.get_session(app.db_path)
     try:
         rec = session.query(app_module.ECGRecord).filter_by(athlete_id=aid).one()
+            
+        # === ОТЛАДКА: что реально в БД ===
+        print(f"\n=== ОТЛАДКА ===")
+        print(f"SDNN: {rec.sdnn}")
+        print(f"RMSSD: {rec.rmssd}")
+        print(f"stress_si (ИН): {rec.stress_si}")
+        print(f"tp_spectral: {rec.tp_spectral}")
+        print(f"vlf: {rec.vlf}, lf: {rec.lf}, hf: {rec.hf}")
+            
         ours = _metrics_from_record(rec)
     finally:
         session.close()
+
+            # === ОТЛАДКА: что извлёк parse_rr ===
+        with open(path, "r", encoding="utf-8") as f:
+            raw = f.read()
+        rr = app_module.parse_rr(raw)
+        print(f"\n=== ДИАГНОСТИКА RR ===")
+        print(f"Количество RR: {len(rr)}")
+        print(f"Первые 5: {rr[:5]}")
+        print(f"Последние 5: {rr[-5:]}")
+        print(f"Средний RR: {sum(rr)/len(rr):.1f} мс")
+        print(f"Длительность: {sum(rr)/1000:.1f} сек")
+        
+        # === Что в сырых данных ===
+        lines = raw.split('\n')
+        rr_sections = [i for i, line in enumerate(lines) if line.strip() == '[RR]']
+        print(f"Секций [RR] в файле: {len(rr_sections)}")
+        if rr_sections:
+            print(f"Строки секций: {rr_sections}")
+            # Показать первую секцию
+            start = rr_sections[0]
+            print(f"Первая секция (строки {start}-{start+10}):")
+            for line in lines[start:start+10]:
+                print(f"  {line}")
 
     # === 3. Сверка с эталоном ===
     problems = []
