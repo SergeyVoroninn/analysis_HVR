@@ -53,12 +53,12 @@ def _metrics_from_record(rec):
 
 
 def _metrics_from_rr(rr):
-    """Метрики на лету из RR: Мо, NN50, pNN50 и спектральный TP (VLF+LF+HF)."""
-    s = app_module.calc_stress(rr) or {}
-    diffs = [abs(b - a) for a, b in zip(rr, rr[1:])]
+    seq = hrv.filter_rr(rr)                      # то же, что calc_* внутри
+    s = app_module.calc_stress(rr) or {}         # фильтрует внутри → тот же seq
+    diffs = [abs(b - a) for a, b in zip(seq, seq[1:])]
     nn50 = sum(1 for d in diffs if d > 50)
     pnn50 = 100.0 * nn50 / len(diffs) if diffs else 0.0
-    _, _, bands = hrv.compute_psd(rr)
+    _, _, bands = hrv.compute_psd(seq)
     return {
         "mo_ms": s.get("mo_ms"),
         "nn50": nn50,

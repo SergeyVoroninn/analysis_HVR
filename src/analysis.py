@@ -11,25 +11,24 @@ HR_CRIT = (35, 200)    # выход за эти границы → красны�
 HR_WARN = (45, 180)    # выход за эти границы → жёлтый
 
 
-def compute_psd(rr, fs=4.0, nperseg=256):
+def compute_psd(rr, fs=4.0, nperseg=None):
     """
-    Считает спектральную плотность мощности RR-тахограммы (метод Вельча).
-
-    :param rr: список RR-интервалов (мс)
-    :param fs: частота ресемплинга (Гц)
-    :param nperseg: длина сегмента Вельча
-    :return: (freqs, psd, bands) где bands = {vlf, lf, hf, tp} в мс^2
+    Спектральная плотность RR-тахограммы.
+    По умолчанию — периодограмма по ВСЕЙ записи (как в Омеге),
+    иначе Вельч с заданным nperseg.
     """
     rr = np.asarray(rr, dtype=float)
 
-    # Моменты времени окончаний интервалов (сек)
     t = np.cumsum(rr) / 1000.0
-    # Равномерная сетка и интерполяция тахограммы
     t_uniform = np.arange(t[0], t[-1], 1.0 / fs)
     x = np.interp(t_uniform, t, rr)
     x = x - np.mean(x)
 
+    if nperseg is None or nperseg > len(x):
+        nperseg = len(x)          # ← один сегмент = вся запись
+
     window = np.hanning(nperseg)
+    ...  # остальное без изменений
     win_norm = fs * np.sum(window ** 2)
     step = nperseg // 2
 
@@ -75,7 +74,9 @@ def stress_level(si):
 
 
 def calc_stress(rr):
-    """Индекс стресса (ИС) по Баевскому: ИС = AMo / (2*Mo*MxDMn)."""
+    if len(rr) < 10:
+        return None
+    rr = filter_rr(rr)
     if len(rr) < 10:
         return None
     vals = [r / 1000.0 for r in rr]
@@ -121,7 +122,9 @@ def parse_rr(raw_data):
 
 
 def calc_metrics(rr):
-    """Считает метрики HRV и определяет статус записи."""
+    if len(rr) < 3:
+        return None
+    rr = filter_rr(rr)
     if len(rr) < 3:
         return None
 
@@ -173,3 +176,16 @@ def _status(mean_hr, rmssd):
     if mean_hr < HR_WARN[0] or mean_hr > HR_WARN[1] or rmssd < 10:
         return 'warn'
     return 'ok'
+
+def filter_rr(rr, dev=0.30, min_rr=300, max_rr=2000):
+    """Удаляет артефактные RR: вне физиологического диапазона
+    и резкие скачки (> dev от предыдущего)."""
+    clean, prev = [], None
+    for r in rr:
+        if not (min_rr <= r <= max_rr):
+            continue
+        if prev is not None and abs(r - prev) > dev * prev:
+            continue
+        clean.append(r)
+        prev = r
+    return clean if len(clean) >= 10 else list(rr)

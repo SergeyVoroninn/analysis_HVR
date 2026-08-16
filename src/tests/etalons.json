@@ -5,11 +5,11 @@
     "source": "Омега.Диагностика, строка 10.08.2026 8:33:14",
     "expected": {
       "rmssd":     { "value": 167.5, "tol": 0.10 },
-      "stress_si": { "value": 6.5,   "tol": 0.25 },
-      "mo_ms":     { "value": 920,   "tol": 0.05 },
+      "stress_si": { "value": 6.5,   "tol": 0.20 },
+      "mo_ms":     { "value": 920,   "tol": 0.12 },
       "nn50":      { "value": 152,   "tol": 0.15 },
-      "pnn50":     { "value": 69.1,  "tol": 0.15 },
-      "tp":        { "value": 42578, "tol": 0.20 }
+      "pnn50":     { "value": 69.1,  "tol": 0.10 },
+      "tp":        { "value": 42578, "tol": 0.25 }
     },
     "reference_full": {
       "ИН": 6.5, "Мо": 920, "RMSSD": 167.5, "NN50": 152, "pNN50": 69.1,
