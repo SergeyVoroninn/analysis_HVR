@@ -6,7 +6,7 @@ import os
 import customtkinter as ctk
 import tkinter as tk
 
-from theme import COL_BG_DARK, COL_TEXT_LIGHT, COL_ACCENT
+from theme import COL_BG_DARK, COL_TEXT_LIGHT, COL_ACCENT, COL_TEXT_DIM, COL_VERSION
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -40,12 +40,12 @@ class SplashScreen(ctk.CTkToplevel):
         self.logo.create_line(20, 40, 30, 40, 35, 25, 42, 55, 49, 40, 60, 40,
                               fill="white", width=3, smooth=True)
 
-        ctk.CTkLabel(self, text="Анализ ВРС",
+        ctk.CTkLabel(self, text="Анализ ВСР",
                      font=ctk.CTkFont(size=22, weight="bold"),
                      text_color=COL_TEXT_LIGHT).pack(pady=(0, 4))
         ctk.CTkLabel(self, text="Система мониторинга состояния спортсменов",
                      font=ctk.CTkFont(size=11),
-                     text_color="#9a9a9a").pack(pady=(0, 20))
+                     text_color=COL_TEXT_DIM).pack(pady=(0, 20))
 
         # === Единственный прогресс-бар ===
         self.progress = ctk.CTkProgressBar(self, width=280, height=6)
@@ -53,7 +53,7 @@ class SplashScreen(ctk.CTkToplevel):
         self.progress.set(0)
 
         ctk.CTkLabel(self, text="v1.0", font=ctk.CTkFont(size=9),
-                     text_color="#666666").pack(side="bottom", pady=10)
+                     text_color=COL_VERSION).pack(side="bottom", pady=10)
 
         # Анимация запускается только если не используется ручное управление
         self._manual_mode = False
