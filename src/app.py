@@ -144,6 +144,7 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._tp_click_t = 0.0
         self._tp_click_x = -1.0
         self._tp_click_y = -1.0
+        self._tp_click_timer = None   # ← добавить
 
         self.cell = 14
         self.step = self.cell + 1
@@ -159,6 +160,10 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._tp_last = None
         self._total_weeks = 53
         self._year_xlim = (0.0, 53.0)
+        self._pan_timer = None
+        self._tp_year_bars = None   # ← добавить
+        self._si_year_bars = None   # ← добавить     
+        self._shade_artists = []   
 
         self._create_widgets()
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -856,6 +861,14 @@ class ECGViewerApp(ctk.CTkToplevel):
 
     def _shade_year_scale(self, lo, hi):
         """Фон на уровень крупнее баров: для недельных — месяцы/годы."""
+        # Удаляем старые объекты «зебры», игнорируя ошибки
+        for art in self._shade_artists:
+            try:
+                art.remove()
+            except (ValueError, AttributeError, NotImplementedError):
+                pass
+        self._shade_artists = []
+
         span = hi - lo
         axes = (self.ax_tp_year, self.ax_si_year)
 
@@ -868,12 +881,14 @@ class ECGViewerApp(ctk.CTkToplevel):
                     continue
                 if y % 2:
                     for ax in axes:
-                        ax.axvspan(max(w0, lo), min(w1, hi),
-                                   color=COL_TEXT_LIGHT, alpha=0.05, zorder=0)
+                        artist = ax.axvspan(max(w0, lo), min(w1, hi),
+                                           color=COL_TEXT_LIGHT, alpha=0.05, zorder=0)
+                        self._shade_artists.append(artist)
                 if lo < w0 < hi:
                     for ax in axes:
-                        ax.axvline(w0, color=COL_TEXT_DIM, linewidth=0.6,
-                                   alpha=0.35, zorder=1)
+                        artist = ax.axvline(w0, color=COL_TEXT_DIM, linewidth=0.6,
+                                           alpha=0.35, zorder=1)
+                        self._shade_artists.append(artist)
         else:
             # --- месяцы (для недельных баров, включая span 16–20) ---
             d = self._as_date(self._date_from_global_week(lo))
@@ -887,12 +902,14 @@ class ECGViewerApp(ctk.CTkToplevel):
                 w1 = (datetime.date(ny, nm, 1) - self._global_start).days / 7.0
                 if (y * 12 + m) % 2:
                     for ax in axes:
-                        ax.axvspan(max(w0, lo), min(w1, hi),
-                                   color=COL_TEXT_LIGHT, alpha=0.05, zorder=0)
+                        artist = ax.axvspan(max(w0, lo), min(w1, hi),
+                                           color=COL_TEXT_LIGHT, alpha=0.05, zorder=0)
+                        self._shade_artists.append(artist)
                 if lo < w0 < hi:
                     for ax in axes:
-                        ax.axvline(w0, color=COL_TEXT_DIM, linewidth=0.6,
-                                   alpha=0.35, zorder=1)
+                        artist = ax.axvline(w0, color=COL_TEXT_DIM, linewidth=0.6,
+                                           alpha=0.35, zorder=1)
+                        self._shade_artists.append(artist)
                 y, m = ny, nm
 
     def _update_daily_bars(self, lo, hi):
@@ -1059,21 +1076,9 @@ class ECGViewerApp(ctk.CTkToplevel):
             hi, lo = d1, d1 - span
         return lo, hi
 
-    def _update_year_bars(self):
-        """Годовые бары с тремя режимами: блоки / дни / недели."""
-        lo, hi = self._year_xlim          # ← без клампа: зум и панорама свободные
+    def _compute_year_bars(self, lo, hi):
+        """Вычисляет данные для недельных баров."""
         span = hi - lo
-        
-        # === Максимальный зум: 3-часовые бары ===
-        if span <= BLOCK_ZOOM_WEEKS:
-            self._update_block_bars(lo, hi)
-            return
-
-        # === Глубокий зум: дневные бары ===
-        if span <= DAILY_ZOOM_WEEKS:
-            self._update_daily_bars(lo, hi)
-            return
-
         step = span / 53.0 if span > 53 else 1.0
         n = int(span // step) + 1
 
@@ -1102,27 +1107,72 @@ class ECGViewerApp(ctk.CTkToplevel):
         else:                                       # окно через Новый год
             period = f"{d0:%d.%m}.{d0:%y}–{d1:%d.%m}.{d1:%y}"
 
-        bar_width = step * BAR_GAP  # ← ширина бара с зазором
+        return xs, tps, sis, period, step
 
-        self.ax_tp_year.clear()
-        self._style_ax(self.ax_tp_year)
-        self.ax_tp_year.bar(xs, tps, width=bar_width, color=COL_TP_YEAR, align='edge')  # ← center
+    def _update_year_bars(self):
+        """Годовые бары с тремя режимами: блоки / дни / недели."""
+        lo, hi = self._year_xlim
+        span = hi - lo
+
+        # === Максимальный зум: 3-часовые бары ===
+        if span <= BLOCK_ZOOM_WEEKS:
+            self._tp_year_bars = None
+            self._si_year_bars = None
+            self._update_block_bars(lo, hi)
+            return
+
+        # === Глубокий зум: дневные бары ===
+        if span <= DAILY_ZOOM_WEEKS:
+            self._tp_year_bars = None
+            self._si_year_bars = None
+            self._update_daily_bars(lo, hi)
+            return
+
+        # === Недельные бары ===
+        xs, tps, sis, period, step = self._compute_year_bars(lo, hi)
+        bar_width = step * BAR_GAP
+        si_colors = [self._si_color(v) for v in sis]
+
+        # Пересоздаём бары, если их количество изменилось
+        if self._tp_year_bars is None or len(self._tp_year_bars) != len(xs):
+            self.ax_tp_year.clear()
+            self._style_ax(self.ax_tp_year)
+            self._tp_year_bars = self.ax_tp_year.bar(
+                xs, tps, width=bar_width, color=COL_TP_YEAR, align='edge')
+            self.ax_si_year.clear()
+            self._style_ax(self.ax_si_year)
+            self._si_year_bars = self.ax_si_year.bar(
+                xs, sis, width=bar_width, color=si_colors, align='edge')
+            # ← При clear() старые artists становятся невалидными
+            self._shade_artists = []
+        else:
+            # Быстрое обновление без пересоздания
+            self._update_bars(self._tp_year_bars, xs, tps, bar_width)
+            self._update_bars(self._si_year_bars, xs, sis, bar_width,
+                              colors=si_colors)
+
         self._set_year_ticks(self.ax_tp_year)
+        self._set_year_ticks(self.ax_si_year)
         self.ax_tp_year.set_ylabel("мс²", color=COL_TEXT_LIGHT)
         self.ax_tp_year.set_title(f"TP по неделям ({period})",
                                   color=COL_TEXT_LIGHT, fontsize=9)
-
-        self.ax_si_year.clear()
-        self._style_ax(self.ax_si_year)
-        self.ax_si_year.bar(xs, sis, width=bar_width,  # ← bar_width
-                            color=[self._si_color(v) for v in sis], align='edge')  # ← center
-        self._set_year_ticks(self.ax_si_year)
         self.ax_si_year.set_ylabel("ИС", color=COL_TEXT_LIGHT)
-        self.ax_tp_year.set_title(f"TP по неделям ({period})",
+        self.ax_si_year.set_title(f"Стресс по неделям ({period})",
                                   color=COL_TEXT_LIGHT, fontsize=9)
-        self._shade_year_scale(lo, hi)   # ← зебра годов/месяцев/недель
+        self._shade_year_scale(lo, hi)
 
         self.canvas_tp.draw_idle()
+
+    def _update_bars(self, bars, xs, heights, bar_width, colors=None):
+        """Обновляет существующие бары без пересоздания."""
+        for i, bar in enumerate(bars):
+            if i >= len(xs):
+                break
+            bar.set_xy((xs[i], 0))
+            bar.set_height(heights[i])
+            bar.set_width(bar_width)
+            if colors:
+                bar.set_color(colors[i])
 
     def _draw_tp(self, athlete_id):
         """Отрисовка графиков TP/ИС из кэша."""
@@ -1335,6 +1385,12 @@ class ECGViewerApp(ctk.CTkToplevel):
     def _on_tp_press(self, event):
         if event.button != 1:
             return
+
+        # ← второй клик отменяет «выбор недели» от первого клика
+        if self._tp_click_timer is not None:
+            self.after_cancel(self._tp_click_timer)
+            self._tp_click_timer = None
+
         if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
             return
 
@@ -1356,7 +1412,6 @@ class ECGViewerApp(ctk.CTkToplevel):
                 jan1 = datetime.date(d.year, 1, 1)
                 year_monday = jan1 - datetime.timedelta(days=jan1.weekday())
                 lo = float(self._global_week(year_monday))
-                # ← всегда полный календарный год, БЕЗ обрезки по данным
                 hi = min(float(self._total_weeks),
                          float(self._global_week(datetime.date(d.year + 1, 1, 1))))
                 self._year_xlim = (lo, hi)
@@ -1383,8 +1438,16 @@ class ECGViewerApp(ctk.CTkToplevel):
             lo, hi = 0.0, span0
         if hi > self._total_weeks:
             hi, lo = float(self._total_weeks), self._total_weeks - span0
-        self._year_xlim = (lo, hi)
-        self._update_year_bars()
+        self._year_xlim = (lo, hi)   # ← сохраняем актуальное окно
+
+        # Throttle: таймер ставится ОДИН раз, новые события его НЕ отменяют.
+        # Когда он сработает — возьмёт последний _year_xlim.
+        if self._pan_timer is None:
+            self._pan_timer = self.after(30, self._pan_tick)
+
+    def _pan_tick(self):
+        self._pan_timer = None
+        self._update_year_bars()   # рисуем с самым свежим xlim
 
     def _on_tp_release(self, event):
         if event.button != 1:
@@ -1396,7 +1459,12 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._pan_press = None
         self._panning = False
         if was_panning:
+            # ← Финальная перерисовка после завершения панорамирования
+            if self._pan_timer is not None:
+                self.after_cancel(self._pan_timer)
+            self._update_year_bars()
             return
+        
 
         if event.inaxes not in (self.ax_tp_year, self.ax_si_year):
             return
@@ -1406,9 +1474,11 @@ class ECGViewerApp(ctk.CTkToplevel):
         if not (0 <= w < self._total_weeks):
             return
         week_start = self._date_from_global_week(w)
-        self.after(0, lambda: self._select_week_by_date(week_start))
+        self._tp_click_timer = self.after(
+            250, lambda: self._select_week_by_date(week_start))
 
     def _select_week_by_date(self, week_start):
+        self._tp_click_timer = None        
         if not self.selected_athlete:
             return
         aid = self.selected_athlete[0]
