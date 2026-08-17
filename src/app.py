@@ -824,10 +824,10 @@ class ECGViewerApp(ctk.CTkToplevel):
         ax.set_xlim(lo, hi)
         span = hi - lo
 
-        if span > 100:
+        if span > YEAR_ZOOM_WEEKS:                                   # ← было 100
             ticks, names = [], []
             for y in range(self._min_year, self._max_year + 1):
-                w = self._global_week(datetime.date(y, 1, 1))
+                w = (datetime.date(y, 1, 1) - self._global_start).days / 7.0   # ← точно
                 if lo - 1 <= w <= hi + 1:
                     ticks.append(w)
                     names.append(str(y))
@@ -839,8 +839,8 @@ class ECGViewerApp(ctk.CTkToplevel):
             d1 = self._date_from_global_week(int(min(hi, self._total_weeks)))
             y, m = d0.year, d0.month
             while (y, m) <= (d1.year, d1.month):
-                tw = self._global_week(datetime.date(y, m, 1))
-                if lo - 1e-9 <= tw <= hi + 1e-9:          # ← только тики внутри окна
+                tw = (datetime.date(y, m, 1) - self._global_start).days / 7.0  # ← точно
+                if lo - 1e-9 <= tw <= hi + 1e-9:
                     ticks.append(tw)
                     names.append(str(y) if m == 1 else MONTHS_RU[m - 1])
                 m += 1
@@ -862,8 +862,8 @@ class ECGViewerApp(ctk.CTkToplevel):
         if span > YEAR_ZOOM_WEEKS:
             # --- годы ---
             for y in range(self._min_year, self._max_year + 1):
-                w0 = float(self._global_week(datetime.date(y, 1, 1)))
-                w1 = float(self._global_week(datetime.date(y + 1, 1, 1)))
+                w0 = (datetime.date(y, 1, 1) - self._global_start).days / 7.0
+                w1 = (datetime.date(y + 1, 1, 1) - self._global_start).days / 7.0
                 if w1 <= lo or w0 >= hi:
                     continue
                 if y % 2:
@@ -1355,17 +1355,10 @@ class ECGViewerApp(ctk.CTkToplevel):
                 d = self._date_from_global_week(w)
                 jan1 = datetime.date(d.year, 1, 1)
                 year_monday = jan1 - datetime.timedelta(days=jan1.weekday())
-                lo_year = float(self._global_week(year_monday))
-                hi_year = min(float(self._total_weeks),
-                              float(self._global_week(datetime.date(d.year + 1, 1, 1))))
-
-                ws = [ww for ww, _, _ in self._week_data]
-                if ws:
-                    lo = max(lo_year, float(min(ws)) - 0.5)
-                    hi = min(hi_year, float(max(ws)) + 1.0)
-                else:
-                    lo, hi = lo_year, hi_year
-
+                lo = float(self._global_week(year_monday))
+                # ← всегда полный календарный год, БЕЗ обрезки по данным
+                hi = min(float(self._total_weeks),
+                         float(self._global_week(datetime.date(d.year + 1, 1, 1))))
                 self._year_xlim = (lo, hi)
                 self._update_year_bars()
                 self._set_status(f"🔍 Масштаб: {d.year} (янв–дек)")
