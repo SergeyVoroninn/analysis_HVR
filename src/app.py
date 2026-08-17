@@ -25,7 +25,7 @@ from theme import (COL_ACCENT, COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT,
                    COL_WEEKEND, COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN,
                    COL_CRIT, COL_TP_YEAR, COL_TP_WEEK)
 
-DAILY_ZOOM_WEEKS = 12.0   # при span ≤ этого значения (в неделях) — дневные бары
+DAILY_ZOOM_WEEKS = 16.0   # при span ≤ этого значения (в неделях) — дневные бары
 YEAR_X0, YEAR_Y0 = 5, 18
 WEEK_X0, WEEK_Y0 = 28, 5
 
@@ -691,6 +691,17 @@ class ECGViewerApp(ctk.CTkToplevel):
             self._load_athletes(select_id=aid)
         return "added", aid
 
+    def _center_year_on_week(self, w):
+        """Центрирует годовой график по кликнутой неделе, сохраняя масштаб."""
+        lo, hi = self._year_xlim
+        span = hi - lo
+        if span >= self._total_weeks - 1e-9:
+            return                      # показан весь диапазон — центровать нечего
+        gw = self._global_week(self._year_start + datetime.timedelta(weeks=w))
+        new_lo = gw + 0.5 - span / 2.0  # середина кликнутой недели — в центр окна
+        new_lo = max(0.0, min(new_lo, self._total_weeks - span))
+        self._year_xlim = (new_lo, new_lo + span)
+
     # =========================================================
     # Загрузка диапазонов и списка спортсменов
     # =========================================================
@@ -901,12 +912,16 @@ class ECGViewerApp(ctk.CTkToplevel):
         self.ax_si_year.set_title(f"Стресс по дням ({label})",
                                   color=COL_TEXT_LIGHT, fontsize=9)
 
-        # === Пунктирные разделители недель (понедельники) ===
-        for wx in range(int(lo) + 1, int(hi) + 1):
+        # === Недельная «зебра»: чередующиеся подложки + тонкая граница ===
+        for wx in range(int(lo), int(hi) + 1):
+            x0, x1 = float(wx), float(wx + 1)
             for ax in (self.ax_tp_year, self.ax_si_year):
-                ax.axvline(wx, color=COL_TEXT_DIM, linewidth=0.8,
-                           linestyle=(0, (3, 3)), alpha=0.55)
-
+                if wx % 2:   # подсветка каждой второй недели
+                    ax.axvspan(max(x0, lo), min(x1, hi),
+                               color=COL_TEXT_LIGHT, alpha=0.06, zorder=0)
+                ax.axvline(x1, color=COL_TEXT_DIM, linewidth=0.6,
+                           alpha=0.35, zorder=1)   # граница недели (воскресенье|понедельник)
+                
         self.canvas_tp.draw_idle()
 
     def _set_daily_ticks(self, ax, lo, hi):
@@ -1166,13 +1181,16 @@ class ECGViewerApp(ctk.CTkToplevel):
         self._selected_week = w
         self._draw_week(self._year_start + datetime.timedelta(weeks=w))
 
-        self.canvas_year.delete('sel')    # выбранная неделя убирает пунктирный якорь
+        self.canvas_year.delete('sel')
         x = YEAR_X0 + w * self.step
         self.canvas_year.create_rectangle(x - 1, YEAR_Y0 - 1, x + self.cell + 1,
                                           YEAR_Y0 + 7 * self.step,
                                           outline=COL_SELECTION, width=1, tags='sel')
+
+        self._center_year_on_week(w)    # ← сдвиг окна годового графика
+
         if self.selected_athlete:
-            self._draw_tp(self.selected_athlete[0])
+            self._draw_tp(self.selected_athlete[0])   # перерисует бары в новом окне
 
     def _on_year_click(self, event):
         w = (event.x - YEAR_X0) // self.step
