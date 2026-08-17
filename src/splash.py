@@ -20,7 +20,6 @@ class SplashScreen(ctk.CTkToplevel):
 
         self.overrideredirect(True)
         self.attributes("-topmost", True)
-        # Подавляем любые Tcl-ошибки от таймеров
         self.report_callback_exception = lambda *args: None
 
         self.on_close = on_close
@@ -48,6 +47,7 @@ class SplashScreen(ctk.CTkToplevel):
                      font=ctk.CTkFont(size=11),
                      text_color="#9a9a9a").pack(pady=(0, 20))
 
+        # === Единственный прогресс-бар ===
         self.progress = ctk.CTkProgressBar(self, width=280, height=6)
         self.progress.pack(pady=(0, 10))
         self.progress.set(0)
@@ -55,9 +55,28 @@ class SplashScreen(ctk.CTkToplevel):
         ctk.CTkLabel(self, text="v1.0", font=ctk.CTkFont(size=9),
                      text_color="#666666").pack(side="bottom", pady=10)
 
+        # Анимация запускается только если не используется ручное управление
+        self._manual_mode = False
         self._animate_progress()
+        
         if auto_close:
             self._after_ids.append(self.after(self.show_ms, self._close))
+
+    def set_progress(self, value: float):
+        """value: 0.0–1.0 — сдвинуть прогресс-бар и отрисовать."""
+        self._manual_mode = True  # Остановить анимацию
+        
+        if self.progress is not None:
+            try:
+                self.progress.set(max(0.0, min(1.0, float(value))))
+            except Exception:
+                pass
+        
+        self.update_idletasks()
+        self.update()
+        if hasattr(self, "master") and self.master:
+            self.master.update_idletasks()
+            self.master.update()
 
     def _load_corner_logo(self):
         logo_path = os.path.join(BASE_DIR, "logo21.png")
@@ -74,6 +93,10 @@ class SplashScreen(ctk.CTkToplevel):
             pass
 
     def _animate_progress(self, step=0):
+        """Анимация "бегущей" полосы (работает до первого вызова set_progress)."""
+        if self._manual_mode:
+            return  # Ручное управление включено — анимация больше не нужна
+            
         steps = 40
         phase = step % (2 * steps)
         v = phase / steps if phase < steps else 2 - phase / steps
