@@ -104,6 +104,13 @@ class Heatmap(tk.Frame):
         if d:
             self.week_map.week_start = d
 
+    def set_cursor_by_date(self, d):
+        """Поставить курсор на неделю, содержащую дату d."""
+        w = self.year_map.set_cursor_by_date(d)
+        self._lbl_year.configure(text=str(self.year_map.year))
+        if w is not None:
+            self.week_map.week_start = self.year_map.week_start_date(w)
+
     def reset_to_data_center(self):
         """Сброс yearmap на середину диапазона данных атлета."""
         session = get_session(self.db_path)

@@ -57,6 +57,7 @@ if __name__ == "__main__":
     charts = ChartsPanel(right, metrics=[TP_METRIC, SI_METRIC])
     charts.set_year_pick_callback(hm.set_year)
     charts.set_reset_callback(hm.reset_to_data_center)
+    charts.set_single_click_callback(hm.set_cursor_by_date)
 
     # размеры и позиции блоков считает и применяет контроллер (одно место)
     ResizeController(right, blocks=[hm, charts], gap=10)

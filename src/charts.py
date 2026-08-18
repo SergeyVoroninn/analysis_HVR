@@ -49,6 +49,10 @@ class ChartsPanel(tk.Frame):
         for p in self._plots:
             p.on_reset = cb
 
+    def set_single_click_callback(self, cb):
+        for p in self._plots:
+            p.on_single_click = cb
+
     # ---------------- хуки ghost-ресайза ----------------
     def ghost_shown(self):
         for p in self._plots:

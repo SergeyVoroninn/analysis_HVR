@@ -79,9 +79,11 @@ class MetricPlot(tk.Frame):
         self._click_t = 0.0
         self._click_x = 0.0
         self._click_y = 0.0
+        self._single_timer = None
         self.on_view_changed = None
-        self.on_year_pick = None
+        self.on_year_pick = None       # callback(year) — двойной клик
         self.on_reset = None
+        self.on_single_click = None    # callback(date) — одинарный клик, дата
 
         self.fig = Figure(dpi=100)
         self.fig.patch.set_facecolor(COL_BG_DARK)
@@ -207,6 +209,9 @@ class MetricPlot(tk.Frame):
         self._click_y = event.y
 
         if is_dbl:
+            if self._single_timer is not None:
+                self.after_cancel(self._single_timer)
+                self._single_timer = None
             d = datetime.date.fromordinal(int(event.xdata))
             jan1 = datetime.date(d.year, 1, 1)
             dec31 = datetime.date(d.year, 12, 31)
@@ -215,10 +220,23 @@ class MetricPlot(tk.Frame):
                 self.on_year_pick(d.year)
             return
 
+        # одинарный клик — откладываем, чтобы отличить от двойного
+        d = datetime.date.fromordinal(int(event.xdata))
+        if self.on_single_click:
+            if self._single_timer is not None:
+                self.after_cancel(self._single_timer)
+            self._single_timer = self.after(
+                300, lambda dd=d: self._fire_single(dd))
+
         v = self._view_ordinals()
         if v is None:
             return
         self._pan = (event.x, v[0], v[1])
+
+    def _fire_single(self, d):
+        self._single_timer = None
+        if self.on_single_click:
+            self.on_single_click(d)
 
     def _on_motion(self, event):
         if self._pan is None or event.button != 1:

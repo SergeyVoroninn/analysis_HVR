@@ -96,6 +96,16 @@ class YearHeatmap(tk.Canvas):
             return None
         return self._year_start + datetime.timedelta(weeks=w)
 
+    def set_cursor_by_date(self, d):
+        """Установить курсор и год по календарной дате d."""
+        self._year = d.year
+        self._recalc_year()
+        self._redraw_cells()
+        w = (d - self._year_start).days // 7
+        self._week = w if 0 <= w < 53 else None
+        self._redraw_cursor()
+        return self._week                    # чтобы синхронизировать weekmap
+
     # ================= данные из БД =================
     def _load_data(self):
         self._date_map = {}
@@ -219,10 +229,6 @@ class YearHeatmap(tk.Canvas):
 
     def _on_wheel(self, event):
         """Колесо над yearmap: переключение года."""
-        if self._y_shift:
-            self._y_shift(1 if event.delta > 0 else -1)
-
-    def _on_wheel(self, event):
         now = time.monotonic()
         if now < self._wheel_lock:
             return                          # это продолжение жеста — игнор
