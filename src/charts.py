@@ -31,7 +31,15 @@ class ChartsPanel(tk.Frame):
         super().__init__(master, bg=COL_BG_DARK)
         self._plots = [MetricPlot(self, m, db_path=db_path) for m in metrics]
         for p in self._plots:
+            p.on_view_changed = self._apply_zoom
             p.pack(side="top", fill="x", pady=2)
+
+    def _apply_zoom(self, view):
+        """Единый масштаб на все графики: применяем окно и перерисовываем."""
+        for p in self._plots:
+            p.view = view
+        for p in self._plots:
+            p.redraw()
 
     # ---------------- хуки ghost-ресайза ----------------
     def ghost_shown(self):
@@ -72,3 +80,23 @@ class ChartsPanel(tk.Frame):
     def set_range(self, start, end):
         for p in self._plots:
             p.set_range(start, end)
+
+    # ---------------- общий масштаб по X ----------------
+    @property
+    def zoom(self):
+        """Окно видимости (lo, hi) в днях или None (весь период)."""
+        return self._plots[0].view if self._plots else None
+
+    @zoom.setter
+    def zoom(self, view):
+        for p in self._plots:
+            p.view = view
+
+    def redraw(self):
+        for p in self._plots:
+            p.redraw()
+
+    def center_on_week(self, week_start_date):
+        """Центрировать графики по среде выбранной недели."""
+        if self._plots:
+            self._plots[0].center_on_week(week_start_date)

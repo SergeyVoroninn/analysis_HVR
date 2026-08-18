@@ -81,6 +81,16 @@ class Heatmap(tk.Frame):
         if self._on_week_pick:
             self._on_week_pick(w, d)
 
+    def set_selection(self, year=None, week=None):
+        """Восстановление состояния: год и курсор недели (+ недельная карта)."""
+        if year is not None:
+            self.year = year
+        if week is not None:
+            self.week = week
+            d = self.year_map.week_start_date(week)
+            if d:
+                self.week_map.week_start = d
+
     def _ctrl_req(self):
         """Высота панели переключателя года: дети + pady 5 сверху и снизу."""
         hs = [c.winfo_reqheight() for c in self._ctrl.winfo_children()]
