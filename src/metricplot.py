@@ -155,10 +155,10 @@ class MetricPlot(tk.Frame):
 
     def _ord(self, x):
         if isinstance(x, datetime.datetime):
-            return x.date().toordinal()
+            return x.date().toordinal() + x.hour / 24.0 + x.minute / 1440.0
         if isinstance(x, datetime.date):
             return x.toordinal()
-        return int(x)
+        return float(x)
 
     def _view_ordinals(self):
         if self.view is not None:
@@ -260,8 +260,8 @@ class MetricPlot(tk.Frame):
             return
         lo, hi = v
         span = hi - lo
-        wed = week_start_date + datetime.timedelta(days=2)
-        center = self._ord(wed)
+        thu = week_start_date + datetime.timedelta(days=3)
+        center = self._ord(thu)
         self._commit_view(int(center - span / 2), int(center + span / 2))
 
     def _style(self):
@@ -295,7 +295,7 @@ class MetricPlot(tk.Frame):
             def key(x): return int(x)
         else:
             bw = 0.1
-            def key(x): return round(x * 8) / 8
+            def key(x): return int(x * 8) / 8     # 3-часовые блоки: floor к началу блока
 
         agg = {}
         for dt, vv in self._values:
@@ -346,7 +346,9 @@ class MetricPlot(tk.Frame):
             if step >= 1:
                 names.append(d.strftime("%d.%m.%y") if vspan > 350 else d.strftime("%d.%m"))
             else:
-                names.append(d.strftime("%H:%M"))
+                h = int((x % 1) * 24)
+                m = int(((x % 1) * 24 - h) * 60)
+                names.append(f"{h:02d}:{m:02d}")
             k += 1
         self.ax.set_xticks(ticks)
         self.ax.set_xticklabels(names, fontsize=7)
