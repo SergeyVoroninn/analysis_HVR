@@ -115,8 +115,15 @@ class YearHeatmap(tk.Canvas):
                 m["worst"] = "warn"
 
     # ================= ресайз =================
+    def height_for_step(self, step):
+        """Высота канваса при шаге ячейки step (cell + 1)."""
+        return Y0 + 7 * step + 6
+
     def set_cell(self, cell):
         """Задать размер ячейки извне (приложение само считает по ширине)."""
+        import os
+        if os.environ.get("HVR_DEBUG") == "1":
+            print(f"[yearmap] set_cell {cell}", flush=True)
         cell = int(max(6, min(cell, 22)))
         if cell == self._cell:
             return

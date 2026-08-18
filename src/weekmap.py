@@ -73,6 +73,9 @@ class WeekHeatmap(tk.Frame):
 
     def set_cell(self, cell):
         """Общий размер ячейки задаёт приложение."""
+        import os
+        if os.environ.get("HVR_DEBUG") == "1":
+            print(f"[weekmap] set_cell {cell}", flush=True)
         cell = int(max(6, min(cell, 22)))
         if cell == self._cell:
             return
@@ -80,6 +83,10 @@ class WeekHeatmap(tk.Frame):
         self._step = cell + 1
         self._rebuild_grid()
         self._redraw()
+
+    def height_for_step(self, step):
+        """Полная высота виджета (заголовок + канвас) при шаге step."""
+        return self._title.winfo_reqheight() + Y0 + 8 * step + 6
 
     # ================= данные из БД =================
     def _load_data(self):

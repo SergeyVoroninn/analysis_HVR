@@ -1,13 +1,13 @@
 """
 charts.py — готовые параметры и общий контейнер графиков.
-Отрисовка одного графика — в metricplot.py, ghost-ресайз — в ghost.py.
+Отрисовка одного графика — в metricplot.py. Размер задаётся извне через
+ResizeController (ghost.py): target_size / ghost_rects / apply_size.
 """
 import tkinter as tk
 
 from analysis import stress_level
-from theme import COL_ONE, COL_WARN, COL_CRIT, COL_HIGH
+from theme import COL_BG_DARK, COL_ONE, COL_WARN, COL_CRIT, COL_HIGH
 from metricplot import MetricPlot, MetricSpec
-from ghost import GhostResizeFrame
 
 
 def _si_color(v):
@@ -22,18 +22,26 @@ SI_METRIC = MetricSpec("si", "Стресс", "ИС",
                        lambda r: r.stress_si, _si_color)
 
 
-class ChartsPanel(GhostResizeFrame):
+class ChartsPanel(tk.Frame):
     """Общий контейнер графиков: высота каждого = ширина / ASPECT."""
 
     ASPECT = 6
 
     def __init__(self, master, metrics, db_path=None):
-        super().__init__(master)
+        super().__init__(master, bg=COL_BG_DARK)
         self._plots = [MetricPlot(self, m, db_path=db_path) for m in metrics]
         for p in self._plots:
             p.pack(side="top", fill="x", pady=2)
 
     # ---------------- хуки ghost-ресайза ----------------
+    def ghost_shown(self):
+        for p in self._plots:
+            p.set_frozen(True)
+
+    def ghost_hidden(self):
+        for p in self._plots:
+            p.set_frozen(False)
+
     def target_size(self, avail_w):
         h_each = max(120, int(avail_w / self.ASPECT))
         return avail_w, len(self._plots) * (h_each + 4)

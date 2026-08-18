@@ -2,22 +2,22 @@
 heatmap.py — составной виджет: переключатель года сверху,
 годовой heatmap слева, недельный справа.
 
-Ресайз — через базовый класс GhostResizeFrame: во время перетаскивания
-показываются белые рамки, пересборка — при отпускании мыши.
+Размер задаётся извне через ResizeController (ghost.py): методы
+target_size / ghost_rects / apply_size. Сам виджет на <Configure> не
+реагирует — никакой обратной связи с раскладкой.
 """
 import tkinter as tk
 
 from theme import COL_BG_DARK, COL_TEXT_LIGHT
-from ghost import GhostResizeFrame
 from yearmap import YearHeatmap
 from weekmap import WeekHeatmap
 
 
-class Heatmap(GhostResizeFrame):
+class Heatmap(tk.Frame):
     """Единая панель плотности записей ЭКГ."""
 
     def __init__(self, master, db_path=None, on_week_pick=None, on_pick=None):
-        super().__init__(master)
+        super().__init__(master, bg=COL_BG_DARK)
 
         # ---------- переключатель года ----------
         self._ctrl = tk.Frame(self, bg=COL_BG_DARK)
@@ -81,23 +81,35 @@ class Heatmap(GhostResizeFrame):
         if self._on_week_pick:
             self._on_week_pick(w, d)
 
-    def _ctrl_h(self):
-        return max(1, self._ctrl.winfo_height())
+    def _ctrl_req(self):
+        """Высота панели переключателя года: дети + pady 5 сверху и снизу."""
+        hs = [c.winfo_reqheight() for c in self._ctrl.winfo_children()]
+        return (max(hs) if hs else 1) + 10
 
     # ---------------- хуки ghost-ресайза ----------------
+    def ghost_shown(self):
+        pass
+
+    def ghost_hidden(self):
+        pass
+
     def target_size(self, avail_w):
-        """Общая ширина: (53*t+10) + 20 + (24+7*t+6) = 60*t+60."""
+        """Ширина: 60*t+60; высота: переключатель + максимум из двух карт."""
         t = int(max(7, min((avail_w - 60) // 60, 23)))   # step = cell + 1
         self._pending_t = t
         w = 60 * t + 60
-        h = self._ctrl_h() + max(24 + 7 * t, 30 + 8 * t)
-        return w, h
+        ctrl_h = self._ctrl_req()
+        maps_h = max(self.year_map.height_for_step(t),
+                     self.week_map.height_for_step(t))
+        return w, ctrl_h + maps_h
 
     def ghost_rects(self, w, h):
         t = self._pending_t
-        y0 = self._ctrl_h()
-        yw, yh = 53 * t + 10, 24 + 7 * t
-        ww, wh = 24 + 7 * t + 6, 30 + 8 * t
+        y0 = self._ctrl_req()
+        yw = 53 * t + 10
+        yh = self.year_map.height_for_step(t)
+        ww = 24 + 7 * t + 6
+        wh = self.week_map.height_for_step(t)
         return [(1, y0, yw, y0 + yh),
                 (yw + 21, y0, yw + 20 + ww, y0 + wh)]
 

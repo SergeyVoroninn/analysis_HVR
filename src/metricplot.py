@@ -17,6 +17,30 @@ from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
                    COL_SPINE, COL_TP_YEAR)
 
 
+class _FrozenCanvas(FigureCanvasTkAgg):
+    """Канвас, который не перерисовывается, пока заморожен (ресайз окна)."""
+
+    def __init__(self, figure, master=None):
+        super().__init__(figure, master=master)
+        self._frozen = False
+
+    def resize(self, event):
+        import os
+        if os.environ.get("HVR_DEBUG") == "1":
+            print(f"[mpl] resize {event.width}x{event.height} frozen={self._frozen}", flush=True)
+        if self._frozen:
+            return
+        super().resize(event)
+
+    def set_frozen(self, frozen):
+        if frozen == self._frozen:
+            return
+        import os
+        if os.environ.get("HVR_DEBUG") == "1":
+            print(f"[mpl] set_frozen={frozen}", flush=True)
+        self._frozen = frozen
+
+
 class MetricSpec:
     """Описание отображаемой величины."""
 
@@ -43,12 +67,16 @@ class MetricPlot(tk.Frame):
         self.fig = Figure(dpi=100)
         self.fig.patch.set_facecolor(COL_BG_DARK)
         self.ax = self.fig.add_subplot(111)
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self)
+        self.canvas = _FrozenCanvas(self.fig, master=self)
         self.widget = self.canvas.get_tk_widget()
         self.widget.configure(background=COL_BG_WIDGET)
         self.widget.pack(side="top", fill="x")
         self.fig.subplots_adjust(left=0.05, right=0.98, top=0.86, bottom=0.18)
         self._style()
+
+    def set_frozen(self, frozen):
+        """Заморозить перерисовку на время ресайза окна."""
+        self.canvas.set_frozen(frozen)
 
     # ---------------- входы ----------------
     @property
@@ -66,6 +94,9 @@ class MetricPlot(tk.Frame):
         self._reload()
 
     def set_size(self, w, h):
+        import os
+        if os.environ.get("HVR_DEBUG") == "1":
+            print(f"[mpl] set_size {w}x{h}", flush=True)
         self.widget.configure(width=w, height=h)
 
     # ---------------- данные ----------------
