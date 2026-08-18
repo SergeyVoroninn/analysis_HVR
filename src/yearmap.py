@@ -8,7 +8,7 @@ heatmap.py — годовой heatmap плотности записей ЭКГ.
 Растягивается за окном: размер ячейки пересчитывается по ширине.
 """
 import datetime
-
+import time
 import tkinter as tk
 
 from database import get_db_path
@@ -48,8 +48,12 @@ class YearHeatmap(tk.Canvas):
         self._recalc_year()
         self._redraw_cells()
 
-        self.bind("<Button-1>", self._on_click)
+        self.on_year_change = None        # callback(delta)
+        self._wheel_lock = 0.0            # блокировка длинного жеста колеса
 
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<MouseWheel>", self._on_wheel)
+        self._y_shift = None
     # ================= свойства =================
     @property
     def athlete(self):
@@ -212,3 +216,19 @@ class YearHeatmap(tk.Canvas):
         self.week = w
         if self.on_week_pick:
             self.on_week_pick(w, self.week_start_date(w))
+
+    def _on_wheel(self, event):
+        """Колесо над yearmap: переключение года."""
+        if self._y_shift:
+            self._y_shift(1 if event.delta > 0 else -1)
+
+    def _on_wheel(self, event):
+        now = time.monotonic()
+        if now < self._wheel_lock:
+            return                          # это продолжение жеста — игнор
+        self._wheel_lock = now + 0.6        # жест длится ~0.6 с
+        delta = 1 if event.delta > 0 else -1
+        if self.on_year_change:
+            self.on_year_change(delta)
+        else:
+            self.year += delta

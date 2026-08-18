@@ -3,8 +3,8 @@ weekmap.py — недельный heatmap: 7 дней × 8 трёхчасовы�
 
 Свойства:
   athlete    — id спортсмена; при смене данные перезагружаются из БД,
-               неделя сбрасывается на последнюю с записями;
-  week_start — понедельник отображаемой недели; при смене ячейки перерисовываются.
+               неделя НЕ меняется сама — только извне через week_start;
+  week_start — понедельник отображаемой недели (None → пусто).
 """
 import datetime
 
@@ -15,7 +15,7 @@ from models import get_session, ECGRecord
 from theme import (COL_BG_DARK, COL_TEXT_DIM, COL_WEEKDAY, COL_WEEKEND,
                    COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN, COL_CRIT)
 
-X0, Y0 = 24, 4           # слева часы, сверху почти без отступа (заголовок вне канваса)
+X0, Y0 = 24, 4
 
 
 class WeekHeatmap(tk.Frame):
@@ -26,7 +26,7 @@ class WeekHeatmap(tk.Frame):
         self._cell = cell
         self._step = cell + 1
 
-        self._title = tk.Label(self, text="", bg=COL_BG_DARK, fg=COL_TEXT_DIM,
+        self._title = tk.Label(self, text="—", bg=COL_BG_DARK, fg=COL_TEXT_DIM,
                                font=("Segoe UI", 10))
         self._title.pack(anchor="w")
 
@@ -34,7 +34,7 @@ class WeekHeatmap(tk.Frame):
         self._cnv.pack()
 
         self.db_path = db_path or get_db_path()
-        self.on_pick = on_pick          # callback(day, block | None)
+        self.on_pick = on_pick
 
         self._athlete_id = None
         self._week_start = None
@@ -57,7 +57,6 @@ class WeekHeatmap(tk.Frame):
             return
         self._athlete_id = aid
         self._load_data()
-        self._week_start = self._default_week()
         self._redraw()
 
     @property
@@ -72,7 +71,6 @@ class WeekHeatmap(tk.Frame):
         self._redraw()
 
     def set_cell(self, cell):
-        """Общий размер ячейки задаёт приложение."""
         import os
         if os.environ.get("HVR_DEBUG") == "1":
             print(f"[weekmap] set_cell {cell}", flush=True)
@@ -85,7 +83,6 @@ class WeekHeatmap(tk.Frame):
         self._redraw()
 
     def height_for_step(self, step):
-        """Полная высота виджета (заголовок + канвас) при шаге step."""
         return self._title.winfo_reqheight() + Y0 + 8 * step + 6
 
     # ================= данные из БД =================
@@ -110,14 +107,6 @@ class WeekHeatmap(tk.Frame):
                 m["worst"] = "crit"
             elif status == "warn" and m["worst"] != "crit":
                 m["worst"] = "warn"
-
-    def _default_week(self):
-        today = datetime.date.today()
-        if self._block_map:
-            last = max(datetime.date.fromisoformat(k[0]) for k in self._block_map)
-            last = min(last, today)
-            return last - datetime.timedelta(days=last.weekday())
-        return today - datetime.timedelta(days=today.weekday())
 
     # ================= построение =================
     def _rebuild_grid(self):
@@ -152,7 +141,7 @@ class WeekHeatmap(tk.Frame):
 
     def _redraw(self):
         if self._week_start is None:
-            self._title.configure(text="")
+            self._title.configure(text="—")
             return
         ws = self._week_start
         we = ws + datetime.timedelta(days=6)

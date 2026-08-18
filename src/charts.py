@@ -35,11 +35,19 @@ class ChartsPanel(tk.Frame):
             p.pack(side="top", fill="x", pady=2)
 
     def _apply_zoom(self, view):
-        """Единый масштаб на все графики: применяем окно и перерисовываем."""
+        """Единый масштаб на все графики."""
         for p in self._plots:
             p.view = view
         for p in self._plots:
             p.redraw()
+
+    def set_year_pick_callback(self, cb):
+        for p in self._plots:
+            p.on_year_pick = cb
+
+    def set_reset_callback(self, cb):
+        for p in self._plots:
+            p.on_reset = cb
 
     # ---------------- хуки ghost-ресайза ----------------
     def ghost_shown(self):
@@ -84,7 +92,7 @@ class ChartsPanel(tk.Frame):
     # ---------------- общий масштаб по X ----------------
     @property
     def zoom(self):
-        """Окно видимости (lo, hi) в днях или None (весь период)."""
+        """Абсолютное окно (lo, hi) в ординалах или None."""
         return self._plots[0].view if self._plots else None
 
     @zoom.setter

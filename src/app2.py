@@ -55,6 +55,8 @@ if __name__ == "__main__":
                  on_week_pick=lambda w, d: charts.center_on_week(d),
                  on_pick=lambda day, b: print("🕒", day, "блок", b))
     charts = ChartsPanel(right, metrics=[TP_METRIC, SI_METRIC])
+    charts.set_year_pick_callback(hm.set_year)
+    charts.set_reset_callback(hm.reset_to_data_center)
 
     # размеры и позиции блоков считает и применяет контроллер (одно место)
     ResizeController(right, blocks=[hm, charts], gap=10)
@@ -69,11 +71,12 @@ if __name__ == "__main__":
     panel.on_select = on_select
     cur = panel.selected()
     on_select(cur[0] if cur else None)
+    root.update()                      # дать yearmap загрузить данные
 
     hm.set_selection(year=settings.get("year"), week=settings.get("week"))
 
     saved_zoom = settings.get("zoom")
-    if saved_zoom and len(saved_zoom) == 2:
+    if saved_zoom and len(saved_zoom) == 2 and saved_zoom[0] and saved_zoom[1]:
         charts.zoom = tuple(saved_zoom)
         charts.redraw()
 

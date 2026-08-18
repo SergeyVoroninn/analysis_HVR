@@ -6,11 +6,14 @@ heatmap.py — составной виджет: переключатель го�
 target_size / ghost_rects / apply_size. Сам виджет на <Configure> не
 реагирует — никакой обратной связи с раскладкой.
 """
+import datetime
 import tkinter as tk
 
 from theme import COL_BG_DARK, COL_TEXT_LIGHT
 from yearmap import YearHeatmap
 from weekmap import WeekHeatmap
+from database import get_db_path
+from models import get_session, ECGRecord
 
 
 class Heatmap(tk.Frame):
@@ -18,6 +21,7 @@ class Heatmap(tk.Frame):
 
     def __init__(self, master, db_path=None, on_week_pick=None, on_pick=None):
         super().__init__(master, bg=COL_BG_DARK)
+        self.db_path = db_path or get_db_path()
 
         # ---------- переключатель года ----------
         self._ctrl = tk.Frame(self, bg=COL_BG_DARK)
@@ -41,6 +45,7 @@ class Heatmap(tk.Frame):
 
         self._on_week_pick = on_week_pick
         self.year_map.on_week_pick = self._sync_week
+        self.year_map.on_year_change = self._change_year
         self._pending_t = None
 
         self._lbl_year.configure(text=str(self.year))
@@ -90,6 +95,39 @@ class Heatmap(tk.Frame):
             d = self.year_map.week_start_date(week)
             if d:
                 self.week_map.week_start = d
+
+    def set_year(self, year):
+        """Переключить год и поставить курсор в середину года (~26-я неделя)."""
+        self.year = year
+        self.week = 26
+        d = self.year_map.week_start_date(26)
+        if d:
+            self.week_map.week_start = d
+
+    def reset_to_data_center(self):
+        """Сброс yearmap на середину диапазона данных атлета."""
+        session = get_session(self.db_path)
+        try:
+            row = (session.query(ECGRecord.recorded_at)
+                   .filter(ECGRecord.athlete_id == self.year_map.athlete)
+                   .order_by(ECGRecord.recorded_at.asc()).first())
+            if not row or not row[0]:
+                return
+            first = datetime.datetime.fromisoformat(row[0]).date()
+            row = (session.query(ECGRecord.recorded_at)
+                   .filter(ECGRecord.athlete_id == self.year_map.athlete)
+                   .order_by(ECGRecord.recorded_at.desc()).first())
+            last = datetime.datetime.fromisoformat(row[0]).date()
+        finally:
+            session.close()
+
+        mid = first + (last - first) / 2
+        self.year = mid.year
+        w = mid.isocalendar()[1] - 1
+        self.week = max(0, min(52, w))
+        d = self.year_map.week_start_date(self.week)
+        if d:
+            self.week_map.week_start = d
 
     def _ctrl_req(self):
         """Высота панели переключателя года: дети + pady 5 сверху и снизу."""
