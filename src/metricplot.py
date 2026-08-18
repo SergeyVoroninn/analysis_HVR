@@ -47,6 +47,7 @@ class MetricPlot(tk.Frame):
         self.widget = self.canvas.get_tk_widget()
         self.widget.configure(background=COL_BG_WIDGET)
         self.widget.pack(side="top", fill="x")
+        self.fig.subplots_adjust(left=0.05, right=0.98, top=0.86, bottom=0.18)
         self._style()
 
     # ---------------- входы ----------------
@@ -65,10 +66,7 @@ class MetricPlot(tk.Frame):
         self._reload()
 
     def set_size(self, w, h):
-        self.widget.configure(height=h)
-        self.fig.set_size_inches(w / self.fig.dpi, h / self.fig.dpi,
-                                 forward=False)
-        self.canvas.draw_idle()
+        self.widget.configure(width=w, height=h)
 
     # ---------------- данные ----------------
     def _reload(self):
