@@ -19,7 +19,7 @@ from models import get_session, ECGRecord
 class Heatmap(tk.Frame):
     """Единая панель плотности записей ЭКГ."""
 
-    def __init__(self, master, db_path=None, on_week_pick=None, on_pick=None):
+    def __init__(self, master, db_path=None, on_week_pick=None, on_week_dbl_pick=None, on_pick=None):
         super().__init__(master, bg=COL_BG_DARK)
         self.db_path = db_path or get_db_path()
 
@@ -43,9 +43,11 @@ class Heatmap(tk.Frame):
         self.week_map = WeekHeatmap(self._maps, db_path=db_path, on_pick=on_pick)
         self.week_map.pack(side="left", padx=(20, 0))
 
-        self._on_week_pick = on_week_pick
+        self._on_week_pick = on_week_pick           # одинарный клик
+        self._on_week_dbl_pick = on_week_dbl_pick   # двойной клик
         self.year_map.on_week_pick = self._sync_week
         self.year_map.on_year_change = self._change_year
+        self.year_map.on_week_dbl = self._zoom_to_week
         self._pending_t = None
 
         self._lbl_year.configure(text=str(self.year))
@@ -85,6 +87,14 @@ class Heatmap(tk.Frame):
         self.week_map.week_start = d
         if self._on_week_pick:
             self._on_week_pick(w, d)
+
+    def _zoom_to_week(self, w, monday):
+        """Двойной клик по yearmap — диапазон графика = кликнутая неделя."""
+        if monday is None:
+            return
+        self.week_map.week_start = monday
+        if self._on_week_dbl_pick:
+            self._on_week_dbl_pick(w, monday)
 
     def set_selection(self, year=None, week=None):
         """Восстановление состояния: год и курсор недели (+ недельная карта)."""

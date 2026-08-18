@@ -53,6 +53,7 @@ if __name__ == "__main__":
 
     hm = Heatmap(right,
                  on_week_pick=lambda w, d: charts.center_on_week(d),
+                 on_week_dbl_pick=lambda w, d: charts.zoom_to_week(d),
                  on_pick=lambda day, b: print("🕒", day, "блок", b))
     charts = ChartsPanel(right, metrics=[TP_METRIC, SI_METRIC])
     charts.set_year_pick_callback(hm.set_year)

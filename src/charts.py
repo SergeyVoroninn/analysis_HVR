@@ -112,3 +112,17 @@ class ChartsPanel(tk.Frame):
         """Центрировать графики по среде выбранной недели."""
         if self._plots:
             self._plots[0].center_on_week(week_start_date)
+
+    def zoom_to_week(self, week_start_date):
+        """Диапазон графиков = кликнутая неделя (пн–вс)."""
+        if not self._plots:
+            return
+        p0 = self._plots[0]
+        if p0._start is None:
+            return
+        import datetime as _dt
+        monday = week_start_date
+        sunday = monday + _dt.timedelta(days=6)
+        lo = p0._ord(monday)
+        hi = p0._ord(sunday) + 1
+        p0._commit_view(lo, hi)

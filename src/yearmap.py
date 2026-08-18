@@ -50,6 +50,10 @@ class YearHeatmap(tk.Canvas):
 
         self.on_year_change = None        # callback(delta)
         self._wheel_lock = 0.0            # блокировка длинного жеста колеса
+        self._click_t = 0.0
+        self._click_w = -1
+        self._single_timer = None
+        self.on_week_dbl = None           # callback(week, monday) — двойной клик
 
         self.bind("<Button-1>", self._on_click)
         self.bind("<MouseWheel>", self._on_wheel)
@@ -223,9 +227,36 @@ class YearHeatmap(tk.Canvas):
         w = (event.x - X0) // self._step
         if not (0 <= w < 53):
             return
+        now = time.monotonic()
+        is_dbl = (now - self._click_t < 0.45 and w == self._click_w)
+        self._click_t = now
+        self._click_w = w
+
+        if is_dbl:
+            # двойной клик — диапазон = кликнутая неделя
+            if self._single_timer is not None:
+                self.after_cancel(self._single_timer)
+                self._single_timer = None
+            self.week = w
+            monday = self.week_start_date(w)
+            if self.on_week_dbl:
+                self.on_week_dbl(w, monday)
+            return
+
+        # одинарный клик — курсор; on_week_pick отложен, чтобы отличить от двойного
         self.week = w
         if self.on_week_pick:
-            self.on_week_pick(w, self.week_start_date(w))
+            monday = self.week_start_date(w)
+            if self._single_timer is not None:
+                self.after_cancel(self._single_timer)
+            self._single_timer = self.after(
+                300, lambda mm=monday: self._fire_week_pick(mm))
+
+    def _fire_week_pick(self, monday):
+        self._single_timer = None
+        if self.on_week_pick:
+            w = self.week
+            self.on_week_pick(w, monday)
 
     def _on_wheel(self, event):
         """Колесо над yearmap: переключение года."""

@@ -80,6 +80,7 @@ class MetricPlot(tk.Frame):
         self._click_x = 0.0
         self._click_y = 0.0
         self._single_timer = None
+        self._last_press_date = None
         self.on_view_changed = None
         self.on_year_pick = None       # callback(year) — двойной клик
         self.on_reset = None
@@ -220,13 +221,13 @@ class MetricPlot(tk.Frame):
                 self.on_year_pick(d.year)
             return
 
-        # одинарный клик — откладываем, чтобы отличить от двойного
+        # одинарный клик — курсор yearmap на дату клика (отложен, отличить от двойного)
         d = datetime.date.fromordinal(int(event.xdata))
+        self._last_press_date = d
         if self.on_single_click:
             if self._single_timer is not None:
                 self.after_cancel(self._single_timer)
-            self._single_timer = self.after(
-                300, lambda dd=d: self._fire_single(dd))
+            self._single_timer = self.after(300, lambda dd=d: self._fire_single(dd))
 
         v = self._view_ordinals()
         if v is None:
