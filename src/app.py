@@ -14,13 +14,9 @@ SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
 sys.path.insert(0, SCRIPTS_DIR)
 
 from theme import COL_BG_DARK, COL_TEXT_DIM
-from atlets import AthletesPanel
-from heatmap import Heatmap
-from dialogs import ECGListDialog
-from charts import ChartsPanel, TP_METRIC, SI_METRIC
 from ghost import ResizeController
 from appsettings import AppSettings
-from importer import import_ecg
+from splash import SplashScreen
 
 ATHLETES_COLUMN_FRACTION = 1 / 7
 ATHLETES_COLUMN_MIN = 150
@@ -29,6 +25,8 @@ if __name__ == "__main__":
     settings = AppSettings().load()
 
     root = tk.Tk()
+    root.withdraw()
+    root.report_callback_exception = lambda *a: None
     root.title("Просмотр ЭКГ — анализ ВСР (вариабельность сердечного ритма)")
     root.geometry("1400x800")
     root.configure(bg=COL_BG_DARK)
@@ -37,6 +35,34 @@ if __name__ == "__main__":
     root.grid_columnconfigure(1, weight=1)
     root.grid_rowconfigure(0, weight=1)
     root.grid_rowconfigure(1, weight=0)
+
+    splash = SplashScreen(root, show_ms=1800, auto_close=False)
+    root.update()
+
+    # --- загружаем тяжёлые модули с прогрессом ---
+    def pump(fraction):
+        splash.set_progress(fraction)
+        root.update()
+
+    pump(0.10)
+    from database import get_db_path
+    from models import get_session, Athlete, ECGRecord, ECGRaw
+    pump(0.25)
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    pump(0.40)
+    from sqlalchemy import func
+    pump(0.50)
+    import analysis
+    from analysis import parse_rr, calc_metrics, calc_stress, stress_level
+    pump(0.60)
+    from atlets import AthletesPanel
+    from heatmap import Heatmap
+    from dialogs import ECGListDialog
+    from charts import ChartsPanel, TP_METRIC, SI_METRIC
+    pump(0.80)
+    from importer import import_ecg
+    pump(0.90)
 
     # ---------- левая колонка: спортсмены ----------
     panel = AthletesPanel(root)
@@ -113,6 +139,8 @@ if __name__ == "__main__":
     panel.on_import = do_import
 
     # ---------- восстановление состояния ----------
+    pump(0.95)
+
     saved_id = settings.get("athlete_id")
     panel.reload(select_id=saved_id)
     panel.on_select = on_select
@@ -121,11 +149,17 @@ if __name__ == "__main__":
     root.update()
 
     hm.set_selection(year=settings.get("year"), week=settings.get("week"))
+    root.update()
 
     saved_zoom = settings.get("zoom")
     if saved_zoom and len(saved_zoom) == 2 and saved_zoom[0] and saved_zoom[1]:
         charts.zoom = tuple(saved_zoom)
         charts.redraw()
+
+    pump(1.0)
+    root.update()
+    splash.close_splash()
+    root.deiconify()
 
     # ---------- сохранение при закрытии ----------
     def on_close():
