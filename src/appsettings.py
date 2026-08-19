@@ -1,5 +1,5 @@
 """
-appsettings.py — сохранение/восстановление состояния приложения (app2).
+appsettings.py — сохранение/восстановление состояния приложения (app).
 
 Хранит в JSON-файле рядом с БД:
   athlete_id  — id последнего выбранного спортсмена;
@@ -18,7 +18,7 @@ from database import get_db_path
 
 def settings_path():
     db = get_db_path()
-    return os.path.join(os.path.dirname(db), "app2_settings.json")
+    return os.path.join(os.path.dirname(db), "app_settings.json")
 
 
 class AppSettings:
