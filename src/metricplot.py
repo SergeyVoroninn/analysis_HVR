@@ -4,19 +4,16 @@ metricplot.py — отрисовка одного графика парамет�
 MetricSpec — описание величины (имя, ось, извлечение значения, цвет).
 MetricPlot — виджет одного графика: атлет + диапазон [start, end].
 
-Зум по оси X (как в app.py):
+Зум по оси X:
   колесо мыши      — зум к курсору;
   зажать и тянуть  — панорамирование;
   ПКМ              — сброс на весь период;
   двойной клик     — зум до года кликнутого столбика.
 
-view = (lo, hi) — абсолютный видимый диапазон в днях (ordinal).
-Переживает смену атлета без пересчёта — у каждого атлета свои данные,
-показываем один и тот же календарный период.
+view = (lo, hi) — абсолютный видимый диапазон в днях (ordinal, float).
 """
 import datetime
 import time as _time
-
 import tkinter as tk
 
 from matplotlib.figure import Figure
@@ -45,9 +42,6 @@ class _FrozenCanvas(FigureCanvasTkAgg):
     def set_frozen(self, frozen):
         if frozen == self._frozen:
             return
-        import os
-        if os.environ.get("HVR_DEBUG") == "1":
-            print(f"[mpl] set_frozen={frozen}", flush=True)
         self._frozen = frozen
 
 
@@ -76,15 +70,14 @@ class MetricPlot(tk.Frame):
         self._values = []
         self.view = None
         self._pan = None
+        self._single_timer = None
         self._click_t = 0.0
         self._click_x = 0.0
         self._click_y = 0.0
-        self._single_timer = None
-        self._last_press_date = None
         self.on_view_changed = None
-        self.on_year_pick = None       # callback(year) — двойной клик
+        self.on_year_pick = None
         self.on_reset = None
-        self.on_single_click = None    # callback(date) — одинарный клик, дата
+        self.on_single_click = None
 
         self.fig = Figure(dpi=100)
         self.fig.patch.set_facecolor(COL_BG_DARK)
@@ -164,16 +157,15 @@ class MetricPlot(tk.Frame):
         if self.view is not None:
             lo, hi = self.view
             if lo >= 1 and hi > lo:
-                return int(lo), int(hi)
+                return float(lo), float(hi)
         if self._start is None:
             return None
-        return self._ord(self._start), self._ord(self._end) + 1
+        return float(self._ord(self._start)), float(self._ord(self._end)) + 1
 
     def _commit_view(self, lo, hi):
-        lo, hi = int(lo), int(hi)
-        self.view = (lo, hi)
+        self.view = (float(lo), float(hi))
         if self.on_view_changed:
-            self.on_view_changed((lo, hi))
+            self.on_view_changed((float(lo), float(hi)))
         else:
             self._draw()
 
@@ -185,10 +177,10 @@ class MetricPlot(tk.Frame):
             return
         lo, hi = v
         factor = 0.85 if event.button == "up" else 1.18
-        new_span = min(365 * 10, max(1, (hi - lo) * factor))
+        new_span = min(365 * 10, max(0.5, (hi - lo) * factor))
         ratio = (event.xdata - lo) / max(1, hi - lo)
-        new_lo = int(event.xdata - ratio * new_span)
-        new_hi = new_lo + int(new_span)
+        new_lo = event.xdata - ratio * new_span
+        new_hi = new_lo + new_span
         self._commit_view(new_lo, new_hi)
 
     def _on_press(self, event):
@@ -221,9 +213,7 @@ class MetricPlot(tk.Frame):
                 self.on_year_pick(d.year)
             return
 
-        # одинарный клик — курсор yearmap на дату клика (отложен, отличить от двойного)
         d = datetime.date.fromordinal(int(event.xdata))
-        self._last_press_date = d
         if self.on_single_click:
             if self._single_timer is not None:
                 self.after_cancel(self._single_timer)
@@ -249,7 +239,7 @@ class MetricPlot(tk.Frame):
         span = hi0 - lo0
         dpp = span / width_px
         shift = (x0 - event.x) * dpp
-        self._commit_view(int(lo0 + shift), int(lo0 + shift + span))
+        self._commit_view(lo0 + shift, lo0 + shift + span)
 
     def _on_release(self, event):
         self._pan = None
@@ -262,7 +252,7 @@ class MetricPlot(tk.Frame):
         span = hi - lo
         thu = week_start_date + datetime.timedelta(days=3)
         center = self._ord(thu)
-        self._commit_view(int(center - span / 2), int(center + span / 2))
+        self._commit_view(center - span / 2, center + span / 2)
 
     def _style(self):
         self.ax.set_facecolor(COL_BG_DARK)
@@ -295,7 +285,7 @@ class MetricPlot(tk.Frame):
             def key(x): return int(x)
         else:
             bw = 0.1
-            def key(x): return int(x * 8) / 8     # 3-часовые блоки: floor к началу блока
+            def key(x): return int(x * 8) / 8
 
         agg = {}
         for dt, vv in self._values:
@@ -321,8 +311,8 @@ class MetricPlot(tk.Frame):
         self._set_x_ticks(lo, hi, vspan)
         ax.set_ylabel(self.spec.ylabel, color=COL_TEXT_LIGHT)
 
-        d0 = datetime.date.fromordinal(max(1, lo))
-        d1 = datetime.date.fromordinal(max(1, hi))
+        d0 = datetime.date.fromordinal(max(1, int(lo)))
+        d1 = datetime.date.fromordinal(max(1, int(hi)))
         if vspan > 350:
             title = f"{self.spec.name} ({d0:%d.%m.%y}–{d1:%d.%m.%y})"
         else:
@@ -339,8 +329,6 @@ class MetricPlot(tk.Frame):
             self._set_day_ticks(lo, hi)
 
     def _set_month_ticks(self, lo, hi):
-        """Тики по началу месяцев: январь — год, остальные — месяц.
-        Первый тик только если граница попадает внутрь [lo, hi]."""
         months = ["янв", "фев", "мар", "апр", "май", "июн",
                   "июл", "авг", "сен", "окт", "ноя", "дек"]
         d = datetime.date.fromordinal(max(1, int(lo))).replace(day=1)
@@ -360,8 +348,6 @@ class MetricPlot(tk.Frame):
         self.ax.set_xticklabels(names, fontsize=7)
 
     def _set_week_ticks(self, lo, hi):
-        """Тики по понедельникам: подпись дата.месяц.
-        Первый тик только если понедельник попадает внутрь [lo, hi]."""
         d = datetime.date.fromordinal(max(1, int(lo)))
         d -= datetime.timedelta(days=d.weekday())
         ticks, names = [], []
@@ -377,8 +363,6 @@ class MetricPlot(tk.Frame):
         self.ax.set_xticklabels(names, fontsize=7)
 
     def _set_day_ticks(self, lo, hi):
-        """Тики по дням: подпись — день недели.
-        Первый тик только если полночь попадает внутрь [lo, hi]."""
         days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
         d = datetime.date.fromordinal(max(1, int(lo)))
         ticks, names = [], []
