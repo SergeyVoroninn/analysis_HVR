@@ -8,6 +8,7 @@ target_size / ghost_rects / apply_size. Сам виджет на <Configure> н�
 """
 import datetime
 import tkinter as tk
+import customtkinter as ctk
 
 from theme import COL_BG_DARK, COL_TEXT_LIGHT
 from yearmap import YearHeatmap
@@ -16,24 +17,24 @@ from database import get_db_path
 from models import get_session, ECGRecord
 
 
-class Heatmap(tk.Frame):
+class Heatmap(ctk.CTkFrame):
     """Единая панель плотности записей ЭКГ."""
 
     def __init__(self, master, db_path=None, on_week_pick=None, on_week_dbl_pick=None, on_pick=None):
-        super().__init__(master, bg=COL_BG_DARK)
+        super().__init__(master, fg_color=COL_BG_DARK)
         self.db_path = db_path or get_db_path()
 
         # ---------- переключатель года ----------
-        self._ctrl = tk.Frame(self, bg=COL_BG_DARK)
+        self._ctrl = ctk.CTkFrame(self, fg_color="transparent")
         self._ctrl.pack(side="top", pady=5)
-        tk.Button(self._ctrl, text="◀",
-                  command=lambda: self._change_year(-1)).pack(side="left")
-        self._lbl_year = tk.Label(self._ctrl, text="", bg=COL_BG_DARK,
-                                  fg=COL_TEXT_LIGHT,
-                                  font=("Segoe UI", 12, "bold"))
+        ctk.CTkButton(self._ctrl, text="◀", width=28,
+                      command=lambda: self._change_year(-1)).pack(side="left")
+        self._lbl_year = ctk.CTkLabel(self._ctrl, text="",
+                                      font=ctk.CTkFont(size=12, weight="bold"),
+                                      text_color=COL_TEXT_LIGHT)
         self._lbl_year.pack(side="left", padx=6)
-        tk.Button(self._ctrl, text="▶",
-                  command=lambda: self._change_year(1)).pack(side="left")
+        ctk.CTkButton(self._ctrl, text="▶", width=28,
+                      command=lambda: self._change_year(1)).pack(side="left")
 
         # ---------- heatmap'ы ----------
         self._maps = tk.Frame(self, bg=COL_BG_DARK)

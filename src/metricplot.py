@@ -308,6 +308,10 @@ class MetricPlot(tk.Frame):
         ax.bar(xs, ys, width=bw, color=colors, align="edge", zorder=2)
 
         ax.set_xlim(lo, hi)
+        # ось Y — по максимуму видимого диапазона (не «залипает» на прошлом)
+        if ys:
+            ymax = max(ys) or 1
+            ax.set_ylim(0, ymax * 1.1)
         self._set_x_ticks(lo, hi, vspan)
         ax.set_ylabel(self.spec.ylabel, color=COL_TEXT_LIGHT)
 

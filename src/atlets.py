@@ -6,6 +6,7 @@ import uuid
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+import customtkinter as ctk
 
 from database import get_db_path
 from models import get_session, Athlete
@@ -17,15 +18,15 @@ from theme import COL_BG_WIDGET, COL_TEXT_LIGHT
 
 
 class AthletesPanel(tk.Frame):
-    """Левая панель: список спортсменов + кнопки CRUD."""
+    """Левая панель: список спортсменов + кнопки CRUD + импорт."""
 
     def __init__(self, master, db_path=None, on_select=None, on_change=None):
         super().__init__(master, bg=COL_BG_WIDGET)
         self.db_path = db_path or get_db_path()
-        self.on_select = on_select      # callback(athlete_id | None)
-        self.on_change = on_change      # callback() после add/edit/delete
-        self.on_import = None           # callback() — кнопка импорта
-        self.athletes = []              # (id, фамилия, имя, возраст, пол, polar_id)
+        self.on_select = on_select
+        self.on_change = on_change
+        self.on_import = None
+        self.athletes = []
 
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
@@ -42,14 +43,14 @@ class AthletesPanel(tk.Frame):
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
         self.tree.bind("<Double-Button-1>", lambda e: self.edit())
 
-        btns = tk.Frame(self, bg=COL_BG_WIDGET)
-        btns.grid(row=2, column=0, pady=5)
+        mgmt = ctk.CTkFrame(self, fg_color="transparent")
+        mgmt.grid(row=2, column=0, pady=5)
         for text, cmd in (("＋", self.add), ("✎", self.edit), ("🗑", self.delete)):
-            tk.Button(btns, text=text, width=5, command=cmd).pack(side="left", padx=3)
+            ctk.CTkButton(mgmt, text=text, width=40, command=cmd).pack(side="left", padx=3)
 
-        self._imp_btn = tk.Button(self, text="Импорт ЭКГ...", width=14,
-                                  command=lambda: self.on_import and self.on_import())
-        self._imp_btn.grid(row=3, column=0, pady=(0, 5))
+        self._imp_btn = ctk.CTkButton(self, text="⬇ Импорт записи ЭКГ",
+                                      command=lambda: self.on_import and self.on_import())
+        self._imp_btn.grid(row=3, column=0, sticky="ew", padx=5, pady=(0, 5))
 
         self.reload()
 

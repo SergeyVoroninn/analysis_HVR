@@ -94,7 +94,8 @@ class ResizeController:
     def _layout(self, sizes):
         ys, total = self._positions(sizes)
         for b, (w, h), y in zip(self.blocks, sizes, ys):
-            b.place(x=0, y=y, width=w, height=h)
+            b.place(x=0, y=y)
+            b.configure(width=w, height=h)
             b.apply_size(w, h)
         self.master.configure(height=total)
         _dbg(f"LAYOUT total_h={total}")
