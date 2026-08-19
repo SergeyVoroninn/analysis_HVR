@@ -331,25 +331,65 @@ class MetricPlot(tk.Frame):
         self.canvas.draw_idle()
 
     def _set_x_ticks(self, lo, hi, vspan):
-        for step in (0.125, 0.25, 0.5, 1, 2, 7, 14, 30, 60, 90, 180, 365):
-            if vspan / step <= 9:
-                break
+        if vspan > self.WEEK_BIN_SPAN:
+            self._set_month_ticks(lo, hi)
+        elif vspan > self.BLOCK_BIN_SPAN:
+            self._set_week_ticks(lo, hi)
+        else:
+            self._set_day_ticks(lo, hi)
+
+    def _set_month_ticks(self, lo, hi):
+        """Тики по началу месяцев: январь — год, остальные — месяц.
+        Первый тик только если граница попадает внутрь [lo, hi]."""
+        months = ["янв", "фев", "мар", "апр", "май", "июн",
+                  "июл", "авг", "сен", "окт", "ноя", "дек"]
+        d = datetime.date.fromordinal(max(1, int(lo))).replace(day=1)
         ticks, names = [], []
-        k0 = int(lo / step) + (1 if lo % step > 1e-9 else 0)
-        k = k0
         while True:
-            x = k * step
-            if x > hi + 1e-9:
+            x = self._ord(d)
+            if x > hi:
                 break
-            ticks.append(x)
-            d = datetime.date.fromordinal(max(1, int(x)))
-            if step >= 1:
-                names.append(d.strftime("%d.%m.%y") if vspan > 350 else d.strftime("%d.%m"))
+            if x >= lo - 1e-9:
+                ticks.append(x)
+                names.append(str(d.year) if d.month == 1 else months[d.month - 1])
+            if d.month == 12:
+                d = datetime.date(d.year + 1, 1, 1)
             else:
-                h = int((x % 1) * 24)
-                m = int(((x % 1) * 24 - h) * 60)
-                names.append(f"{h:02d}:{m:02d}")
-            k += 1
+                d = datetime.date(d.year, d.month + 1, 1)
+        self.ax.set_xticks(ticks)
+        self.ax.set_xticklabels(names, fontsize=7)
+
+    def _set_week_ticks(self, lo, hi):
+        """Тики по понедельникам: подпись дата.месяц.
+        Первый тик только если понедельник попадает внутрь [lo, hi]."""
+        d = datetime.date.fromordinal(max(1, int(lo)))
+        d -= datetime.timedelta(days=d.weekday())
+        ticks, names = [], []
+        while True:
+            x = self._ord(d)
+            if x > hi:
+                break
+            if x >= lo - 1e-9:
+                ticks.append(x)
+                names.append(f"{d.day:02d}.{d.month:02d}")
+            d += datetime.timedelta(days=7)
+        self.ax.set_xticks(ticks)
+        self.ax.set_xticklabels(names, fontsize=7)
+
+    def _set_day_ticks(self, lo, hi):
+        """Тики по дням: подпись — день недели.
+        Первый тик только если полночь попадает внутрь [lo, hi]."""
+        days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+        d = datetime.date.fromordinal(max(1, int(lo)))
+        ticks, names = [], []
+        while True:
+            x = self._ord(d)
+            if x > hi:
+                break
+            if x >= lo - 1e-9:
+                ticks.append(x)
+                names.append(days[d.weekday()])
+            d += datetime.timedelta(days=1)
         self.ax.set_xticks(ticks)
         self.ax.set_xticklabels(names, fontsize=7)
 
