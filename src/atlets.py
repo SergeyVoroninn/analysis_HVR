@@ -24,6 +24,7 @@ class AthletesPanel(tk.Frame):
         self.db_path = db_path or get_db_path()
         self.on_select = on_select      # callback(athlete_id | None)
         self.on_change = on_change      # callback() после add/edit/delete
+        self.on_import = None           # callback() — кнопка импорта
         self.athletes = []              # (id, фамилия, имя, возраст, пол, polar_id)
 
         self.grid_rowconfigure(1, weight=1)
@@ -45,6 +46,10 @@ class AthletesPanel(tk.Frame):
         btns.grid(row=2, column=0, pady=5)
         for text, cmd in (("＋", self.add), ("✎", self.edit), ("🗑", self.delete)):
             tk.Button(btns, text=text, width=5, command=cmd).pack(side="left", padx=3)
+
+        self._imp_btn = tk.Button(self, text="Импорт ЭКГ...", width=14,
+                                  command=lambda: self.on_import and self.on_import())
+        self._imp_btn.grid(row=3, column=0, pady=(0, 5))
 
         self.reload()
 

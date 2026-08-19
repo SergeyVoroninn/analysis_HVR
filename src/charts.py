@@ -108,6 +108,11 @@ class ChartsPanel(tk.Frame):
         for p in self._plots:
             p.redraw()
 
+    def refresh(self):
+        """Принудительная перезагрузка данных графиков (после импорта)."""
+        for p in self._plots:
+            p._reload()
+
     def center_on_week(self, week_start_date):
         """Центрировать графики по среде выбранной недели."""
         if self._plots:

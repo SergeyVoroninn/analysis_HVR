@@ -210,8 +210,8 @@ class ECGListDialog(ctk.CTkToplevel):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        dt_from = self.date_from.isoformat(sep=" ")
-        dt_to = self.date_to.isoformat(sep=" ")
+        dt_from = self.date_from.strftime("%Y-%m-%d %H:%M:%S")
+        dt_to = self.date_to.strftime("%Y-%m-%d %H:%M:%S")
 
         session = get_session(self.db_path)
         try:

@@ -62,6 +62,15 @@ class Heatmap(tk.Frame):
         self.year_map.athlete = aid
         self.week_map.athlete = aid
 
+    def refresh(self):
+        """Принудительная перезагрузка данных (после импорта и т.п.)."""
+        self.year_map.athlete = self.year_map.athlete
+        self.week_map.athlete = self.week_map.athlete
+        self.year_map._load_data()
+        self.year_map._redraw_cells()
+        self.week_map._load_data()
+        self.week_map._redraw()
+
     @property
     def year(self):
         return self.year_map.year
