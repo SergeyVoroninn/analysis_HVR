@@ -19,12 +19,17 @@ class AppOrchestrator:
         # Подписываем "сырые" события виджетов на методы оркестратора
         self.heatmap.on_week_pick = self._handle_week_pick
         self.heatmap.on_week_dbl_pick = self._handle_week_dbl_pick
+        self.heatmap.on_year_zoom = self._handle_year_zoom
         self.heatmap.on_month_zoom = self._handle_month_zoom
+        self.heatmap.on_year_zoom = self._handle_year_zoom
         self.heatmap.on_year_change = self._handle_year_change
         
         self.charts.set_year_pick_callback(self._handle_chart_year_pick)
         self.charts.set_reset_callback(self._handle_chart_reset)
         self.charts.set_single_click_callback(self._handle_chart_single_click)
+
+        self.heatmap.on_weekmap_day_dbl = self._handle_weekmap_day_dbl
+        self.heatmap.on_weekmap_week_rmb = self._handle_weekmap_week_rmb
 
     # ================= Обработчики событий =================
 
@@ -33,28 +38,20 @@ class AppOrchestrator:
         self.heatmap.week_map.week_start = d
         self.charts.center_on_week(d)
 
-    def _handle_week_dbl_pick(self, w, d):
-        """Двойной клик по неделе: зумим графики на эту неделю."""
-        self.heatmap.week_map.week_start = d
-        self.charts.zoom_to_week(d)
+    def _handle_week_dbl_pick(self, w, monday):
+        """Двойной клик по yearmap: диапазон месяц ±15 дней от курсора."""
+        mid_week = monday + datetime.timedelta(days=3)  # четверг — середина недели
+        start = mid_week - datetime.timedelta(days=15)
+        end = mid_week + datetime.timedelta(days=15)
+        self.charts.set_range(start, end)
 
     def _handle_month_zoom(self, start_date, end_date):
-        """ПКМ по месяцу: зумим графики на месяц, ставим курсор на середину месяца."""
-        # Устанавливаем диапазон данных
+        """ПКМ по месяцу на графиках: зум на месяц."""
         self.charts.set_range(start_date, end_date)
-        
-        # Вычисляем ординалы для zoom
-        p0 = self.charts._plots[0]
-        lo = p0._ord(start_date)
-        hi = p0._ord(end_date) + 1
-        
-        # Устанавливаем zoom на выбранный месяц
-        self.charts.zoom = (lo, hi)
-        
-        # Вычисляем середину месяца
-        mid_date = start_date + (end_date - start_date) // 2
-        mid_week = (mid_date - self.heatmap.year_map._year_start).days // 7
-        self.heatmap.week = mid_week
+
+    def _handle_year_zoom(self, start_date, end_date):
+        """ПКМ по yearmap: зум на весь год."""
+        self.charts.set_range(start_date, end_date)
 
     def _handle_year_change(self, delta):
         """Смена года колесиком."""
@@ -103,3 +100,14 @@ class AppOrchestrator:
         z = self.charts.zoom
         self.settings.set("zoom", list(z) if z else None)
         self.settings.save()
+
+    def _handle_weekmap_day_dbl(self, day_start, day_end):
+        """Двойной клик по дню в weekmap: зумим графики на сутки."""
+        # В metricplot _view_ordinals добавляет +1 к _end,
+        # поэтому передаём day_start и как начало, и как конец = 1 день
+        self.charts.set_range(day_start, day_start)
+
+    def _handle_weekmap_week_rmb(self, week_start, week_end):
+        self.charts.set_range(week_start, week_end)
+        mid_week = (week_start - self.heatmap.year_map._year_start).days // 7
+        self.heatmap.week = mid_week

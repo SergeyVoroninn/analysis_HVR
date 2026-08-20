@@ -1,22 +1,27 @@
 """
-timeframe.py — таймфреймы баров.
+timeframe.py — таймфреймы баров и конфигурация отрисовки графиков.
 
 Логика:
-  span <= 365 дней — календарные бары: 3часа / день / неделя
-  span >  365 дней — пропорциональная цена бара (без календарной привязки)
+  span <= 7 дней    — HOUR1 (1 час), зебра DAY, подписи дни недели
+  7 < span <= 31    — HOUR3 (3 часа), зебра DAY, подписи понедельники
+  31 < span <= 366  — DAY (день), зебра WEEK, подписи месяцы
+  span > 366        — пропорциональный расчет (без календарной привязки)
 """
 from __future__ import annotations
 
 import datetime
 from enum import Enum
-from typing import Tuple, Union
+from dataclasses import dataclass
+from typing import Optional
 
 
 class TimeFrame(Enum):
-    """Таймфреймы для календарных баров (span <= 365 дней)."""
-    
-    HOUR3 = ("3часа", 10800)
-    DAY   = ("день",   86400)
+    """Таймфреймы для календарных баров."""
+
+    MIN5  = ("5мин",   300)
+    HOUR1 = ("1час",   3600)
+    HOUR3 = ("3часа",  10800)
+    DAY   = ("день",    86400)
     WEEK  = ("неделя", 604800)
 
     def __init__(self, label: str, seconds: int):
@@ -33,8 +38,10 @@ class TimeFrame(Enum):
         x — ordinal (float-день). 
         Возвращает ordinal левого края календарного бара.
         """
+        if self is TimeFrame.HOUR1:
+            return int(x * 24) / 24
         if self is TimeFrame.HOUR3:
-            return int(x * 8) / 8            # 24/3 = 8 интервалов в день
+            return int(x * 8) / 8
         if self is TimeFrame.DAY:
             return int(x)
         if self is TimeFrame.WEEK:
@@ -42,104 +49,92 @@ class TimeFrame(Enum):
         return x
     
     @property
-    def zebra(self) -> Tuple[str, 'TimeFrame']:
-        """Возвращает ('tf', next_tf) для отрисовки зебры."""
+    def zebra(self) -> 'TimeFrame':
+        """Таймфрейм для отрисовки зебры."""
         return _ZEBRA_MAP[self]
 
 
 # Карта зебры: какой таймфрейм использовать для следующего уровня
 _ZEBRA_MAP = {
-    TimeFrame.HOUR3: ("tf", TimeFrame.DAY),
-    TimeFrame.DAY:   ("tf", TimeFrame.WEEK),
-    TimeFrame.WEEK:  ("tf", TimeFrame.WEEK),  # для недели зебра по неделям
+    TimeFrame.HOUR1: TimeFrame.DAY,
+    TimeFrame.HOUR3: TimeFrame.DAY,
+    TimeFrame.DAY:   TimeFrame.WEEK,
+    TimeFrame.WEEK:  TimeFrame.WEEK,
 }
 
 
-def pick_calendar_timeframe(span_days: float, width_px: float, 
-                            min_bar_px: int = 6, max_bar_px: int = 40) -> TimeFrame:
-    """
-    Выбирает календарный таймфрейм для span <= 365 дней.
-    Самый крупный, где бар помещается в [min_bar_px, max_bar_px] пикселей.
-    """
-    if width_px < 1:
-        width_px = 1
+@dataclass
+class ChartConfig:
+    """Конфигурация отрисовки графика для заданного диапазона."""
+    bar_tf: TimeFrame
+    zebra_tf: TimeFrame
+    tick_step_days: int
+    tick_format: str
+    tick_step_hours: int = 0           # <-- ДОБАВЛЕНО: шаг подписей в часах (0 = не используется)
+    is_proportional: bool = False
+    proportional_bar_size: Optional[float] = None
+
+
+def get_chart_config(span_days: float) -> ChartConfig:
+    """Возвращает конфигурацию отрисовки для заданного диапазона."""
+    # Суточный диапазон (<= 1 день): бар 5 минут, зебра час, подписи каждые 3 часа
+    if span_days <= 1:
+        return ChartConfig(
+            bar_tf=TimeFrame.MIN5,
+            zebra_tf=TimeFrame.HOUR1,
+            tick_step_days=1,
+            tick_format="3hour",
+            tick_step_hours=3
+        )
     
-    # Вычисляем диапазон размеров бара в днях
-    target_min = span_days / (width_px / min_bar_px)
-    target_max = span_days / (width_px / max_bar_px)
+    # Недельный диапазон (<= 7 дней)
+    if span_days <= 7:
+        return ChartConfig(
+            bar_tf=TimeFrame.HOUR1,
+            zebra_tf=TimeFrame.DAY,
+            tick_step_days=1,
+            tick_format="weekday"
+        )
     
-    # Ищем таймфреймы, которые попадают в диапазон
-    candidates = [tf for tf in TimeFrame if target_min <= tf.bar_size <= target_max]
+    # До месяца (<= 31 день)
+    if span_days <= 31:
+        return ChartConfig(
+            bar_tf=TimeFrame.HOUR3,
+            zebra_tf=TimeFrame.DAY,
+            tick_step_days=7,
+            tick_format="%d.%m"
+        )
     
-    if candidates:
-        return max(candidates, key=lambda t: t.bar_size)
+    # До года (включая високосный 366 дней)
+    if span_days <= 366:
+        return ChartConfig(
+            bar_tf=TimeFrame.DAY,
+            zebra_tf=TimeFrame.WEEK,
+            tick_step_days=30,
+            tick_format="%d.%m.%y"
+        )
     
-    # Если все слишком мелкие — берем максимальный (WEEK)
-    if max(tf.bar_size for tf in TimeFrame) < target_min:
-        return TimeFrame.WEEK
-    
-    # Если все слишком крупные — берем минимальный (HOUR3)
-    return TimeFrame.HOUR3
+    # Больше года: пропорциональный режим
+    return ChartConfig(
+        bar_tf=TimeFrame.DAY,
+        zebra_tf=TimeFrame.WEEK,
+        tick_step_days=365,
+        tick_format="%Y",
+        is_proportional=True
+    )
 
 
 def calc_proportional_bar_size(span_days: float, width_px: float, 
                                 target_bar_px: int = 15) -> float:
-    """
-    Вычисляет пропорциональный размер бара для span > 365 дней.
-    
-    Args:
-        span_days: диапазон данных в днях
-        width_px: ширина графика в пикселях
-        target_bar_px: целевая ширина бара в пикселях
-    
-    Returns:
-        Размер бара в днях (float)
-    """
+    """Вычисляет пропорциональный размер бара для span > 366 дней."""
     if width_px < 1:
         width_px = 1
-    
     bars_count = max(10, int(width_px / target_bar_px))
     return span_days / bars_count
 
 
-def get_year_boundaries(start_ordinal: float, end_ordinal: float, 
-                        step_years: int = 1) -> list:
-    """
-    Вычисляет границы лет для отрисовки зебры и подписей.
-    
-    Args:
-        start_ordinal: начало диапазона (ordinal)
-        end_ordinal: конец диапазона (ordinal)
-        step_years: шаг в годах (1, 2, 5, 10, ...)
-    
-    Returns:
-        Список ordinal'ов границ лет
-    """
-    start_year = datetime.date.fromordinal(max(1, int(start_ordinal))).year
-    end_year = datetime.date.fromordinal(max(1, int(end_ordinal))).year
-    
-    # Округляем до шага
-    first_year = (start_year // step_years) * step_years
-    boundaries = []
-    
-    year = first_year
-    while year <= end_year + step_years:
-        boundaries.append(datetime.date(year, 1, 1).toordinal())
-        year += step_years
-    
-    return boundaries
-
-
 def pick_year_step(vspan: float) -> int:
-    """
-    Выбирает шаг лет для отрисовки подписей.
-    
-    Args:
-        vspan: диапазон в днях
-    
-    Returns:
-        Шаг в годах (1, 2, 5, 10, 20, ...)
-    """
+    """Выбирает шаг лет для отрисовки подписей."""
     for n in (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000):
         if vspan / (365 * n) <= 12:
             return n

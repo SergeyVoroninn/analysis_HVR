@@ -48,16 +48,22 @@ class Heatmap(ctk.CTkFrame):
 
         # ПУБЛИЧНЫЕ колбэки для оркестратора
         self.on_week_pick = None        # callback(week, week_start_date)
-        self.on_week_dbl_pick = None    # callback(week, monday)
+        self.on_week_dbl_pick = None    # callback(week, monday) — ±15 дней
+        self.on_year_zoom = None        # callback(start_date, end_date) — ПКМ год
         self.on_month_zoom = None       # callback(start_date, end_date)
         self.on_year_change = None      # callback(delta)
+        
+        # НОВЫЕ колбэки от weekmap
+        self.week_map.on_day_dbl = self._handle_weekmap_day_dbl
+        self.week_map.on_week_rmb = self._handle_weekmap_week_rmb
 
         # Связываем внутренние события year_map с методами этого класса
         self.year_map.on_week_pick = self._sync_week
         self.year_map.on_year_change = self._on_year_map_year_change  # <--- ИСПРАВЛЕНО ЗДЕСЬ
         self.year_map.on_week_dbl = self._zoom_to_week
+        self.year_map.on_year_zoom = self._handle_year_zoom
         self.year_map.on_month_zoom = self._handle_month_zoom
-        
+
         self._pending_t = None
         self._lbl_year.configure(text=str(self.year))
 
@@ -127,9 +133,14 @@ class Heatmap(ctk.CTkFrame):
             self.on_week_dbl_pick(w, monday)
 
     def _handle_month_zoom(self, start_date, end_date):
-        """ПКМ по месяцу: пробрасываем событие наружу."""
+        """ПКМ по month на графиках: пробрасываем событие наружу."""
         if self.on_month_zoom:
             self.on_month_zoom(start_date, end_date)
+
+    def _handle_year_zoom(self, start_date, end_date):
+        """ПКМ по yearmap: пробрасываем событие наружу."""
+        if self.on_year_zoom:
+            self.on_year_zoom(start_date, end_date)
 
     def set_selection(self, year=None, week=None):
         """Восстановление состояния: год и курсор недели (+ недельная карта)."""
@@ -218,3 +229,11 @@ class Heatmap(ctk.CTkFrame):
             return
         self.year_map.set_cell(self._pending_t - 1)
         self.week_map.set_cell(self._pending_t - 1)
+
+    def _handle_weekmap_day_dbl(self, day_start, day_end):
+        if self.on_weekmap_day_dbl:
+            self.on_weekmap_day_dbl(day_start, day_end)
+
+    def _handle_weekmap_week_rmb(self, week_start, week_end):
+        if self.on_weekmap_week_rmb:
+            self.on_weekmap_week_rmb(week_start, week_end)

@@ -2,10 +2,10 @@
 metricplot.py — отрисовка одного графика параметра ЭКГ (ВСР).
 
 Режимы масштаба:
-  span <= 365 дней — календарные бары: 3часа / день / неделя
-                     (зум внутрь ограничен таймфреймом 3часа);
-  span >  365 дней — пропорциональная цена бара ~TARGET_BAR_PX px,
-                     зебра и подписи — годы.
+  span < 7 дней     — фиксация на WEEK (минимальный масштаб)
+  7 <= span <= 30   — HOUR3 (3 часа), зебра DAY
+  30 < span <= 365  — DAY (день), зебра WEEK, подписи месяц
+  span > 365        — пропорциональная цена бара, подписи годы
 
 Управление:
   колесо       — зум к курсору (внутри стоп на 3часа);
@@ -24,7 +24,7 @@ from database import get_db_path
 from models import get_session, ECGRecord
 from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
                    COL_SPINE, COL_TP_YEAR)
-from timeframe import TimeFrame, pick_calendar_timeframe, calc_proportional_bar_size
+from timeframe import TimeFrame, get_chart_config, calc_proportional_bar_size, pick_year_step
 
 
 class _FrozenCanvas(FigureCanvasTkAgg):
@@ -54,9 +54,6 @@ class MetricSpec:
 
 class MetricPlot(tk.Frame):
 
-    MIN_BAR_PX = 6          # уже — шаг на более крупный таймфрейм
-    MAX_BAR_PX = 40         # шире — шаг на более мелкий (если он помещается)
-    MIN_TF = TimeFrame.HOUR3    # мельче 3 часов не зумируем
     SMALL_SPAN = 365            # до года — календарные бары
     TARGET_BAR_PX = 15          # целевая ширина бара в пропорц. режиме
 
@@ -75,7 +72,7 @@ class MetricPlot(tk.Frame):
         self._click_x = 0.0
         self._click_y = 0.0
         self._current_tf = None
-        self._forced_tf = None  # Принудительный таймфрейм извне
+        self._forced_tf = None
         self.on_view_changed = None
         self.on_year_pick = None
         self.on_reset = None
@@ -174,13 +171,11 @@ class MetricPlot(tk.Frame):
         return float(self._ord(self._start)), float(self._ord(self._end)) + 1
 
     def _commit_view(self, lo, hi):
-        # ИСПРАВЛЕНО: безопасная обработка None для сброса масштаба
         if lo is None or hi is None:
             self.view = None
         else:
             self.view = (float(lo), float(hi))
         
-        # ИСПРАВЛЕНО: всегда уведомляем панель, если она есть
         if self.on_view_changed:
             self.on_view_changed(self.view)
         else:
@@ -196,8 +191,8 @@ class MetricPlot(tk.Frame):
         lo, hi = v
         factor = 0.85 if event.button == "up" else 1.18
         width_px = max(100, self.ax.get_window_extent().width)
-        # стоп зума внутрь: бар 3часа ровно MAX_BAR_PX
-        min_span = width_px * self.MIN_TF.bar_size / self.MAX_BAR_PX
+        # Минимальный span = 1 день
+        min_span = 1.0
         new_span = min(365000, max(min_span, (hi - lo) * factor))
         ratio = (event.xdata - lo) / max(1e-9, hi - lo)
         new_lo = event.xdata - ratio * new_span
@@ -206,8 +201,6 @@ class MetricPlot(tk.Frame):
 
     def _on_press(self, event):
         if event.button == 3:
-            # ИСПРАВЛЕНО: сброс масштаба теперь проходит через _commit_view(None, None),
-            # что гарантирует вызов on_view_changed и обновление ВСЕХ графиков в панели.
             self._current_tf = None
             if self.on_reset:
                 self.on_reset()
@@ -276,41 +269,6 @@ class MetricPlot(tk.Frame):
         center = self._ord(week_start_date + datetime.timedelta(days=3))
         self._commit_view(center - span / 2, center + span / 2)
 
-    # ---------------- выбор таймфрейма (малый диапазон) ----------------
-    def _pick_small_tf(self, span, width_px):
-        """Календарный tf в зоне [3часа .. неделя]: шаг только на соседний."""
-        order = list(TimeFrame)
-        lo_i = order.index(self.MIN_TF)
-        hi_i = order.index(TimeFrame.WEEK)
-
-        cur = self._current_tf
-        if cur is None or not (lo_i <= order.index(cur) <= hi_i):
-            tf = order[lo_i]
-            for t in order[lo_i:hi_i + 1]:
-                # ИСПРАВЛЕНО: bar_size теперь свойство, без скобок
-                if (t.bar_size / span) * width_px <= self.MAX_BAR_PX:
-                    tf = t
-            return tf
-
-        i = order.index(cur)
-        # ИСПРАВЛЕНО: bar_size теперь свойство, без скобок
-        actual = (cur.bar_size / span) * width_px
-        if actual < self.MIN_BAR_PX and i < hi_i:
-            return order[i + 1]                       # крупнее
-        if actual > self.MAX_BAR_PX and i > lo_i:
-            prv = order[i - 1]
-            # ИСПРАВЛЕНО: bar_size теперь свойство, без скобок
-            if (prv.bar_size / span) * width_px >= self.MIN_BAR_PX:
-                return prv                            # мельче
-        return cur
-
-    @staticmethod
-    def _year_step(vspan):
-        for n in (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000):
-            if vspan / (365 * n) <= 12:
-                return n
-        return 1000
-
     # ---------------- отрисовка ----------------
     def _style(self):
         self.ax.set_facecolor(COL_BG_DARK)
@@ -336,36 +294,32 @@ class MetricPlot(tk.Frame):
         vspan = max(1, hi - lo)
         width_px = max(100, self.ax.get_window_extent().width)
 
-        if vspan <= self.SMALL_SPAN:
-            # ---- календарные бары: 3часа / день / неделя ----
-            if self._forced_tf is not None:
-                tf = self._forced_tf
-            else:
-                tf = self._pick_small_tf(vspan, width_px)
-            self._current_tf = tf
-            # ИСПРАВЛЕНО: bar_size теперь свойство, без скобок
-            bw = tf.bar_size * 0.95
-            def key(x): return tf.bin_key(x)
-            self._shade_tf(ax, lo, hi, tf.zebra[1])
-            self._set_x_ticks_small(ax, lo, hi, vspan, tf)
-            tf_label = tf.label
-        else:
-            # ---- большой диапазон: пропорциональная цена бара ----
-            self._current_tf = None
-            bars = max(10, int(width_px / self.TARGET_BAR_PX))
-            bar_size = vspan / bars
+        # Получаем конфигурацию отрисовки из timeframe.py
+        config = get_chart_config(vspan)
+        
+        if config.is_proportional:
+            # Пропорциональный режим (span > 365)
+            bar_size = calc_proportional_bar_size(vspan, width_px, self.TARGET_BAR_PX)
             bw = bar_size * 0.95
             def key(x): return int(x / bar_size) * bar_size
-            self._shade_years(ax, lo, hi, self._year_step(vspan))
+            self._shade_years(ax, lo, hi, pick_year_step(vspan))
             self._set_year_ticks(ax, lo, hi)
-            tf_label = (f"{bar_size / 365:.1f}г" if bar_size >= 365
-                        else f"{bar_size:.0f}д")
+            tf_label = f"{bar_size / 365:.1f}г" if bar_size >= 365 else f"{bar_size:.0f}д"
+        else:
+            # Календарный режим
+            tf = config.bar_tf
+            self._current_tf = tf
+            bw = tf.bar_size * 0.95
+            def key(x): return tf.bin_key(x)
+            self._shade_tf(ax, lo, hi, config.zebra_tf)
+            self._set_x_ticks_small(ax, lo, hi, vspan, config)
+            tf_label = tf.label
 
         # Фильтруем данные для текущего view
         view_values = [(dt, vv) for dt, vv in self._values 
                        if lo <= self._ord(dt) < hi]
 
-        # Агрегируем данные только из view_values
+        # Агрегируем данные
         agg = {}
         for dt, vv in view_values:
             x = self._ord(dt)
@@ -374,7 +328,7 @@ class MetricPlot(tk.Frame):
         xs = sorted(agg)
         ys = [sum(agg[x]) / len(agg[x]) for x in xs] if xs else []
 
-        # Рисуем бары только если есть данные в текущем view
+        # Рисуем бары
         if xs and ys:
             c = self.spec.color
             colors = [c(vv) for vv in ys] if callable(c) else (c or COL_TP_YEAR)
@@ -384,7 +338,6 @@ class MetricPlot(tk.Frame):
         if ys:
             ax.set_ylim(0, (max(ys) or 1) * 1.1)
         else:
-            # Если нет данных в view, устанавливаем разумный ylim
             ax.set_ylim(0, 1)
         ax.set_ylabel(self.spec.ylabel, color=COL_TEXT_LIGHT)
 
@@ -397,22 +350,85 @@ class MetricPlot(tk.Frame):
         self.canvas.draw_idle()
 
     # ---------------- ось X ----------------
-    def _set_x_ticks_small(self, ax, lo, hi, vspan, tf):
-        bounds = list(self._sibling_bounds(tf.zebra[1], lo, hi))
-        mult = 1
-        while len(bounds) / mult > 12:
-            mult *= 2
+    def _set_x_ticks_small(self, ax, lo, hi, vspan, config):
+        """Установка подписей оси X на основе конфигурации."""
         ticks, names = [], []
-        for i, d in enumerate(bounds):
-            if i % mult:
-                continue
-            ticks.append(self._ord(d))
-            names.append(self._tick_label(tf.zebra[1], d, vspan))
+        
+        # Русские названия месяцев
+        months_ru = ["янв", "фев", "мар", "апр", "май", "июн",
+                     "июл", "авг", "сен", "окт", "ноя", "дек"]
+        
+        # Русские сокращения дней недели
+        weekdays_ru = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
+        
+        # Недельный диапазон: каждый день — название дня недели
+        if config.tick_format == "weekday" and vspan <= 7:
+            d0 = datetime.date.fromordinal(max(1, int(lo)))
+            d1 = datetime.date.fromordinal(max(1, int(hi)))
+            
+            # Проходим по каждому дню в диапазоне
+            current = d0
+            while current <= d1:
+                ticks.append(current.toordinal())
+                # Показываем название дня недели
+                names.append(weekdays_ru[current.weekday()])
+                current += datetime.timedelta(days=1)
+        
+        elif config.bar_tf is TimeFrame.DAY and vspan > 31:
+            # Годовой диапазон: подписи по 1-му числу каждого месяца
+            d0 = datetime.date.fromordinal(max(1, int(lo)))
+            d1 = datetime.date.fromordinal(max(1, int(hi)))
+            
+            # Начинаем с 1-го числа месяца, содержащего d0
+            current = d0.replace(day=1)
+            if current < d0:
+                if current.month == 12:
+                    current = current.replace(year=current.year + 1, month=1)
+                else:
+                    current = current.replace(month=current.month + 1)
+            
+            while current <= d1:
+                ticks.append(current.toordinal())
+                names.append(months_ru[current.month - 1])
+                if current.month == 12:
+                    current = current.replace(year=current.year + 1, month=1)
+                else:
+                    current = current.replace(month=current.month + 1)
+        
+        elif config.bar_tf is TimeFrame.HOUR3 and vspan <= 31:
+            # Месячный диапазон: подписи по понедельникам
+            d0 = datetime.date.fromordinal(max(1, int(lo)))
+            d1 = datetime.date.fromordinal(max(1, int(hi)))
+            
+            current = d0 - datetime.timedelta(days=d0.weekday())
+            if current < d0:
+                current += datetime.timedelta(days=7)
+            
+            while current <= d1:
+                ticks.append(current.toordinal())
+                names.append(current.strftime("%d.%m"))
+                current += datetime.timedelta(days=7)
+        
+        else:
+            # Для других диапазонов: используем zebra_tf
+            bounds = list(self._sibling_bounds(config.zebra_tf, lo, hi))
+            last_tick_ord = -999
+            
+            for d in bounds:
+                d_ord = self._ord(d)
+                if d_ord - last_tick_ord < config.tick_step_days:
+                    continue
+                
+                label = d.strftime(config.tick_format)
+                ticks.append(d_ord)
+                names.append(label)
+                last_tick_ord = d_ord
+        
         ax.set_xticks(ticks)
         ax.set_xticklabels(names, fontsize=7)
 
     def _set_year_ticks(self, ax, lo, hi):
-        n = self._year_step(max(1, hi - lo))
+        n = pick_year_step(max(1, hi - lo))
         d0 = datetime.date.fromordinal(max(1, int(lo)))
         d1 = datetime.date.fromordinal(max(1, int(hi)))
         y = max(1, (d0.year // n) * n)
@@ -430,14 +446,13 @@ class MetricPlot(tk.Frame):
         """Генератор границ для зебры и подписей оси X."""
         d0 = datetime.date.fromordinal(max(1, int(lo)))
         
-        if sib is TimeFrame.HOUR3:
-            # Границы каждые 3 часа
+        if sib is TimeFrame.HOUR1:  # НОВОЕ
+            d = d0.replace(hour=d0.hour, minute=0, second=0)
+        elif sib is TimeFrame.HOUR3:
             d = d0.replace(hour=(d0.hour // 3) * 3, minute=0, second=0)
         elif sib is TimeFrame.DAY:
-            # Границы каждый день
             d = d0
         elif sib is TimeFrame.WEEK:
-            # Границы каждый понедельник
             d = d0 - datetime.timedelta(days=d0.weekday())
         else:
             d = d0
@@ -450,6 +465,8 @@ class MetricPlot(tk.Frame):
     @staticmethod
     def _next_bound(sib, d):
         """Следующая граница для данного таймфрейма."""
+        if sib is TimeFrame.HOUR1:  # НОВОЕ
+            return d + datetime.timedelta(hours=1)
         if sib is TimeFrame.HOUR3:
             return d + datetime.timedelta(hours=3)
         if sib is TimeFrame.DAY:
@@ -458,20 +475,8 @@ class MetricPlot(tk.Frame):
             return d + datetime.timedelta(days=7)
         return d + datetime.timedelta(days=1)
 
-    @staticmethod
-    def _tick_label(sib, d, vspan):
-        """Формат подписи для оси X."""
-        if sib is TimeFrame.HOUR3:
-            return d.strftime("%H:%M") if vspan <= 7 else d.strftime("%d.%m %H:%M")
-        if sib is TimeFrame.DAY:
-            return d.strftime("%d.%m.%y") if vspan > 350 else d.strftime("%d.%m")
-        if sib is TimeFrame.WEEK:
-            return d.strftime("%d.%m.%y") if vspan > 350 else d.strftime("%d.%m")
-        return d.strftime("%d.%m")
-
     # ---------------- зебра ----------------
     def _shade_tf(self, ax, lo, hi, sib):
-        # ИСПРАВЛЕНО: bar_size теперь свойство, без скобок
         step = sib.bar_size
         if step <= 0:
             return
@@ -501,3 +506,18 @@ class MetricPlot(tk.Frame):
                 ax.axvline(x0, color=COL_TEXT_DIM,
                            linewidth=0.6, alpha=0.35, zorder=0)
             y += n
+
+    @staticmethod
+    def _tick_label(sib, d, vspan):
+        """Формат подписи для оси X."""
+        if sib is TimeFrame.HOUR1:  # НОВОЕ
+            return d.strftime("%H:%M") if vspan <= 2 else d.strftime("%d.%m %H:%M")
+        if sib is TimeFrame.HOUR3:
+            return d.strftime("%H:%M") if vspan <= 7 else d.strftime("%d.%m %H:%M")
+        if sib is TimeFrame.DAY:
+            if vspan > 300:
+                return d.strftime("%b") if d.day == 1 else ""
+            return d.strftime("%d.%m.%y") if vspan > 350 else d.strftime("%d.%m")
+        if sib is TimeFrame.WEEK:
+            return d.strftime("%d.%m.%y") if vspan > 350 else d.strftime("%d.%m")
+        return d.strftime("%d.%m")

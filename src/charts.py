@@ -9,6 +9,7 @@ import datetime as _dt
 from analysis import stress_level
 from theme import COL_BG_DARK, COL_ONE, COL_WARN, COL_CRIT, COL_HIGH
 from metricplot import MetricPlot, MetricSpec
+from timeframe import get_chart_config
 
 
 def _si_color(v):
@@ -36,7 +37,7 @@ class ChartsPanel(tk.Frame):
             p.pack(side="top", fill="x", pady=2)
 
     def _apply_zoom(self, view):
-        """Единый масштаб на все графики."""
+        """Единый масштаб на все графики с синхронизацией таймфрейма."""
         if getattr(self, '_is_updating_view', False):
             return
         self._is_updating_view = True
@@ -45,22 +46,25 @@ class ChartsPanel(tk.Frame):
         for p in self._plots:
             p.view = view
         
-        # 2. Выбираем таймфрейм на основе первого графика
+        # 2. Выбираем таймфрейм на основе первого графика через централизованную функцию
         if self._plots:
             p0 = self._plots[0]
             v = p0._view_ordinals()
             if v is not None:
                 lo, hi = v
                 vspan = max(1, hi - lo)
-                width_px = max(100, p0.ax.get_window_extent().width)
+                
                 if vspan <= p0.SMALL_SPAN:
-                    tf = p0._pick_small_tf(vspan, width_px)
-                    # Применяем ко всем графикам
-                    for p in self._plots:
-                        p.set_forced_tf(tf)
+                    # Календарный режим — получаем конфиг из timeframe.py
+                    config = get_chart_config(vspan)
+                    forced_tf = config.bar_tf
                 else:
-                    for p in self._plots:
-                        p.set_forced_tf(None)
+                    # Пропорциональный режим — таймфрейм не фиксируем
+                    forced_tf = None
+                
+                # Применяем ко всем графикам
+                for p in self._plots:
+                    p.set_forced_tf(forced_tf)
         
         # 3. Принудительно перерисовываем все графики
         for p in self._plots:
@@ -128,7 +132,6 @@ class ChartsPanel(tk.Frame):
 
     @zoom.setter
     def zoom(self, view):
-        # ИСПРАВЛЕНО: используем централизованный метод для гарантированной перерисовки
         self._apply_zoom(view)
 
     def redraw(self):
@@ -143,8 +146,6 @@ class ChartsPanel(tk.Frame):
     def center_on_week(self, week_start_date):
         """Центрировать графики по среде выбранной недели."""
         if self._plots:
-            # Вызов center_on_week у первого графика триггернет _commit_view, 
-            # который через on_view_changed обновит все остальные.
             self._plots[0].center_on_week(week_start_date)
 
     def zoom_to_week(self, week_start_date):
@@ -160,6 +161,4 @@ class ChartsPanel(tk.Frame):
         lo = p0._ord(monday)
         hi = p0._ord(sunday) + 1
         
-        # ИСПРАВЛЕНО: применяем масштаб ко ВСЕМ графикам через общий метод,
-        # а не вызываем p0._commit_view, который менял только один график.
         self._apply_zoom((lo, hi))

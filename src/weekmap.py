@@ -7,7 +7,7 @@ weekmap.py — недельный heatmap: 7 дней × 8 трёхчасовы�
   week_start — понедельник отображаемой недели (None → пусто).
 """
 import datetime
-
+import time as _time
 import tkinter as tk
 
 from database import get_db_path
@@ -35,16 +35,29 @@ class WeekHeatmap(tk.Frame):
 
         self.db_path = db_path or get_db_path()
         self.on_pick = on_pick
+        
+        # НОВЫЕ колбэки
+        self.on_day_dbl = None      # callback(day_start, day_end)
+        self.on_week_rmb = None     # callback(week_start, week_end)
 
         self._athlete_id = None
         self._week_start = None
         self._block_map = {}
+        
+        # Переменные для обработки кликов
+        self._click_t = 0.0
+        self._click_x = 0.0
+        self._click_y = 0.0
+        self._single_timer = None
 
         self._cells, self._colors = {}, {}
         self._rebuild_grid()
         self._redraw()
 
+        # ИСПРАВЛЕНО: добавлены привязки для двойного клика и ПКМ
         self._cnv.bind("<Button-1>", self._on_click)
+        self._cnv.bind("<Double-Button-1>", self._on_day_dbl_click)
+        self._cnv.bind("<Button-3>", self._on_week_rmb_click)
 
     # ================= свойства =================
     @property
@@ -168,7 +181,62 @@ class WeekHeatmap(tk.Frame):
         b = (event.y - Y0) // self._step
         if not (0 <= d < 7 and 0 <= b < 8) or self._week_start is None:
             return
+
+        # Проверка на двойной клик, чтобы не открывать диалог раньше времени
+        now = _time.monotonic()
+        is_dbl = (now - self._click_t < 0.45 and
+                  abs(event.x - self._click_x) < 6 and
+                  abs(event.y - self._click_y) < 6)
+        self._click_t = now
+        self._click_x = event.x
+        self._click_y = event.y
+
+        if is_dbl:
+            # Двойной клик обработается в _on_day_dbl_click, отменяем таймер
+            if self._single_timer is not None:
+                self.after_cancel(self._single_timer)
+                self._single_timer = None
+            return
+
+        # Одинарный клик с задержкой 300 мс
         day = self._week_start + datetime.timedelta(days=d)
         block = b if (day.isoformat(), b) in self._block_map else None
+        
+        if self.on_pick:
+            if self._single_timer is not None:
+                self.after_cancel(self._single_timer)
+            self._single_timer = self.after(
+                300, lambda dd=day, bb=block: self._fire_single(dd, bb))
+
+    def _fire_single(self, day, block):
+        self._single_timer = None
         if self.on_pick:
             self.on_pick(day, block)
+
+    def _on_day_dbl_click(self, event):
+        """Двойной клик по любой ячейке: устанавливаем диапазон на сутки."""
+        d = (event.x - X0) // self._step
+        b = (event.y - Y0) // self._step
+        if not (0 <= d < 7 and 0 <= b < 8) or self._week_start is None:
+            return
+
+        # Отменяем таймер одинарного клика
+        if self._single_timer is not None:
+            self.after_cancel(self._single_timer)
+            self._single_timer = None
+
+        day = self._week_start + datetime.timedelta(days=d)
+        if self.on_day_dbl:
+            day_end = day + datetime.timedelta(days=1)
+            self.on_day_dbl(day, day_end)
+
+    def _on_week_rmb_click(self, event):
+        """ПКМ по weekmap: устанавливаем диапазон на всю отображаемую неделю."""
+        if self._week_start is None:
+            return
+        
+        week_start = self._week_start
+        week_end = week_start + datetime.timedelta(days=7)
+        
+        if self.on_week_rmb:
+            self.on_week_rmb(week_start, week_end)

@@ -50,7 +50,8 @@ class YearHeatmap(tk.Canvas):
         self._redraw_cells()
 
         self.on_year_change = None        # callback(delta)
-        self.on_month_zoom = None         # НОВОЕ: callback(start_date, end_date) при ПКМ на месяц
+        self.on_year_zoom = None         # callback(start_date, end_date) при ПКМ на год
+        self.on_month_zoom = None        # callback(start_date, end_date)
         self._wheel_lock = 0.0            # блокировка длинного жеста колеса
         self._click_t = 0.0
         self._click_w = -1
@@ -261,28 +262,18 @@ class YearHeatmap(tk.Canvas):
             self.on_week_pick(w, monday)
 
     def _on_right_click(self, event):
-        """ПКМ на любой ячейке heatmap устанавливает диапазон этого месяца на графиках."""
-        # Определяем индекс недели и дня недели по координатам клика
+        """ПКМ на любой ячейке heatmap устанавливает диапазон года на графиках."""
         w = (event.x - X0) // self._step
-        d = (event.y - Y0) // self._step
-
-        # Проверяем, что клик попал строго в сетку (0..52 недели, 0..6 дни)
-        if not (0 <= w < 53 and 0 <= d < 7):
+        if not (0 <= w < 53):
             return
 
-        # Вычисляем точную календарную дату, на которую кликнули
-        clicked_date = self._year_start + datetime.timedelta(weeks=w, days=d)
-
-        # Определяем начало и конец месяца для этой даты
+        clicked_date = self._year_start + datetime.timedelta(weeks=w, days=3)  # середина недели
         year = clicked_date.year
-        month = clicked_date.month
-        start_date = datetime.date(year, month, 1)
-        _, last_day = calendar.monthrange(year, month)
-        end_date = datetime.date(year, month, last_day)
+        start_date = datetime.date(year, 1, 1)
+        end_date = datetime.date(year, 12, 31)
 
-        # Вызываем callback, если он задан
-        if self.on_month_zoom:
-            self.on_month_zoom(start_date, end_date)
+        if self.on_year_zoom:
+            self.on_year_zoom(start_date, end_date)
 
     def _on_wheel(self, event):
         """Колесо над yearmap: переключение года."""
