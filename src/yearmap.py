@@ -262,23 +262,16 @@ class YearHeatmap(tk.Canvas):
 
     def _on_right_click(self, event):
         """ПКМ на любой ячейке heatmap устанавливает диапазон этого месяца на графиках."""
-        import sys
-        print(f"[DEBUG] ПКМ: x={event.x}, y={event.y}", file=sys.stderr, flush=True)
-
         # Определяем индекс недели и дня недели по координатам клика
         w = (event.x - X0) // self._step
         d = (event.y - Y0) // self._step
 
-        print(f"[DEBUG] Вычисленные: неделя w={w}, день d={d}", file=sys.stderr, flush=True)
-
         # Проверяем, что клик попал строго в сетку (0..52 недели, 0..6 дни)
         if not (0 <= w < 53 and 0 <= d < 7):
-            print("[DEBUG] Клик вне сетки дней, игнорируем", file=sys.stderr, flush=True)
             return
 
         # Вычисляем точную календарную дату, на которую кликнули
         clicked_date = self._year_start + datetime.timedelta(weeks=w, days=d)
-        print(f"[DEBUG] Кликнутая дата: {clicked_date}", file=sys.stderr, flush=True)
 
         # Определяем начало и конец месяца для этой даты
         year = clicked_date.year
@@ -286,8 +279,6 @@ class YearHeatmap(tk.Canvas):
         start_date = datetime.date(year, month, 1)
         _, last_day = calendar.monthrange(year, month)
         end_date = datetime.date(year, month, last_day)
-
-        print(f"[DEBUG] Зум на месяц {month}: {start_date} - {end_date}", file=sys.stderr, flush=True)
 
         # Вызываем callback, если он задан
         if self.on_month_zoom:
@@ -297,9 +288,20 @@ class YearHeatmap(tk.Canvas):
         """Колесо над yearmap: переключение года."""
         now = time.monotonic()
         if now < self._wheel_lock:
-            return                          # это продолжение жеста — игнор
-        self._wheel_lock = now + 0.6        # жест длится ~0.6 с
-        delta = 1 if event.delta > 0 else -1
+            return                          # игнорируем повторные срабатывания
+        
+        # 0.2 секунды (200 мс) — идеально: гасит двойные срабатывания мыши, 
+        # но не создает ощущения задержки ("как только колесо останавливалось")
+        self._wheel_lock = now + 0.2
+        
+        # Кроссплатформенное определение направления прокрутки
+        if hasattr(event, 'delta'):
+            delta = 1 if event.delta > 0 else -1
+        elif hasattr(event, 'num'):
+            delta = 1 if event.num == 4 else -1  # Linux
+        else:
+            return
+
         if self.on_year_change:
             self.on_year_change(delta)
         else:

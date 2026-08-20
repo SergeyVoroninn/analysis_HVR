@@ -318,18 +318,30 @@ class MetricPlot(tk.Frame):
         ax.clear()
         self._style()
 
-        if not self._values or not self._start:
-            ax.set_title(f"{self.spec.name}: нет данных",
-                         color=COL_TEXT_DIM, fontsize=9)
-            self.canvas.draw_idle()
-            return
-
+        # Проверяем, есть ли вообще данные у атлета (независимо от текущего view)
+        has_any_data = bool(self._values)
+        
+        # Получаем текущий view
         v = self._view_ordinals()
         if v is None:
-            return
-        lo, hi = v
+            # Если view не задан и нет данных вообще
+            if not has_any_data or not self._start:
+                ax.set_title(f"{self.spec.name}: нет данных",
+                             color=COL_TEXT_DIM, fontsize=9)
+                self.canvas.draw_idle()
+                return
+            # Если view не задан, но данные есть — используем полный диапазон
+            lo = float(self._ord(self._start))
+            hi = float(self._ord(self._end)) + 1
+        else:
+            lo, hi = v
+
         vspan = max(1, hi - lo)
         width_px = max(100, self.ax.get_window_extent().width)
+
+        # Фильтруем данные для текущего view
+        view_values = [(dt, vv) for dt, vv in self._values 
+                       if lo <= self._ord(dt) < hi]
 
         if vspan <= self.SMALL_SPAN:
             # ---- календарные бары: 3часа / день / неделя ----
@@ -352,22 +364,27 @@ class MetricPlot(tk.Frame):
             tf_label = (f"{bar_size / 365:.1f}г" if bar_size >= 365
                         else f"{bar_size:.0f}д")
 
+        # Агрегируем данные только из view_values
         agg = {}
-        for dt, vv in self._values:
+        for dt, vv in view_values:
             x = self._ord(dt)
-            if not (lo <= x < hi):
-                continue
             agg.setdefault(key(x), []).append(vv)
+        
         xs = sorted(agg)
-        ys = [sum(agg[x]) / len(agg[x]) for x in xs]
+        ys = [sum(agg[x]) / len(agg[x]) for x in xs] if xs else []
 
-        c = self.spec.color
-        colors = [c(vv) for vv in ys] if callable(c) else (c or COL_TP_YEAR)
-        ax.bar(xs, ys, width=bw, color=colors, align="edge", zorder=2)
+        # Рисуем бары только если есть данные в текущем view
+        if xs and ys:
+            c = self.spec.color
+            colors = [c(vv) for vv in ys] if callable(c) else (c or COL_TP_YEAR)
+            ax.bar(xs, ys, width=bw, color=colors, align="edge", zorder=2)
 
         ax.set_xlim(lo, hi)
         if ys:
             ax.set_ylim(0, (max(ys) or 1) * 1.1)
+        else:
+            # Если нет данных в view, устанавливаем разумный ylim
+            ax.set_ylim(0, 1)
         ax.set_ylabel(self.spec.ylabel, color=COL_TEXT_LIGHT)
 
         d0 = datetime.date.fromordinal(max(1, int(lo)))

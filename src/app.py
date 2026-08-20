@@ -1,5 +1,5 @@
 """
-app.py — чистый старт.
+app.py — чистый старт с использованием вынесенного Оркестратора.
 Спортсмены + Heatmap (год/неделя) + графики TP/Стресс во всю ширину.
 Состояние (атлет, год, курсор недели, масштаб графиков) сохраняется
 при закрытии и восстанавливается при старте (appsettings.py).
@@ -17,6 +17,7 @@ from theme import COL_BG_DARK, COL_TEXT_DIM
 from ghost import ResizeController
 from appsettings import AppSettings
 from splash import SplashScreen
+from orchestrator import AppOrchestrator  # ИМПОРТ ОРКЕСТРАТОРА
 
 ATHLETES_COLUMN_FRACTION = 1 / 7
 ATHLETES_COLUMN_MIN = 150
@@ -96,6 +97,7 @@ if __name__ == "__main__":
     right = tk.Frame(root, bg=COL_BG_DARK)
     right.grid(row=0, column=1, sticky="nsew", padx=0, pady=10)
 
+    # Вспомогательная функция для диалога ЭКГ
     def on_week_pick_action(day, block):
         if block is None:
             return
@@ -109,34 +111,24 @@ if __name__ == "__main__":
         dlg = ECGListDialog(right, cur[0], dt_from, dt_to,
                             title, on_change=hm.refresh)
 
-    # --- ИЗМЕНЕНИЕ ЗДЕСЬ: добавлен параметр on_month_zoom ---
-    hm = Heatmap(right,
-                 on_week_pick=lambda w, d: charts.center_on_week(d),
-                 on_week_dbl_pick=lambda w, d: charts.zoom_to_week(d),
-                 on_pick=on_week_pick_action,
-                 on_month_zoom=lambda start_date, end_date: charts.set_range(start_date, end_date))
-                 
+    # 1. Создаем виджеты (минимум колбэков здесь!)
+    hm = Heatmap(right, on_pick=on_week_pick_action)
     charts = ChartsPanel(right, metrics=[TP_METRIC, SI_METRIC])
-    charts.set_year_pick_callback(hm.set_year)
-    charts.set_reset_callback(hm.reset_to_data_center)
-    charts.set_single_click_callback(hm.set_cursor_by_date)
-
+    
+    # 2. Создаем Оркестратор и передаем ему виджеты
+    orchestrator = AppOrchestrator(hm, charts, settings)
+    
+    # 3. ResizeController
     ResizeController(right, blocks=[hm, charts], gap=10)
 
-    def on_select(aid):
-        """Синхронизирует выбранного атлета между heatmap и графиками."""
-        hm.athlete = aid
-        charts.athlete = aid
-        
     # ---------- импорт ----------
     def do_import():
         changed = import_ecg(root, panel.db_path, panel.athletes,
                               panel.selected(), set_status)
         if changed:
             panel.reload(select_id=changed)
-            panel.on_select = on_select
             cur = panel.selected()
-            on_select(cur[0] if cur else None)
+            orchestrator.sync_athlete(cur[0] if cur else None)
             hm.refresh()
             charts.refresh()
 
@@ -147,18 +139,18 @@ if __name__ == "__main__":
 
     saved_id = settings.get("athlete_id")
     panel.reload(select_id=saved_id)
-    panel.on_select = on_select
+    panel.on_select = orchestrator.sync_athlete  # <-- ИСПРАВЛЕНО
     cur = panel.selected()
-    on_select(cur[0] if cur else None)
+    orchestrator.sync_athlete(cur[0] if cur else None)  # <-- ИСПРАВЛЕНО
     root.update()
-
-    hm.set_selection(year=settings.get("year"), week=settings.get("week"))
-    root.update()
-
-    saved_zoom = settings.get("zoom")
-    if saved_zoom and len(saved_zoom) == 2 and saved_zoom[0] and saved_zoom[1]:
-        charts.zoom = tuple(saved_zoom)
-        charts.redraw()
+    
+    # Восстанавливаем состояние heatmap и charts через оркестратор
+    orchestrator.restore_state(
+        saved_athlete_id=saved_id,
+        saved_year=settings.get("year"),
+        saved_week=settings.get("week"),
+        saved_zoom=settings.get("zoom")
+    )
 
     pump(1.0)
     root.update()
@@ -168,12 +160,7 @@ if __name__ == "__main__":
     # ---------- сохранение при закрытии ----------
     def on_close():
         cur = panel.selected()
-        settings.set("athlete_id", cur[0] if cur else None)
-        settings.set("year", hm.year)
-        settings.set("week", hm.week)
-        z = charts.zoom
-        settings.set("zoom", list(z) if z else None)
-        settings.save()
+        orchestrator.save_state(current_athlete_id=cur[0] if cur else None)
         root.destroy()
 
     root.protocol("WM_DELETE_WINDOW", on_close)

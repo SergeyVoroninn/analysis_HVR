@@ -20,8 +20,7 @@ from models import get_session, ECGRecord
 class Heatmap(ctk.CTkFrame):
     """Единая панель плотности записей ЭКГ."""
 
-    def __init__(self, master, db_path=None, on_week_pick=None, 
-                 on_week_dbl_pick=None, on_pick=None, on_month_zoom=None):
+    def __init__(self, master, db_path=None, on_pick=None):
         super().__init__(master, fg_color=COL_BG_DARK)
         self.db_path = db_path or get_db_path()
 
@@ -47,15 +46,17 @@ class Heatmap(ctk.CTkFrame):
         self.week_map = WeekHeatmap(self._maps, db_path=db_path, on_pick=on_pick)
         self.week_map.pack(side="left", padx=(20, 0))
 
-        self._on_week_pick = on_week_pick           # одинарный клик по неделе
-        self._on_week_dbl_pick = on_week_dbl_pick   # двойной клик по неделе
-        self._on_month_zoom = on_month_zoom         # НОВОЕ: ПКМ по месяцу
+        # ПУБЛИЧНЫЕ колбэки для оркестратора
+        self.on_week_pick = None        # callback(week, week_start_date)
+        self.on_week_dbl_pick = None    # callback(week, monday)
+        self.on_month_zoom = None       # callback(start_date, end_date)
+        self.on_year_change = None      # callback(delta)
 
         # Связываем внутренние события year_map с методами этого класса
         self.year_map.on_week_pick = self._sync_week
-        self.year_map.on_year_change = self._change_year
+        self.year_map.on_year_change = self._on_year_map_year_change  # <--- ИСПРАВЛЕНО ЗДЕСЬ
         self.year_map.on_week_dbl = self._zoom_to_week
-        self.year_map.on_month_zoom = self._handle_month_zoom  # НОВОЕ
+        self.year_map.on_month_zoom = self._handle_month_zoom
         
         self._pending_t = None
         self._lbl_year.configure(text=str(self.year))
@@ -95,28 +96,40 @@ class Heatmap(ctk.CTkFrame):
     @week.setter
     def week(self, w):
         self.year_map.week = w
+        # Синхронизируем weekmap при программной смене недели
+        if w is not None:
+            d = self.year_map.week_start_date(w)
+            if d:
+                self.week_map.week_start = d
 
     # ---------------- внутреннее ----------------
+    def _on_year_map_year_change(self, delta):
+        """Обработчик смены года от year_map: просто передаем событие наверх.
+        Не меняем self.year здесь, чтобы избежать двойного инкремента с оркестратором!"""
+        if self.on_year_change:
+            self.on_year_change(delta)
+
     def _change_year(self, delta):
+        """Обработчик клика по кнопкам ◀ ▶."""
         self.year += delta
 
     def _sync_week(self, w, d):
         self.week_map.week_start = d
-        if self._on_week_pick:
-            self._on_week_pick(w, d)
+        if self.on_week_pick:
+            self.on_week_pick(w, d)
 
     def _zoom_to_week(self, w, monday):
         """Двойной клик по yearmap — диапазон графика = кликнутая неделя."""
         if monday is None:
             return
         self.week_map.week_start = monday
-        if self._on_week_dbl_pick:
-            self._on_week_dbl_pick(w, monday)
+        if self.on_week_dbl_pick:
+            self.on_week_dbl_pick(w, monday)
 
     def _handle_month_zoom(self, start_date, end_date):
-        """Посредник: ПКМ по месяцу в year_map пробрасывается наружу."""
-        if self._on_month_zoom:
-            self._on_month_zoom(start_date, end_date)
+        """ПКМ по месяцу: пробрасываем событие наружу."""
+        if self.on_month_zoom:
+            self.on_month_zoom(start_date, end_date)
 
     def set_selection(self, year=None, week=None):
         """Восстановление состояния: год и курсор недели (+ недельная карта)."""
