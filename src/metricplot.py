@@ -204,7 +204,6 @@ class MetricPlot(tk.Frame):
             self._current_tf = None
             if self.on_reset:
                 self.on_reset()
-            self._commit_view(None, None)
             return
             
         if event.button != 1 or event.xdata is None or self._start is None:
@@ -223,10 +222,17 @@ class MetricPlot(tk.Frame):
                 self.after_cancel(self._single_timer)
                 self._single_timer = None
             d = datetime.date.fromordinal(int(event.xdata))
-            self._commit_view(self._ord(datetime.date(d.year, 1, 1)),
-                              self._ord(datetime.date(d.year, 12, 31)) + 1)
-            if self.on_year_pick:
-                self.on_year_pick(d.year)
+            v = self._view_ordinals()
+            if v is not None:
+                lo, hi = v
+                center = (lo + hi) / 2
+                click_ord = self._ord(d)
+                if click_ord < center:
+                    self._commit_view(click_ord, hi)
+                else:
+                    self._commit_view(lo, click_ord + 1)
+            else:
+                self._commit_view(self._ord(d), self._ord(d) + 1)
             return
 
         if self.on_single_click:
@@ -234,7 +240,7 @@ class MetricPlot(tk.Frame):
                 self.after_cancel(self._single_timer)
             d = datetime.date.fromordinal(int(event.xdata))
             self._single_timer = self.after(
-                300, lambda dd=d: self._fire_single(dd))
+                500, lambda dd=d: self._fire_single(dd))
 
         v = self._view_ordinals()
         if v is None:

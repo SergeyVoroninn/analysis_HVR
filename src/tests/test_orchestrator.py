@@ -71,6 +71,11 @@ def test_saved_range_reset(orchestrator):
     orch._saved_range = (100.0, 200.0)
     orch._handle_chart_reset()
     assert orch._saved_range is None
+    # все графики должны быть очищены
+    assert p0._start is None
+    assert p0._end is None
+    assert p0.view is None
+    p0._reload.assert_called_once()
 
 
 # ======================== ВОССТАНОВЛЕНИЕ ПРИ СМЕНЕ АТЛЕТА ========================

@@ -59,6 +59,10 @@ class AppOrchestrator:
 
     def _handle_chart_reset(self):
         self._saved_range = None
+        for p in self.charts._plots:
+            p._start = p._end = None
+            p.view = None
+            p._reload()
         self.heatmap.reset_to_data_center()
 
     def _handle_chart_single_click(self, d):
