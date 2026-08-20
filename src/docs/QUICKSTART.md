@@ -89,7 +89,9 @@ python -c "import customtkinter, matplotlib, tkcalendar, sqlalchemy, yaml, numpy
 
 ```bash
 cd src/scripts
-python prepare_database.py
+python prepare_database.py              # config.yaml
+# или со своим конфигом:
+python prepare_database.py --config другой_конфиг.yaml
 cd ..
 python app.py
 ```
@@ -148,6 +150,7 @@ python app.py
 | Одинарный клик | Курсор на неделю + центрирование графика по четвергу недели |
 | Двойной клик | Диапазон графика = кликнутая неделя (пн–вс) |
 | Колесо мыши | Переключение года (вперёд/назад) |
+| ПКМ | Диапазон графика = кликнутый месяц (с 1-го по последнее число) |
 
 ### Недельный heatmap (weekmap)
 
@@ -216,7 +219,7 @@ analysis_HVR\src\
 |   |   fit_profile_from_real.py   Извлечение профиля ЭКГ из реальной записи Polar H10
 |   |   migrate_split_raw.py       Миграция: вынос raw_data из ecg_records в отдельную таблицу ecg_raw
 |   |   models.py                  ORM-модели SQLAlchemy: Athlete, ECGRecord, ECGRaw и get_session
-|   |   prepare_database.py        Главный скрипт подготовки тестовой БД с прогресс-баром
+|   |   prepare_database.py        Главный скрипт: очистка БД, генерация спортсменов (athlete_generator.py), построение расписания (schedule_engine.py), генерация ЭКГ (ecg_generator.py) с прогресс-баром для каждого этапа
 |   |   schedule_engine.py         Построение расписаний записей ЭКГ для каждого спортсмена
 |   |
 \---tests
@@ -533,7 +536,8 @@ profiles:
 
 ```bash
 cd src/scripts
-python prepare_database.py
+python prepare_database.py              # config.yaml
+python prepare_database.py --config другой_конфиг.yaml
 ```
 
 ---

@@ -2,6 +2,7 @@
 Главный скрипт подготовки тестовой базы данных.
 Записывает всё в SQLite через SQLAlchemy. Путь к БД задаётся в config.yaml.
 """
+import argparse
 import os
 import random
 import sys
@@ -227,5 +228,9 @@ def verify_database(db_path):
 
 
 if __name__ == '__main__':
-    db_path = prepare_database(CONFIG_PATH)
+    parser = argparse.ArgumentParser(description="Подготовка тестовой БД")
+    parser.add_argument("--config", default=CONFIG_PATH,
+                        help="Путь к YAML-конфигу (по умолчанию config.yaml в папке scripts/)")
+    args = parser.parse_args()
+    db_path = prepare_database(args.config)
     verify_database(db_path)
