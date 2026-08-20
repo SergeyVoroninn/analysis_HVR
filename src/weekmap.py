@@ -1,10 +1,6 @@
 """
-weekmap.py — недельный heatmap: 7 дней × 8 трёхчасовых блоков.
-
-Свойства:
-  athlete    — id спортсмена; при смене данные перезагружаются из БД,
-               неделя НЕ меняется сама — только извне через week_start;
-  week_start — понедельник отображаемой недели (None → пусто).
+weekmap.py — недельный heatmap: 7 дней × 8 блоков.
+Логика кликов полностью синхронизирована с yearmap.py для надежности.
 """
 import datetime
 import time as _time
@@ -19,8 +15,6 @@ X0, Y0 = 24, 4
 
 
 class WeekHeatmap(tk.Frame):
-    """Заголовок недели + сетка 7×8."""
-
     def __init__(self, master, db_path=None, cell=14, on_pick=None):
         super().__init__(master, bg=COL_BG_DARK)
         self._cell = cell
@@ -36,30 +30,27 @@ class WeekHeatmap(tk.Frame):
         self.db_path = db_path or get_db_path()
         self.on_pick = on_pick
         
-        # НОВЫЕ колбэки
-        self.on_day_dbl = None      # callback(day_start, day_end)
-        self.on_week_rmb = None     # callback(week_start, week_end)
+        self.on_day_dbl = None
+        self.on_week_rmb = None
 
         self._athlete_id = None
         self._week_start = None
         self._block_map = {}
         
-        # Переменные для обработки кликов
+        # Отслеживаем время и ИНДЕКС ЯЧЕЙКИ, а не пиксели (как в yearmap.py)
         self._click_t = 0.0
-        self._click_x = 0.0
-        self._click_y = 0.0
+        self._click_d = -1
+        self._click_b = -1
         self._single_timer = None
 
         self._cells, self._colors = {}, {}
         self._rebuild_grid()
         self._redraw()
 
-        # ИСПРАВЛЕНО: добавлены привязки для двойного клика и ПКМ
+        # ТОЛЬКО одинарный клик и ПКМ. Двойной клик детектируется внутри _on_click
         self._cnv.bind("<Button-1>", self._on_click)
-        self._cnv.bind("<Double-Button-1>", self._on_day_dbl_click)
         self._cnv.bind("<Button-3>", self._on_week_rmb_click)
 
-    # ================= свойства =================
     @property
     def athlete(self):
         return self._athlete_id
@@ -98,7 +89,6 @@ class WeekHeatmap(tk.Frame):
     def height_for_step(self, step):
         return self._title.winfo_reqheight() + Y0 + 8 * step + 6
 
-    # ================= данные из БД =================
     def _load_data(self):
         self._block_map = {}
         if self._athlete_id is None:
@@ -121,7 +111,6 @@ class WeekHeatmap(tk.Frame):
             elif status == "warn" and m["worst"] != "crit":
                 m["worst"] = "warn"
 
-    # ================= построение =================
     def _rebuild_grid(self):
         self._cnv.delete("all")
         self._cells, self._colors = {}, {}
@@ -140,16 +129,11 @@ class WeekHeatmap(tk.Frame):
                 self._cells[(d, b)] = cid
                 self._colors[(d, b)] = None
 
-    # ================= отрисовка =================
     def _cell_color(self, count, worst, base):
-        if worst == 'crit':
-            return COL_CRIT
-        if worst == 'warn':
-            return COL_WARN
-        if count >= 2:
-            return COL_MULTI
-        if count == 1:
-            return COL_ONE
+        if worst == 'crit': return COL_CRIT
+        if worst == 'warn': return COL_WARN
+        if count >= 2: return COL_MULTI
+        if count == 1: return COL_ONE
         return base
 
     def _redraw(self):
@@ -169,36 +153,38 @@ class WeekHeatmap(tk.Frame):
                 else:
                     base = COL_WEEKEND if d >= 5 else COL_WEEKDAY
                     info = self._block_map.get((day.isoformat(), b))
-                    color = self._cell_color(info["count"], info["worst"],
-                                             base) if info else base
+                    color = self._cell_color(info["count"], info["worst"], base) if info else base
                 if self._colors[(d, b)] != color:
                     self._cnv.itemconfigure(self._cells[(d, b)], fill=color)
                     self._colors[(d, b)] = color
 
-    # ================= события =================
+    # ================= СОБЫТИЯ (КАК В YEARMAP.PY) =================
     def _on_click(self, event):
         d = (event.x - X0) // self._step
         b = (event.y - Y0) // self._step
         if not (0 <= d < 7 and 0 <= b < 8) or self._week_start is None:
             return
 
-        # Проверка на двойной клик, чтобы не открывать диалог раньше времени
         now = _time.monotonic()
-        is_dbl = (now - self._click_t < 0.45 and
-                  abs(event.x - self._click_x) < 6 and
-                  abs(event.y - self._click_y) < 6)
+        # Проверяем время И совпадение индекса ячейки. Это намного надежнее проверки пикселей!
+        is_dbl = (now - self._click_t < 0.45 and d == self._click_d and b == self._click_b)
+        
         self._click_t = now
-        self._click_x = event.x
-        self._click_y = event.y
+        self._click_d = d
+        self._click_b = b
 
         if is_dbl:
-            # Двойной клик обработается в _on_day_dbl_click, отменяем таймер
+            # Двойной клик: отменяем таймер одинарного и вызываем колбэк
             if self._single_timer is not None:
                 self.after_cancel(self._single_timer)
                 self._single_timer = None
-            return
+            
+            day = self._week_start + datetime.timedelta(days=d)
+            if self.on_day_dbl:
+                self.on_day_dbl(day, day + datetime.timedelta(days=1))
+            return  # ВАЖНО: выходим, чтобы не запланировать одинарный клик
 
-        # Одинарный клик с задержкой 300 мс
+        # Одинарный клик: планируем выполнение
         day = self._week_start + datetime.timedelta(days=d)
         block = b if (day.isoformat(), b) in self._block_map else None
         
@@ -206,29 +192,12 @@ class WeekHeatmap(tk.Frame):
             if self._single_timer is not None:
                 self.after_cancel(self._single_timer)
             self._single_timer = self.after(
-                300, lambda dd=day, bb=block: self._fire_single(dd, bb))
+                350, lambda dd=day, bb=block: self._fire_single(dd, bb))
 
     def _fire_single(self, day, block):
         self._single_timer = None
         if self.on_pick:
             self.on_pick(day, block)
-
-    def _on_day_dbl_click(self, event):
-        """Двойной клик по любой ячейке: устанавливаем диапазон на сутки."""
-        d = (event.x - X0) // self._step
-        b = (event.y - Y0) // self._step
-        if not (0 <= d < 7 and 0 <= b < 8) or self._week_start is None:
-            return
-
-        # Отменяем таймер одинарного клика
-        if self._single_timer is not None:
-            self.after_cancel(self._single_timer)
-            self._single_timer = None
-
-        day = self._week_start + datetime.timedelta(days=d)
-        if self.on_day_dbl:
-            day_end = day + datetime.timedelta(days=1)
-            self.on_day_dbl(day, day_end)
 
     def _on_week_rmb_click(self, event):
         """ПКМ по weekmap: устанавливаем диапазон на всю отображаемую неделю."""

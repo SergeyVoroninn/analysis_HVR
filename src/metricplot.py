@@ -361,8 +361,8 @@ class MetricPlot(tk.Frame):
         # Русские сокращения дней недели
         weekdays_ru = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
         
-        # Недельный диапазон: каждый день — название дня недели
-        if config.tick_format == "weekday" and vspan <= 7:
+        # Недельный диапазон (1.5 < vspan <= 7): дата в понедельник, дни недели для остальных
+        if 1.5 < vspan <= 7:
             d0 = datetime.date.fromordinal(max(1, int(lo)))
             d1 = datetime.date.fromordinal(max(1, int(hi)))
             
@@ -370,16 +370,55 @@ class MetricPlot(tk.Frame):
             current = d0
             while current <= d1:
                 ticks.append(current.toordinal())
-                # Показываем название дня недели
-                names.append(weekdays_ru[current.weekday()])
+                # Понедельник (weekday() == 0) — показываем дату, остальные — день недели
+                if current.weekday() == 0:
+                    names.append(current.strftime("%d.%m"))
+                else:
+                    names.append(weekdays_ru[current.weekday()])
                 current += datetime.timedelta(days=1)
+        
+        # Суточный диапазон (<= 1.5 дня): подписи каждые 3 часа, начиная с 00:00
+        elif vspan <= 1.5:
+            start_date = datetime.date.fromordinal(max(1, int(lo)))
+            
+            # Создаем datetime на 00:00 этого дня
+            current = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0)
+            
+            # Генерируем подписи каждые 3 часа
+            while self._ord(current) <= hi + 0.5:
+                if current.hour == 0:
+                    label = current.strftime("%d.%m")
+                else:
+                    label = current.strftime("%H:%M")
+                
+                ticks.append(self._ord(current))
+                names.append(label)
+                current += datetime.timedelta(hours=3)
+        
+        elif config.tick_format == "3hour" and config.tick_step_hours > 0:
+            # Месячный диапазон с подписями каждые N часов
+            start_date = datetime.date.fromordinal(max(1, int(lo)))
+            
+            # Создаем datetime на 00:00
+            current = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0)
+            
+            step = datetime.timedelta(hours=config.tick_step_hours)
+            
+            while self._ord(current) <= hi + 0.5:
+                if current.hour == 0:
+                    label = current.strftime("%d.%m")
+                else:
+                    label = current.strftime("%H:%M")
+                
+                ticks.append(self._ord(current))
+                names.append(label)
+                current += step
         
         elif config.bar_tf is TimeFrame.DAY and vspan > 31:
             # Годовой диапазон: подписи по 1-му числу каждого месяца
             d0 = datetime.date.fromordinal(max(1, int(lo)))
             d1 = datetime.date.fromordinal(max(1, int(hi)))
             
-            # Начинаем с 1-го числа месяца, содержащего d0
             current = d0.replace(day=1)
             if current < d0:
                 if current.month == 12:
@@ -446,10 +485,12 @@ class MetricPlot(tk.Frame):
         """Генератор границ для зебры и подписей оси X."""
         d0 = datetime.date.fromordinal(max(1, int(lo)))
         
-        if sib is TimeFrame.HOUR1:  # НОВОЕ
-            d = d0.replace(hour=d0.hour, minute=0, second=0)
-        elif sib is TimeFrame.HOUR3:
-            d = d0.replace(hour=(d0.hour // 3) * 3, minute=0, second=0)
+        if sib in (TimeFrame.HOUR1, TimeFrame.HOUR3):
+            d0 = datetime.datetime.combine(d0, datetime.time())
+            if sib is TimeFrame.HOUR1:
+                d = d0.replace(minute=0, second=0, microsecond=0)
+            else:
+                d = d0.replace(hour=(d0.hour // 3) * 3, minute=0, second=0)
         elif sib is TimeFrame.DAY:
             d = d0
         elif sib is TimeFrame.WEEK:

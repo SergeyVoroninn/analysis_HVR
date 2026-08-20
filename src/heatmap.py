@@ -1,10 +1,6 @@
 """
 heatmap.py — составной виджет: переключатель года сверху,
 годовой heatmap слева, недельный справа.
-
-Размер задаётся извне через ResizeController (ghost.py): методы
-target_size / ghost_rects / apply_size. Сам виджет на <Configure> не
-реагирует — никакой обратной связи с раскладкой.
 """
 import datetime
 import tkinter as tk
@@ -18,8 +14,6 @@ from models import get_session, ECGRecord
 
 
 class Heatmap(ctk.CTkFrame):
-    """Единая панель плотности записей ЭКГ."""
-
     def __init__(self, master, db_path=None, on_pick=None):
         super().__init__(master, fg_color=COL_BG_DARK)
         self.db_path = db_path or get_db_path()
@@ -47,27 +41,30 @@ class Heatmap(ctk.CTkFrame):
         self.week_map.pack(side="left", padx=(20, 0))
 
         # ПУБЛИЧНЫЕ колбэки для оркестратора
-        self.on_week_pick = None        # callback(week, week_start_date)
-        self.on_week_dbl_pick = None    # callback(week, monday) — ±15 дней
-        self.on_year_zoom = None        # callback(start_date, end_date) — ПКМ год
-        self.on_month_zoom = None       # callback(start_date, end_date)
-        self.on_year_change = None      # callback(delta)
+        self.on_week_pick = None
+        self.on_week_dbl_pick = None
+        self.on_year_zoom = None
+        self.on_month_zoom = None
+        self.on_year_change = None
         
         # НОВЫЕ колбэки от weekmap
-        self.week_map.on_day_dbl = self._handle_weekmap_day_dbl
-        self.week_map.on_week_rmb = self._handle_weekmap_week_rmb
+        self.on_weekmap_day_dbl = None
+        self.on_weekmap_week_rmb = None
 
-        # Связываем внутренние события year_map с методами этого класса
+        # Связываем внутренние события year_map
         self.year_map.on_week_pick = self._sync_week
-        self.year_map.on_year_change = self._on_year_map_year_change  # <--- ИСПРАВЛЕНО ЗДЕСЬ
+        self.year_map.on_year_change = self._on_year_map_year_change
         self.year_map.on_week_dbl = self._zoom_to_week
         self.year_map.on_year_zoom = self._handle_year_zoom
         self.year_map.on_month_zoom = self._handle_month_zoom
 
+        # Связываем события weekmap с посредниками
+        self.week_map.on_day_dbl = self._handle_weekmap_day_dbl
+        self.week_map.on_week_rmb = self._handle_weekmap_week_rmb
+
         self._pending_t = None
         self._lbl_year.configure(text=str(self.year))
 
-    # ---------------- сквозные свойства ----------------
     @property
     def athlete(self):
         return self.year_map.athlete
@@ -78,7 +75,6 @@ class Heatmap(ctk.CTkFrame):
         self.week_map.athlete = aid
 
     def refresh(self):
-        """Принудительная перезагрузка данных (после импорта и т.п.)."""
         self.year_map.athlete = self.year_map.athlete
         self.week_map.athlete = self.week_map.athlete
         self.year_map._load_data()
@@ -102,21 +98,16 @@ class Heatmap(ctk.CTkFrame):
     @week.setter
     def week(self, w):
         self.year_map.week = w
-        # Синхронизируем weekmap при программной смене недели
         if w is not None:
             d = self.year_map.week_start_date(w)
             if d:
                 self.week_map.week_start = d
 
-    # ---------------- внутреннее ----------------
     def _on_year_map_year_change(self, delta):
-        """Обработчик смены года от year_map: просто передаем событие наверх.
-        Не меняем self.year здесь, чтобы избежать двойного инкремента с оркестратором!"""
         if self.on_year_change:
             self.on_year_change(delta)
 
     def _change_year(self, delta):
-        """Обработчик клика по кнопкам ◀ ▶."""
         self.year += delta
 
     def _sync_week(self, w, d):
@@ -125,7 +116,6 @@ class Heatmap(ctk.CTkFrame):
             self.on_week_pick(w, d)
 
     def _zoom_to_week(self, w, monday):
-        """Двойной клик по yearmap — диапазон графика = кликнутая неделя."""
         if monday is None:
             return
         self.week_map.week_start = monday
@@ -133,17 +123,14 @@ class Heatmap(ctk.CTkFrame):
             self.on_week_dbl_pick(w, monday)
 
     def _handle_month_zoom(self, start_date, end_date):
-        """ПКМ по month на графиках: пробрасываем событие наружу."""
         if self.on_month_zoom:
             self.on_month_zoom(start_date, end_date)
 
     def _handle_year_zoom(self, start_date, end_date):
-        """ПКМ по yearmap: пробрасываем событие наружу."""
         if self.on_year_zoom:
             self.on_year_zoom(start_date, end_date)
 
     def set_selection(self, year=None, week=None):
-        """Восстановление состояния: год и курсор недели (+ недельная карта)."""
         if year is not None:
             self.year = year
         if week is not None:
@@ -153,7 +140,6 @@ class Heatmap(ctk.CTkFrame):
                 self.week_map.week_start = d
 
     def set_year(self, year):
-        """Переключить год и поставить курсор в середину года (~26-я неделя)."""
         self.year = year
         self.week = 26
         d = self.year_map.week_start_date(26)
@@ -161,14 +147,12 @@ class Heatmap(ctk.CTkFrame):
             self.week_map.week_start = d
 
     def set_cursor_by_date(self, d):
-        """Поставить курсор на неделю, содержащую дату d."""
         w = self.year_map.set_cursor_by_date(d)
         self._lbl_year.configure(text=str(self.year_map.year))
         if w is not None:
             self.week_map.week_start = self.year_map.week_start_date(w)
 
     def reset_to_data_center(self):
-        """Сброс yearmap на середину диапазона данных атлета."""
         session = get_session(self.db_path)
         try:
             row = (session.query(ECGRecord.recorded_at)
@@ -193,11 +177,9 @@ class Heatmap(ctk.CTkFrame):
             self.week_map.week_start = d
 
     def _ctrl_req(self):
-        """Высота панели переключателя года: дети + pady 5 сверху и снизу."""
         hs = [c.winfo_reqheight() for c in self._ctrl.winfo_children()]
         return (max(hs) if hs else 1) + 10
 
-    # ---------------- хуки ghost-ресайза ----------------
     def ghost_shown(self):
         pass
 
@@ -205,8 +187,7 @@ class Heatmap(ctk.CTkFrame):
         pass
 
     def target_size(self, avail_w):
-        """Ширина: 60*t+60; высота: переключатель + максимум из двух карт."""
-        t = int(max(7, min((avail_w - 60) // 60, 23)))   # step = cell + 1
+        t = int(max(7, min((avail_w - 60) // 60, 23)))
         self._pending_t = t
         w = 60 * t + 60
         ctrl_h = self._ctrl_req()
