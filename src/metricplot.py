@@ -24,7 +24,7 @@ from database import get_db_path
 from models import get_session, ECGRecord
 from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
                    COL_SPINE, COL_TP_YEAR)
-from timeframe import TimeFrame
+from timeframe import TimeFrame, pick_calendar_timeframe, calc_proportional_bar_size
 
 
 class _FrozenCanvas(FigureCanvasTkAgg):
@@ -75,8 +75,7 @@ class MetricPlot(tk.Frame):
         self._click_x = 0.0
         self._click_y = 0.0
         self._current_tf = None
-        
-        # Callbacks
+        self._forced_tf = None  # Принудительный таймфрейм извне
         self.on_view_changed = None
         self.on_year_pick = None
         self.on_reset = None
@@ -120,6 +119,10 @@ class MetricPlot(tk.Frame):
 
     def set_size(self, w, h):
         self.widget.configure(width=w, height=h)
+
+    def set_forced_tf(self, tf):
+        """Установить таймфрейм принудительно (из ChartsPanel)."""
+        self._forced_tf = tf
 
     def redraw(self):
         self._draw()
@@ -194,7 +197,7 @@ class MetricPlot(tk.Frame):
         factor = 0.85 if event.button == "up" else 1.18
         width_px = max(100, self.ax.get_window_extent().width)
         # стоп зума внутрь: бар 3часа ровно MAX_BAR_PX
-        min_span = width_px * self.MIN_TF.bar_size() / self.MAX_BAR_PX
+        min_span = width_px * self.MIN_TF.bar_size / self.MAX_BAR_PX
         new_span = min(365000, max(min_span, (hi - lo) * factor))
         ratio = (event.xdata - lo) / max(1e-9, hi - lo)
         new_lo = event.xdata - ratio * new_span
@@ -275,8 +278,7 @@ class MetricPlot(tk.Frame):
 
     # ---------------- выбор таймфрейма (малый диапазон) ----------------
     def _pick_small_tf(self, span, width_px):
-        """Календарный tf в зоне [3часа .. неделя]: шаг только на соседний.
-        Шаг мельче — только если более мелкий бар реально помещается (>= MIN)."""
+        """Календарный tf в зоне [3часа .. неделя]: шаг только на соседний."""
         order = list(TimeFrame)
         lo_i = order.index(self.MIN_TF)
         hi_i = order.index(TimeFrame.WEEK)
@@ -285,17 +287,20 @@ class MetricPlot(tk.Frame):
         if cur is None or not (lo_i <= order.index(cur) <= hi_i):
             tf = order[lo_i]
             for t in order[lo_i:hi_i + 1]:
-                if (t.bar_size() / span) * width_px <= self.MAX_BAR_PX:
+                # ИСПРАВЛЕНО: bar_size теперь свойство, без скобок
+                if (t.bar_size / span) * width_px <= self.MAX_BAR_PX:
                     tf = t
             return tf
 
         i = order.index(cur)
-        actual = (cur.bar_size() / span) * width_px
+        # ИСПРАВЛЕНО: bar_size теперь свойство, без скобок
+        actual = (cur.bar_size / span) * width_px
         if actual < self.MIN_BAR_PX and i < hi_i:
             return order[i + 1]                       # крупнее
         if actual > self.MAX_BAR_PX and i > lo_i:
             prv = order[i - 1]
-            if (prv.bar_size() / span) * width_px >= self.MIN_BAR_PX:
+            # ИСПРАВЛЕНО: bar_size теперь свойство, без скобок
+            if (prv.bar_size / span) * width_px >= self.MIN_BAR_PX:
                 return prv                            # мельче
         return cur
 
@@ -318,36 +323,28 @@ class MetricPlot(tk.Frame):
         ax.clear()
         self._style()
 
-        # Проверяем, есть ли вообще данные у атлета (независимо от текущего view)
-        has_any_data = bool(self._values)
-        
-        # Получаем текущий view
+        if not self._values or not self._start:
+            ax.set_title(f"{self.spec.name}: нет данных",
+                         color=COL_TEXT_DIM, fontsize=9)
+            self.canvas.draw_idle()
+            return
+
         v = self._view_ordinals()
         if v is None:
-            # Если view не задан и нет данных вообще
-            if not has_any_data or not self._start:
-                ax.set_title(f"{self.spec.name}: нет данных",
-                             color=COL_TEXT_DIM, fontsize=9)
-                self.canvas.draw_idle()
-                return
-            # Если view не задан, но данные есть — используем полный диапазон
-            lo = float(self._ord(self._start))
-            hi = float(self._ord(self._end)) + 1
-        else:
-            lo, hi = v
-
+            return
+        lo, hi = v
         vspan = max(1, hi - lo)
         width_px = max(100, self.ax.get_window_extent().width)
 
-        # Фильтруем данные для текущего view
-        view_values = [(dt, vv) for dt, vv in self._values 
-                       if lo <= self._ord(dt) < hi]
-
         if vspan <= self.SMALL_SPAN:
             # ---- календарные бары: 3часа / день / неделя ----
-            tf = self._pick_small_tf(vspan, width_px)
+            if self._forced_tf is not None:
+                tf = self._forced_tf
+            else:
+                tf = self._pick_small_tf(vspan, width_px)
             self._current_tf = tf
-            bw = tf.bar_size() * 0.95
+            # ИСПРАВЛЕНО: bar_size теперь свойство, без скобок
+            bw = tf.bar_size * 0.95
             def key(x): return tf.bin_key(x)
             self._shade_tf(ax, lo, hi, tf.zebra[1])
             self._set_x_ticks_small(ax, lo, hi, vspan, tf)
@@ -363,6 +360,10 @@ class MetricPlot(tk.Frame):
             self._set_year_ticks(ax, lo, hi)
             tf_label = (f"{bar_size / 365:.1f}г" if bar_size >= 365
                         else f"{bar_size:.0f}д")
+
+        # Фильтруем данные для текущего view
+        view_values = [(dt, vv) for dt, vv in self._values 
+                       if lo <= self._ord(dt) < hi]
 
         # Агрегируем данные только из view_values
         agg = {}
@@ -426,15 +427,21 @@ class MetricPlot(tk.Frame):
         ax.set_xticklabels(names, fontsize=7)
 
     def _sibling_bounds(self, sib, lo, hi):
+        """Генератор границ для зебры и подписей оси X."""
         d0 = datetime.date.fromordinal(max(1, int(lo)))
-        if sib is TimeFrame.QUARTER:
-            d = datetime.date(d0.year, ((d0.month - 1) // 3) * 3 + 1, 1)
-        elif sib is TimeFrame.MONTH:
-            d = d0.replace(day=1)
+        
+        if sib is TimeFrame.HOUR3:
+            # Границы каждые 3 часа
+            d = d0.replace(hour=(d0.hour // 3) * 3, minute=0, second=0)
+        elif sib is TimeFrame.DAY:
+            # Границы каждый день
+            d = d0
         elif sib is TimeFrame.WEEK:
+            # Границы каждый понедельник
             d = d0 - datetime.timedelta(days=d0.weekday())
         else:
             d = d0
+        
         while self._ord(d) <= hi:
             if self._ord(d) >= lo - 1e-9:
                 yield d
@@ -442,29 +449,30 @@ class MetricPlot(tk.Frame):
 
     @staticmethod
     def _next_bound(sib, d):
-        if sib is TimeFrame.QUARTER:
-            m = d.month + 3
-            return datetime.date(d.year + (m - 1) // 12, (m - 1) % 12 + 1, 1)
-        if sib is TimeFrame.MONTH:
-            return datetime.date(d.year + (d.month == 12), d.month % 12 + 1, 1)
+        """Следующая граница для данного таймфрейма."""
+        if sib is TimeFrame.HOUR3:
+            return d + datetime.timedelta(hours=3)
+        if sib is TimeFrame.DAY:
+            return d + datetime.timedelta(days=1)
         if sib is TimeFrame.WEEK:
             return d + datetime.timedelta(days=7)
         return d + datetime.timedelta(days=1)
 
     @staticmethod
     def _tick_label(sib, d, vspan):
-        if sib is TimeFrame.QUARTER:
-            return (str(d.year) if d.month == 1
-                    else f"Q{(d.month - 1) // 3 + 1}'{d.year % 100:02d}")
-        if sib is TimeFrame.MONTH:
-            return str(d.year) if d.month == 1 else d.strftime("%b")
-        if sib in (TimeFrame.WEEK, TimeFrame.DAY):
+        """Формат подписи для оси X."""
+        if sib is TimeFrame.HOUR3:
+            return d.strftime("%H:%M") if vspan <= 7 else d.strftime("%d.%m %H:%M")
+        if sib is TimeFrame.DAY:
             return d.strftime("%d.%m.%y") if vspan > 350 else d.strftime("%d.%m")
-        return d.strftime("%H:%M")
+        if sib is TimeFrame.WEEK:
+            return d.strftime("%d.%m.%y") if vspan > 350 else d.strftime("%d.%m")
+        return d.strftime("%d.%m")
 
     # ---------------- зебра ----------------
     def _shade_tf(self, ax, lo, hi, sib):
-        step = sib.bar_size()
+        # ИСПРАВЛЕНО: bar_size теперь свойство, без скобок
+        step = sib.bar_size
         if step <= 0:
             return
         x = sib.bin_key(lo) - step

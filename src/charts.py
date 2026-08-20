@@ -36,7 +36,7 @@ class ChartsPanel(tk.Frame):
             p.pack(side="top", fill="x", pady=2)
 
     def _apply_zoom(self, view):
-        """Единый масштаб на все графики. Защищен от рекурсии."""
+        """Единый масштаб на все графики."""
         if getattr(self, '_is_updating_view', False):
             return
         self._is_updating_view = True
@@ -44,8 +44,25 @@ class ChartsPanel(tk.Frame):
         # 1. Обновляем состояние view у всех графиков
         for p in self._plots:
             p.view = view
-            
-        # 2. Принудительно перерисовываем все графики
+        
+        # 2. Выбираем таймфрейм на основе первого графика
+        if self._plots:
+            p0 = self._plots[0]
+            v = p0._view_ordinals()
+            if v is not None:
+                lo, hi = v
+                vspan = max(1, hi - lo)
+                width_px = max(100, p0.ax.get_window_extent().width)
+                if vspan <= p0.SMALL_SPAN:
+                    tf = p0._pick_small_tf(vspan, width_px)
+                    # Применяем ко всем графикам
+                    for p in self._plots:
+                        p.set_forced_tf(tf)
+                else:
+                    for p in self._plots:
+                        p.set_forced_tf(None)
+        
+        # 3. Принудительно перерисовываем все графики
         for p in self._plots:
             p.redraw()
             

@@ -1,115 +1,146 @@
 """
-timeframe.py — фиксированные таймфреймы баров (от 5 секунд до 100 лет).
+timeframe.py — таймфреймы баров.
 
-zebra возвращает (kind, param):
-  kind='tf'    — границы по TimeFrame param;
-  kind='years' — границы каждые param лет (десятилетия, века…).
+Логика:
+  span <= 365 дней — календарные бары: 3часа / день / неделя
+  span >  365 дней — пропорциональная цена бара (без календарной привязки)
 """
+from __future__ import annotations
+
 import datetime
 from enum import Enum
-
-# ВАЖНО: словари вне класса — Python 3.14 иначе считает их членами Enum
-_NAMED_SIZES = {"month": 30, "quarter": 91,
-                "1year": 365, "2year": 730, "5year": 1826,
-                "10year": 3652, "20year": 7305,
-                "50year": 18262, "100year": 36525}
-
-_YEAR_EVERY = {"1year": 1, "2year": 2, "5year": 5, "10year": 10,
-               "20year": 20, "50year": 50, "100year": 100}
+from typing import Tuple, Union
 
 
 class TimeFrame(Enum):
-    SEC5    = ("5сек",    5)
-    MIN1    = ("1мин",    60)
-    MIN5    = ("5мин",    300)
-    MIN30   = ("30мин",   1800)
-    HOUR3   = ("3часа",   10800)
-    DAY     = ("день",    86400)
-    WEEK    = ("неделя",  604800)
-    MONTH   = ("месяц",   "month")
-    QUARTER = ("квартал", "quarter")
-    YEAR    = ("год",     "1year")
-    YEAR2   = ("2года",   "2year")
-    YEAR5   = ("5лет",    "5year")
-    YEAR10  = ("10лет",   "10year")
-    YEAR20  = ("20лет",   "20year")
-    YEAR50  = ("50лет",   "50year")
-    YEAR100 = ("100лет",  "100year")
+    """Таймфреймы для календарных баров (span <= 365 дней)."""
+    
+    HOUR3 = ("3часа", 10800)
+    DAY   = ("день",   86400)
+    WEEK  = ("неделя", 604800)
 
-    def __init__(self, label, sec_or_name):
+    def __init__(self, label: str, seconds: int):
         self.label = label
-        self._sec = sec_or_name
-
-    def bar_size(self):
-        if isinstance(self._sec, int):
-            return self._sec / 86400.0
-        return _NAMED_SIZES[self._sec]
-
-    def bin_key(self, x):
-        """x — ordinal (float-день). Возвращает ordinal левого края бара."""
-        if self is TimeFrame.SEC5:    return round(x * 17280) / 17280
-        if self is TimeFrame.MIN1:    return round(x * 1440) / 1440
-        if self is TimeFrame.MIN5:    return int(x * 288) / 288
-        if self is TimeFrame.MIN30:   return int(x * 48) / 48
-        if self is TimeFrame.HOUR3:   return int(x * 8) / 8
-        if self is TimeFrame.DAY:     return int(x)
-        if self is TimeFrame.WEEK:    return (int(x) // 7) * 7
-        if self is TimeFrame.MONTH:   return self._month_start(x)
-        if self is TimeFrame.QUARTER: return self._quarter_start(x)
-        return self._year_start(x, _YEAR_EVERY[self._sec])
-
-    # ---------------- зебра ----------------
+        self._seconds = seconds
+    
     @property
-    def zebra(self):
-        return {
-            TimeFrame.SEC5:    ("tf", TimeFrame.MIN1),
-            TimeFrame.MIN1:    ("tf", TimeFrame.MIN30),
-            TimeFrame.MIN5:    ("tf", TimeFrame.HOUR3),
-            TimeFrame.MIN30:   ("tf", TimeFrame.HOUR3),
-            TimeFrame.HOUR3:   ("tf", TimeFrame.DAY),
-            TimeFrame.DAY:     ("tf", TimeFrame.WEEK),
-            TimeFrame.WEEK:    ("tf", TimeFrame.MONTH),
-            TimeFrame.MONTH:   ("tf", TimeFrame.QUARTER),
-            TimeFrame.QUARTER: ("tf", TimeFrame.YEAR),
-            TimeFrame.YEAR:    ("years", 10),
-            TimeFrame.YEAR2:   ("years", 20),
-            TimeFrame.YEAR5:   ("years", 50),
-            TimeFrame.YEAR10:  ("years", 100),
-            TimeFrame.YEAR20:  ("years", 200),
-            TimeFrame.YEAR50:  ("years", 500),
-            TimeFrame.YEAR100: ("years", 1000),
-        }[self]
-
-    # ---------------- утилиты ----------------
-    @staticmethod
-    def _month_start(x):
-        d = datetime.date.fromordinal(max(1, int(x))).replace(day=1)
-        return d.toordinal()
-
-    @staticmethod
-    def _quarter_start(x):
-        d = datetime.date.fromordinal(max(1, int(x)))
-        m = ((d.month - 1) // 3) * 3 + 1
-        return datetime.date(d.year, m, 1).toordinal()
-
-    @staticmethod
-    def _year_start(x, every=1):
-        d = datetime.date.fromordinal(max(1, int(x)))
-        y = max(1, d.year - (d.year % every))
-        return datetime.date(y, 1, 1).toordinal()
+    def bar_size(self) -> float:
+        """Размер бара в днях (float)."""
+        return self._seconds / 86400.0
+    
+    def bin_key(self, x: float) -> float:
+        """
+        x — ordinal (float-день). 
+        Возвращает ordinal левого края календарного бара.
+        """
+        if self is TimeFrame.HOUR3:
+            return int(x * 8) / 8            # 24/3 = 8 интервалов в день
+        if self is TimeFrame.DAY:
+            return int(x)
+        if self is TimeFrame.WEEK:
+            return (int(x) // 7) * 7
+        return x
+    
+    @property
+    def zebra(self) -> Tuple[str, 'TimeFrame']:
+        """Возвращает ('tf', next_tf) для отрисовки зебры."""
+        return _ZEBRA_MAP[self]
 
 
-def pick_timeframe(span_days, width_px, min_bar_px=4, max_bar_px=40):
-    """Самый крупный таймфрейм, где бар ∈ [min_bar_px, max_bar_px] пикселей."""
+# Карта зебры: какой таймфрейм использовать для следующего уровня
+_ZEBRA_MAP = {
+    TimeFrame.HOUR3: ("tf", TimeFrame.DAY),
+    TimeFrame.DAY:   ("tf", TimeFrame.WEEK),
+    TimeFrame.WEEK:  ("tf", TimeFrame.WEEK),  # для недели зебра по неделям
+}
+
+
+def pick_calendar_timeframe(span_days: float, width_px: float, 
+                            min_bar_px: int = 6, max_bar_px: int = 40) -> TimeFrame:
+    """
+    Выбирает календарный таймфрейм для span <= 365 дней.
+    Самый крупный, где бар помещается в [min_bar_px, max_bar_px] пикселей.
+    """
     if width_px < 1:
         width_px = 1
+    
+    # Вычисляем диапазон размеров бара в днях
     target_min = span_days / (width_px / min_bar_px)
     target_max = span_days / (width_px / max_bar_px)
-
-    candidates = [tf for tf in TimeFrame
-                  if target_min <= tf.bar_size() <= target_max]
+    
+    # Ищем таймфреймы, которые попадают в диапазон
+    candidates = [tf for tf in TimeFrame if target_min <= tf.bar_size <= target_max]
+    
     if candidates:
-        return max(candidates, key=lambda t: t.bar_size())
-    if max(tf.bar_size() for tf in TimeFrame) < target_min:
-        return TimeFrame.YEAR100
-    return TimeFrame.SEC5
+        return max(candidates, key=lambda t: t.bar_size)
+    
+    # Если все слишком мелкие — берем максимальный (WEEK)
+    if max(tf.bar_size for tf in TimeFrame) < target_min:
+        return TimeFrame.WEEK
+    
+    # Если все слишком крупные — берем минимальный (HOUR3)
+    return TimeFrame.HOUR3
+
+
+def calc_proportional_bar_size(span_days: float, width_px: float, 
+                                target_bar_px: int = 15) -> float:
+    """
+    Вычисляет пропорциональный размер бара для span > 365 дней.
+    
+    Args:
+        span_days: диапазон данных в днях
+        width_px: ширина графика в пикселях
+        target_bar_px: целевая ширина бара в пикселях
+    
+    Returns:
+        Размер бара в днях (float)
+    """
+    if width_px < 1:
+        width_px = 1
+    
+    bars_count = max(10, int(width_px / target_bar_px))
+    return span_days / bars_count
+
+
+def get_year_boundaries(start_ordinal: float, end_ordinal: float, 
+                        step_years: int = 1) -> list:
+    """
+    Вычисляет границы лет для отрисовки зебры и подписей.
+    
+    Args:
+        start_ordinal: начало диапазона (ordinal)
+        end_ordinal: конец диапазона (ordinal)
+        step_years: шаг в годах (1, 2, 5, 10, ...)
+    
+    Returns:
+        Список ordinal'ов границ лет
+    """
+    start_year = datetime.date.fromordinal(max(1, int(start_ordinal))).year
+    end_year = datetime.date.fromordinal(max(1, int(end_ordinal))).year
+    
+    # Округляем до шага
+    first_year = (start_year // step_years) * step_years
+    boundaries = []
+    
+    year = first_year
+    while year <= end_year + step_years:
+        boundaries.append(datetime.date(year, 1, 1).toordinal())
+        year += step_years
+    
+    return boundaries
+
+
+def pick_year_step(vspan: float) -> int:
+    """
+    Выбирает шаг лет для отрисовки подписей.
+    
+    Args:
+        vspan: диапазон в днях
+    
+    Returns:
+        Шаг в годах (1, 2, 5, 10, 20, ...)
+    """
+    for n in (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000):
+        if vspan / (365 * n) <= 12:
+            return n
+    return 1000

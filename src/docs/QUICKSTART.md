@@ -188,7 +188,6 @@ analysis_HVR\src\
 |   build.bat                      Скрипт сборки AnalysisHVR.exe через PyInstaller с прогоном тестов
 |   dialogs.py                     Диалоги AthleteDialog (создание/редактирование) и ECGListDialog (список ЭКГ)
 |   logo21.png                     Логотип 512×512 для заставки при запуске приложения
-|   pytest.ini                     Конфигурация pytest: пути к тестам, маркеры, опции запуска
 |   splash.py                      SplashScreen — полноэкранная заставка с прогрессом загрузки модулей
 |   theme.py                       Цветовая палитра и константы стилей для единого оформления GUI
 |
@@ -223,15 +222,9 @@ analysis_HVR\src\
 |   |   schedule_engine.py         Построение расписаний записей ЭКГ для каждого спортсмена
 |   |
 \---tests
-        conftest.py                Фикстуры pytest: временная БД, тестовые спортсмены и записи
         etalons.json               Эталонные метрики (RMSSD, ИС, TP) из Омега.Диагностика для сверки
-        test_add_athlete_gui.py    E2E-тест GUI: добавление спортсмена через AthleteDialog (поля, автозаполнение, валидация, календарь)
-        test_analysis.py           Тесты парсинга RR и расчёта ВРС-метрик (SDNN, RMSSD, ИС)
-        test_app_gui.py            Smoke-тест главного окна приложения
-        test_database.py           Тесты CRUD-операций и каскадного удаления через SQLAlchemy
-        test_ecg_generator.py      Тесты генератора ЭКГ: границы RR, длительность, согласованность секций
-        test_reference_ecg.py      Импорт эталонных ЭКГ в базу и сверка метрик с etalons.json
-        reference\                 Эталонные записи ЭКГ Polar H10 для test_reference_ecg.py
+        test_reference_ecg.py      Импорт эталонной ЭКГ в базу и сверка метрик с etalons.json
+        reference\                 Эталонные файлы .teamloggerh10 для test_reference_ecg.py
 ```
 
 ---
@@ -890,16 +883,10 @@ my_profile:
 
 ```text
 src/
-├── tests/
-│   ├── conftest.py              # пути и фикстуры
-│   ├── etalons.json             # эталонные метрики Омега.Диагностика
-│   ├── test_analysis.py         # метрики ВРС
-│   ├── test_ecg_generator.py    # согласованность ECG↔RR
-│   ├── test_database.py         # ORM CRUD + каскады
-│   ├── test_app_gui.py          # смоук-тест GUI
-│   ├── test_add_athlete_gui.py  # E2E: добавление спортсмена через диалог
-│   ├── test_reference_ecg.py    # сверка с эталонными записями
-│   └── reference/               # эталонные файлы .teamloggerh10
+└── tests/
+    ├── etalons.json             # эталонные метрики Омега.Диагностика
+    ├── test_reference_ecg.py    # сверка с эталонной записью
+    └── reference/               # эталонные файлы .teamloggerh10
 ```
 
 ### Установка
@@ -913,17 +900,14 @@ pip install pytest
 ```bash
 cd C:\s21\projects\analysis_HVR\src
 
-python -m pytest tests -v                        # все тесты
-python -m pytest tests/test_analysis.py -v       # один файл
-python -m pytest tests -k consistency -v         # по имени
-python -m pytest tests/test_add_athlete_gui.py -v # E2E: добавление спортсмена
+python -m pytest tests -v                        # все тесты (1 файл)
 python -m pytest tests/test_reference_ecg.py -v   # сверка с эталонами Омега.Диагностика
 ```
 
 ### Тесты сверки с эталонами (`test_reference_ecg.py`)
 
-Импортируют эталонную запись Polar H10 из `tests/reference/` в базу тем же путём,
-что и GUI, и сверяют рассчитанные метрики (RMSSD, индекс стресса, TP) с
+Импортирует эталонную запись Polar H10 из `tests/reference/` в базу через `importer._import_one`
+(тем же путём, что и приложение) и сверяет рассчитанные метрики (RMSSD, индекс стресса, TP) с
 ожидаемыми значениями из `tests/etalons.json` (источник — «Омега.Диагностика»).
 
 | Файл | Назначение |
