@@ -1,5 +1,5 @@
 """
-heatmap.py — годовой heatmap плотности записей ЭКГ.
+yearmap.py — годовой heatmap плотности записей ЭКГ.
 
 Свойства:
   athlete — id спортсмена; при смене данные перезагружаются из БД;
@@ -9,6 +9,7 @@ heatmap.py — годовой heatmap плотности записей ЭКГ.
 """
 import datetime
 import time
+import calendar
 import tkinter as tk
 
 from database import get_db_path
@@ -49,6 +50,7 @@ class YearHeatmap(tk.Canvas):
         self._redraw_cells()
 
         self.on_year_change = None        # callback(delta)
+        self.on_month_zoom = None         # НОВОЕ: callback(start_date, end_date) при ПКМ на месяц
         self._wheel_lock = 0.0            # блокировка длинного жеста колеса
         self._click_t = 0.0
         self._click_w = -1
@@ -56,8 +58,10 @@ class YearHeatmap(tk.Canvas):
         self.on_week_dbl = None           # callback(week, monday) — двойной клик
 
         self.bind("<Button-1>", self._on_click)
+        self.bind("<Button-3>", self._on_right_click)  # НОВОЕ: ПКМ для зума на месяц
         self.bind("<MouseWheel>", self._on_wheel)
         self._y_shift = None
+
     # ================= свойства =================
     @property
     def athlete(self):
@@ -233,7 +237,6 @@ class YearHeatmap(tk.Canvas):
         self._click_w = w
 
         if is_dbl:
-            # двойной клик — диапазон = кликнутая неделя
             if self._single_timer is not None:
                 self.after_cancel(self._single_timer)
                 self._single_timer = None
@@ -243,7 +246,6 @@ class YearHeatmap(tk.Canvas):
                 self.on_week_dbl(w, monday)
             return
 
-        # одинарный клик — курсор; on_week_pick отложен, чтобы отличить от двойного
         self.week = w
         if self.on_week_pick:
             monday = self.week_start_date(w)
@@ -257,6 +259,39 @@ class YearHeatmap(tk.Canvas):
         if self.on_week_pick:
             w = self.week
             self.on_week_pick(w, monday)
+
+    def _on_right_click(self, event):
+        """ПКМ на любой ячейке heatmap устанавливает диапазон этого месяца на графиках."""
+        import sys
+        print(f"[DEBUG] ПКМ: x={event.x}, y={event.y}", file=sys.stderr, flush=True)
+
+        # Определяем индекс недели и дня недели по координатам клика
+        w = (event.x - X0) // self._step
+        d = (event.y - Y0) // self._step
+
+        print(f"[DEBUG] Вычисленные: неделя w={w}, день d={d}", file=sys.stderr, flush=True)
+
+        # Проверяем, что клик попал строго в сетку (0..52 недели, 0..6 дни)
+        if not (0 <= w < 53 and 0 <= d < 7):
+            print("[DEBUG] Клик вне сетки дней, игнорируем", file=sys.stderr, flush=True)
+            return
+
+        # Вычисляем точную календарную дату, на которую кликнули
+        clicked_date = self._year_start + datetime.timedelta(weeks=w, days=d)
+        print(f"[DEBUG] Кликнутая дата: {clicked_date}", file=sys.stderr, flush=True)
+
+        # Определяем начало и конец месяца для этой даты
+        year = clicked_date.year
+        month = clicked_date.month
+        start_date = datetime.date(year, month, 1)
+        _, last_day = calendar.monthrange(year, month)
+        end_date = datetime.date(year, month, last_day)
+
+        print(f"[DEBUG] Зум на месяц {month}: {start_date} - {end_date}", file=sys.stderr, flush=True)
+
+        # Вызываем callback, если он задан
+        if self.on_month_zoom:
+            self.on_month_zoom(start_date, end_date)
 
     def _on_wheel(self, event):
         """Колесо над yearmap: переключение года."""

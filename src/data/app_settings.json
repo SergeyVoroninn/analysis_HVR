@@ -1,6 +1,9 @@
 {
-  "athlete_id": "c4584c6a-f17f-4e4a-a5aa-4949dee032a3",
-  "year": 2023,
-  "week": 21,
-  "zoom": null
+  "athlete_id": "e3338fd1-c056-41f5-85ce-349edab5ebe4",
+  "year": 2026,
+  "week": 32,
+  "zoom": [
+    739837.5,
+    739844.5
+  ]
 }

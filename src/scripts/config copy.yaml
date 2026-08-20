@@ -5,83 +5,83 @@ reference_date: "2026-08-10"
 # ============================================================
 settings:
   duration_seconds: 300.0      # длительность каждой записи ЭКГ (сек)
-  db_path: "../data/ecg_big.db"    # путь к БД (относительно папки scripts/)
+  db_path: "../data/ecg.db"    # путь к БД (относительно папки scripts/)
   store_raw_data: true         # сохранять raw_data в БД
   seed: 42                     # зерно генератора; null = каждый раз по-разному
 
+
 # ============================================================
 # БИБЛИОТЕКА ПРОФИЛЕЙ (сценариев заполнения)
-# Ограничение: максимум 100 лет (36525 дней) или 20000 записей
 # ============================================================
 profiles:
   regular_mwf_morning:
-    extent: { total_records: 15600 }    # ~100 лет × 3 дня/неделю (было 100000)
+    extent: { total_records: 1000 }
     days: { type: weekdays, weekdays: [mon, wed, fri] }
     times_per_day: 1
     slots: [morning]
 
   random_3_per_week:
-    extent: { total_records: 15600 }    # ~100 лет × 3 дня/неделю (было 100000)
+    extent: { total_records: 1000 }
     days: { type: random_days_per_week, count: 3 }
     times_per_day: 1
     slots: random
 
   summer_daily_morning:
-    extent: { season: summer }          # ~10 лет лет (без изменений)
+    extent: { season: summer }
     days: { type: every_day }
     times_per_day: 1
     slots: [morning]
 
   summer_daily_random:
-    extent: { season: summer }          # ~10 лет лет
+    extent: { season: summer }
     days: { type: every_day }
     times_per_day: 1
     slots: random
 
   month_3x_fixed:
-    extent: { period_days: 3650 }       # 10 лет (было 30 дней)
+    extent: { period_days: 30 }
     days: { type: every_day }
     times_per_day: 3
     slots: [morning, lunch, evening]
 
   month_3x_random:
-    extent: { period_days: 3650 }       # 10 лет (было 30 дней)
+    extent: { period_days: 30 }
     days: { type: every_day }
     times_per_day: 3
     slots: random
 
-  century_monday:
-    extent: { period_days: 5200 }       # ~100 лет, только понедельники
+  two_years_monday:
+    extent: { period_days: 730 }
     days: { type: weekdays, weekdays: [mon] }
     times_per_day: 1
     slots: [morning]
 
-  century_random_day:
-    extent: { period_days: 5200 }       # ~100 лет, случайный день
+  two_years_random_day:
+    extent: { period_days: 730 }
     days: { type: random_days_per_week, count: 1 }
     times_per_day: 1
     slots: [morning]
 
   intensive_2x_day:
-    extent: { period_days: 3650 }       # 10 лет (было 9000 дней = 25 лет)
+    extent: { period_days: 90 }
     days: { type: every_day }
     times_per_day: 2
     slots: [morning, evening]
 
   training_weekdays:
-    extent: { period_days: 1825 }       # 5 лет (было 180 дней)
+    extent: { period_days: 180 }
     days: { type: weekdays, weekdays: [mon, tue, wed, thu, fri] }
     times_per_day: 1
     slots: [morning]
 
   chaotic:
-    extent: { period_days: 3650 }       # 10 лет (было 547 дней)
+    extent: { period_days: 547 }
     days: { type: random_gap, min_days: 1, max_days: 10 }
     times_per_day: 1
     slots: random
 
   weekends_only:
-    extent: { period_days: 3650 }       # 10 лет (было 365 дней)
+    extent: { period_days: 365 }
     days: { type: weekdays, weekdays: [sat, sun] }
     times_per_day: 1
     slots: [morning]
@@ -96,8 +96,8 @@ team:
   - { birth_year: 2012, gender: F, profile: summer_daily_random }
   - { birth_year: 2006, gender: M, profile: month_3x_fixed }
   - { birth_year: 2009, gender: F, profile: month_3x_random }
-  - { birth_year: 2004, gender: M, profile: century_monday }
-  - { birth_year: 2011, gender: F, profile: century_random_day }
+  - { birth_year: 2004, gender: M, profile: two_years_monday }
+  - { birth_year: 2011, gender: F, profile: two_years_random_day }
   - { birth_year: 2003, gender: M, profile: intensive_2x_day }
   - { birth_year: 2007, gender: M, profile: training_weekdays }
   - { birth_year: 2013, gender: F, profile: chaotic }

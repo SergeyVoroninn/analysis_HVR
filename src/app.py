@@ -109,10 +109,13 @@ if __name__ == "__main__":
         dlg = ECGListDialog(right, cur[0], dt_from, dt_to,
                             title, on_change=hm.refresh)
 
+    # --- ИЗМЕНЕНИЕ ЗДЕСЬ: добавлен параметр on_month_zoom ---
     hm = Heatmap(right,
                  on_week_pick=lambda w, d: charts.center_on_week(d),
                  on_week_dbl_pick=lambda w, d: charts.zoom_to_week(d),
-                 on_pick=on_week_pick_action)
+                 on_pick=on_week_pick_action,
+                 on_month_zoom=lambda start_date, end_date: charts.set_range(start_date, end_date))
+                 
     charts = ChartsPanel(right, metrics=[TP_METRIC, SI_METRIC])
     charts.set_year_pick_callback(hm.set_year)
     charts.set_reset_callback(hm.reset_to_data_center)
@@ -121,9 +124,10 @@ if __name__ == "__main__":
     ResizeController(right, blocks=[hm, charts], gap=10)
 
     def on_select(aid):
+        """Синхронизирует выбранного атлета между heatmap и графиками."""
         hm.athlete = aid
         charts.athlete = aid
-
+        
     # ---------- импорт ----------
     def do_import():
         changed = import_ecg(root, panel.db_path, panel.athletes,

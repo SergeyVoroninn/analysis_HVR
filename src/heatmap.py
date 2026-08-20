@@ -20,7 +20,8 @@ from models import get_session, ECGRecord
 class Heatmap(ctk.CTkFrame):
     """Единая панель плотности записей ЭКГ."""
 
-    def __init__(self, master, db_path=None, on_week_pick=None, on_week_dbl_pick=None, on_pick=None):
+    def __init__(self, master, db_path=None, on_week_pick=None, 
+                 on_week_dbl_pick=None, on_pick=None, on_month_zoom=None):
         super().__init__(master, fg_color=COL_BG_DARK)
         self.db_path = db_path or get_db_path()
 
@@ -39,18 +40,24 @@ class Heatmap(ctk.CTkFrame):
         # ---------- heatmap'ы ----------
         self._maps = tk.Frame(self, bg=COL_BG_DARK)
         self._maps.pack(side="top")
+        
         self.year_map = YearHeatmap(self._maps, db_path=db_path)
         self.year_map.pack(side="left")
+        
         self.week_map = WeekHeatmap(self._maps, db_path=db_path, on_pick=on_pick)
         self.week_map.pack(side="left", padx=(20, 0))
 
-        self._on_week_pick = on_week_pick           # одинарный клик
-        self._on_week_dbl_pick = on_week_dbl_pick   # двойной клик
+        self._on_week_pick = on_week_pick           # одинарный клик по неделе
+        self._on_week_dbl_pick = on_week_dbl_pick   # двойной клик по неделе
+        self._on_month_zoom = on_month_zoom         # НОВОЕ: ПКМ по месяцу
+
+        # Связываем внутренние события year_map с методами этого класса
         self.year_map.on_week_pick = self._sync_week
         self.year_map.on_year_change = self._change_year
         self.year_map.on_week_dbl = self._zoom_to_week
+        self.year_map.on_month_zoom = self._handle_month_zoom  # НОВОЕ
+        
         self._pending_t = None
-
         self._lbl_year.configure(text=str(self.year))
 
     # ---------------- сквозные свойства ----------------
@@ -105,6 +112,11 @@ class Heatmap(ctk.CTkFrame):
         self.week_map.week_start = monday
         if self._on_week_dbl_pick:
             self._on_week_dbl_pick(w, monday)
+
+    def _handle_month_zoom(self, start_date, end_date):
+        """Посредник: ПКМ по месяцу в year_map пробрасывается наружу."""
+        if self._on_month_zoom:
+            self._on_month_zoom(start_date, end_date)
 
     def set_selection(self, year=None, week=None):
         """Восстановление состояния: год и курсор недели (+ недельная карта)."""

@@ -4,6 +4,7 @@ charts.py — готовые параметры и общий контейнер
 ResizeController (ghost.py): target_size / ghost_rects / apply_size.
 """
 import tkinter as tk
+import datetime as _dt
 
 from analysis import stress_level
 from theme import COL_BG_DARK, COL_ONE, COL_WARN, COL_CRIT, COL_HIGH
@@ -35,11 +36,20 @@ class ChartsPanel(tk.Frame):
             p.pack(side="top", fill="x", pady=2)
 
     def _apply_zoom(self, view):
-        """Единый масштаб на все графики."""
+        """Единый масштаб на все графики. Защищен от рекурсии."""
+        if getattr(self, '_is_updating_view', False):
+            return
+        self._is_updating_view = True
+        
+        # 1. Обновляем состояние view у всех графиков
         for p in self._plots:
             p.view = view
+            
+        # 2. Принудительно перерисовываем все графики
         for p in self._plots:
             p.redraw()
+            
+        self._is_updating_view = False
 
     def set_year_pick_callback(self, cb):
         for p in self._plots:
@@ -101,8 +111,8 @@ class ChartsPanel(tk.Frame):
 
     @zoom.setter
     def zoom(self, view):
-        for p in self._plots:
-            p.view = view
+        # ИСПРАВЛЕНО: используем централизованный метод для гарантированной перерисовки
+        self._apply_zoom(view)
 
     def redraw(self):
         for p in self._plots:
@@ -116,6 +126,8 @@ class ChartsPanel(tk.Frame):
     def center_on_week(self, week_start_date):
         """Центрировать графики по среде выбранной недели."""
         if self._plots:
+            # Вызов center_on_week у первого графика триггернет _commit_view, 
+            # который через on_view_changed обновит все остальные.
             self._plots[0].center_on_week(week_start_date)
 
     def zoom_to_week(self, week_start_date):
@@ -125,9 +137,12 @@ class ChartsPanel(tk.Frame):
         p0 = self._plots[0]
         if p0._start is None:
             return
-        import datetime as _dt
+        
         monday = week_start_date
         sunday = monday + _dt.timedelta(days=6)
         lo = p0._ord(monday)
         hi = p0._ord(sunday) + 1
-        p0._commit_view(lo, hi)
+        
+        # ИСПРАВЛЕНО: применяем масштаб ко ВСЕМ графикам через общий метод,
+        # а не вызываем p0._commit_view, который менял только один график.
+        self._apply_zoom((lo, hi))
