@@ -20,15 +20,13 @@ class AppOrchestrator:
         self.charts.set_year_pick_callback(self._handle_chart_year_pick)
         self.charts.set_reset_callback(self._handle_chart_reset)
         self.charts.set_single_click_callback(self._handle_chart_single_click)
+        self.charts.on_range_changed = self._on_range_changed
 
         self.heatmap.on_weekmap_day_dbl = self._handle_weekmap_day_dbl
         self.heatmap.on_weekmap_week_rmb = self._handle_weekmap_week_rmb
 
-    def _save_current_range(self):
-        p0 = self.charts._plots[0]
-        v = p0._view_ordinals()
-        if v is not None:
-            self._saved_range = v
+    def _on_range_changed(self, lo, hi):
+        self._saved_range = (lo, hi)
 
     # ================= Обработчики событий =================
 
@@ -40,16 +38,19 @@ class AppOrchestrator:
         mid_week = monday + datetime.timedelta(days=3)
         start = mid_week - datetime.timedelta(days=15)
         end = mid_week + datetime.timedelta(days=15)
-        self.charts.set_range(start, end)
-        self._save_current_range()
+        lo = start.toordinal()
+        hi = end.toordinal() + 1
+        self.charts.zoom = (lo, hi)
 
     def _handle_month_zoom(self, start_date, end_date):
-        self.charts.set_range(start_date, end_date)
-        self._save_current_range()
+        lo = start_date.toordinal()
+        hi = end_date.toordinal() + 1
+        self.charts.zoom = (lo, hi)
 
     def _handle_year_zoom(self, start_date, end_date):
-        self.charts.set_range(start_date, end_date)
-        self._save_current_range()
+        lo = start_date.toordinal()
+        hi = end_date.toordinal() + 1
+        self.charts.zoom = (lo, hi)
 
     def _handle_year_change(self, delta):
         self.heatmap.year += delta
@@ -69,18 +70,14 @@ class AppOrchestrator:
         self.heatmap.set_cursor_by_date(d)
 
     def _handle_weekmap_day_dbl(self, day_start, day_end):
-        p0 = self.charts._plots[0]
-        lo = p0._ord(day_start)
+        lo = day_start.toordinal()
         hi = lo + 1.0
-        self._saved_range = (lo, hi)
-        self.charts._apply_zoom((lo, hi))
+        self.charts.zoom = (lo, hi)
 
     def _handle_weekmap_week_rmb(self, week_start, week_end):
-        p0 = self.charts._plots[0]
-        lo = p0._ord(week_start)
-        hi = p0._ord(week_end)
-        self._saved_range = (lo, hi)
-        self.charts._apply_zoom((lo, hi))
+        lo = week_start.toordinal()
+        hi = week_end.toordinal()
+        self.charts.zoom = (lo, hi)
         mid_week = (week_start - self.heatmap.year_map._year_start).days // 7
         self.heatmap.week = mid_week
 

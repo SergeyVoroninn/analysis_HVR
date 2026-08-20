@@ -218,21 +218,7 @@ class MetricPlot(tk.Frame):
         self._click_y = event.y
 
         if is_dbl:
-            if self._single_timer is not None:
-                self.after_cancel(self._single_timer)
-                self._single_timer = None
-            d = datetime.date.fromordinal(int(event.xdata))
-            v = self._view_ordinals()
-            if v is not None:
-                lo, hi = v
-                center = (lo + hi) / 2
-                click_ord = self._ord(d)
-                if click_ord < center:
-                    self._commit_view(click_ord, hi)
-                else:
-                    self._commit_view(lo, click_ord + 1)
-            else:
-                self._commit_view(self._ord(d), self._ord(d) + 1)
+            # двойной клик игнорируется — не эргономично
             return
 
         if self.on_single_click:
@@ -349,8 +335,7 @@ class MetricPlot(tk.Frame):
 
         d0 = datetime.date.fromordinal(max(1, int(lo)))
         d1 = datetime.date.fromordinal(max(1, int(hi)))
-        range_str = (f"{d0:%d.%m.%y}–{d1:%d.%m.%y}" if vspan > 350
-                     else f"{d0:%d.%m}–{d1:%d.%m}")
+        range_str = f"{d0:%d.%m.%y}–{d1:%d.%m.%y}"
         ax.set_title(f"{self.spec.name} | {tf_label} ({range_str})",
                      color=COL_TEXT_LIGHT, fontsize=9)
         self.canvas.draw_idle()

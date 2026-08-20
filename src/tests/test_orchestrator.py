@@ -19,17 +19,48 @@ def orchestrator():
     hm.year = 2026
     hm.week = None
 
-    charts = Mock()
-    p0 = Mock()
-    p0._view_ordinals = Mock(return_value=(100.0, 200.0))
-    p0._ord = Mock(side_effect=lambda d: d.toordinal())
-    p0.view = None
-    charts._plots = [p0]
+    _zoom = [None]
+    redraw_called = [False]
+
+    class FakeCharts:
+        _plots = [Mock()]
+        on_range_changed = None
+
+        def set_year_pick_callback(self, cb):
+            self._year_pick_cb = cb
+
+        def set_reset_callback(self, cb):
+            self._reset_cb = cb
+
+        def set_single_click_callback(self, cb):
+            self._single_click_cb = cb
+
+        @property
+        def zoom(self):
+            return _zoom[0]
+
+        @zoom.setter
+        def zoom(self, v):
+            _zoom[0] = v
+            if self.on_range_changed and v is not None:
+                self.on_range_changed(*v)
+
+        def redraw(self):
+            redraw_called[0] = True
+
+    charts = FakeCharts()
+    charts._plots[0]._view_ordinals = Mock(return_value=(100.0, 200.0))
+    charts._plots[0]._ord = Mock(side_effect=lambda d: d.toordinal())
+    charts._plots[0].view = None
+    charts._plots[0]._start = None
+    charts._plots[0]._end = None
+    charts._plots[0]._reload = Mock()
 
     settings = Mock()
 
     orch = AppOrchestrator(hm, charts, settings)
-    return orch, hm, charts, p0, settings
+    orch._redraw_called = redraw_called
+    return orch, hm, charts, charts._plots[0], settings
 
 
 # ======================== СОХРАНЕНИЕ ПОСЛЕ ЗУМА ========================
@@ -39,31 +70,39 @@ def test_saved_range_after_month_zoom(orchestrator):
     start = datetime.date(2026, 6, 1)
     end = datetime.date(2026, 6, 30)
     orch._handle_month_zoom(start, end)
-    assert orch._saved_range is not None
-    lo, hi = orch._saved_range
-    assert lo < hi
+    # проверяем, что установлен zoom через публичный API
+    assert charts.zoom == (start.toordinal(), end.toordinal() + 1)
 
 
 def test_saved_range_after_year_zoom(orchestrator):
     orch, hm, charts, p0, _ = orchestrator
     orch._handle_year_zoom(datetime.date(2026, 1, 1), datetime.date(2026, 12, 31))
-    assert orch._saved_range is not None
+    assert charts.zoom == (datetime.date(2026, 1, 1).toordinal(),
+                           datetime.date(2026, 12, 31).toordinal() + 1)
 
 
 def test_saved_range_after_day_dbl(orchestrator):
     orch, hm, charts, p0, _ = orchestrator
-    orch._handle_weekmap_day_dbl(datetime.date(2026, 8, 17), datetime.date(2026, 8, 18))
-    assert orch._saved_range is not None
-    lo, hi = orch._saved_range
+    day = datetime.date(2026, 8, 17)
+    orch._handle_weekmap_day_dbl(day, day + datetime.timedelta(days=1))
+    lo, hi = charts.zoom
     assert hi - lo == pytest.approx(1.0)
 
 
 def test_saved_range_after_week_rmb(orchestrator):
     orch, hm, charts, p0, _ = orchestrator
-    orch._handle_weekmap_week_rmb(datetime.date(2026, 8, 17), datetime.date(2026, 8, 24))
-    assert orch._saved_range is not None
-    lo, hi = orch._saved_range
-    assert lo < hi
+    start = datetime.date(2026, 8, 17)
+    end = datetime.date(2026, 8, 24)
+    orch._handle_weekmap_week_rmb(start, end)
+    lo, hi = charts.zoom
+    assert lo == start.toordinal()
+    assert hi == end.toordinal()
+
+
+def test_on_range_changed_sets_saved_range(orchestrator):
+    orch, hm, charts, p0, _ = orchestrator
+    orch._on_range_changed(100.0, 200.0)
+    assert orch._saved_range == (100.0, 200.0)
 
 
 def test_saved_range_reset(orchestrator):
@@ -85,17 +124,16 @@ def test_sync_athlete_restores_range(orchestrator):
     orch._saved_range = (300.0, 400.0)
     orch.sync_athlete("new_id")
     assert hm.athlete == "new_id"
-    # redraw вызывается (т.к. saved_range есть)
-    assert charts.redraw.called
+    assert charts.zoom == (300.0, 400.0)
+    assert orch._redraw_called[0]
 
 
 def test_sync_athlete_no_saved_range(orchestrator):
     orch, hm, charts, p0, _ = orchestrator
     orch._saved_range = None
-    orch.redraw = Mock()
+    orch._redraw_called[0] = False
     orch.sync_athlete("other_id")
-    # redraw НЕ вызывается (т.к. saved_range=None)
-    assert not charts.redraw.called
+    assert not orch._redraw_called[0]
 
 
 # ======================== СОХРАНЕНИЕ/ВОССТАНОВЛЕНИЕ СОСТОЯНИЯ ========================

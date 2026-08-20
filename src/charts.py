@@ -32,45 +32,41 @@ class ChartsPanel(tk.Frame):
     def __init__(self, master, metrics, db_path=None):
         super().__init__(master, bg=COL_BG_DARK)
         self._plots = [MetricPlot(self, m, db_path=db_path) for m in metrics]
+        self.on_range_changed = None  # callback(lo, hi) для оркестратора
         for p in self._plots:
             p.on_view_changed = self._apply_zoom
             p.pack(side="top", fill="x", pady=2)
 
     def _apply_zoom(self, view):
-        """Единый масштаб на все графики с синхронизацией таймфрейма."""
         if getattr(self, '_is_updating_view', False):
             return
         self._is_updating_view = True
         
-        # 1. Обновляем состояние view у всех графиков
         for p in self._plots:
             p.view = view
         
-        # 2. Выбираем таймфрейм на основе первого графика через централизованную функцию
+        v = None
         if self._plots:
             p0 = self._plots[0]
             v = p0._view_ordinals()
             if v is not None:
                 lo, hi = v
                 vspan = max(1, hi - lo)
-                
                 if vspan <= p0.SMALL_SPAN:
-                    # Календарный режим — получаем конфиг из timeframe.py
                     config = get_chart_config(vspan)
                     forced_tf = config.bar_tf
                 else:
-                    # Пропорциональный режим — таймфрейм не фиксируем
                     forced_tf = None
-                
-                # Применяем ко всем графикам
                 for p in self._plots:
                     p.set_forced_tf(forced_tf)
         
-        # 3. Принудительно перерисовываем все графики
         for p in self._plots:
             p.redraw()
-            
+        
         self._is_updating_view = False
+        
+        if self.on_range_changed and v is not None:
+            self.on_range_changed(lo, hi)
 
     def set_year_pick_callback(self, cb):
         for p in self._plots:
@@ -132,6 +128,12 @@ class ChartsPanel(tk.Frame):
 
     @zoom.setter
     def zoom(self, view):
+        if self._plots:
+            p0 = self._plots[0]
+            if p0._start is not None or p0._end is not None:
+                p0._start = p0._end = None
+                for p in self._plots:
+                    p._reload()
         self._apply_zoom(view)
 
     def redraw(self):
