@@ -1,7 +1,7 @@
 """ORM-модели и подключение к БД."""
 import os
 from sqlalchemy import (
-    create_engine, Column, String, Integer, Float, Text,
+    create_engine, Column, String, Integer, Float, Date, Text,
     ForeignKey, event
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
@@ -17,7 +17,7 @@ class Athlete(Base):
     first_name = Column(String, nullable=False)
     middle_name = Column(String)
     gender = Column(String)
-    birth_date = Column(String)
+    birth_date = Column(Date)
     height_cm = Column(Integer)
     weight_kg = Column(Float)
     resting_hr = Column(Integer)

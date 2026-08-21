@@ -1,8 +1,9 @@
 """Диалоговые окна приложения."""
 import datetime
+import re
 import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
-from tkcalendar import DateEntry
+from tkcalendar import DateEntry, Calendar
 
 from models import get_session, Athlete, ECGRecord, ECGRaw  # ← добавлен ECGRaw
 
@@ -17,8 +18,10 @@ class AthleteDialog(ctk.CTkToplevel):
         self.geometry("380x460")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
         self.result = None
+
+        # Диалог должен быть поверх главного окна
+        self.after(10, self._bring_to_front)
 
         row = 0
         fields_top = [("last_name", "Фамилия"), ("first_name", "Имя"),
@@ -31,17 +34,23 @@ class AthleteDialog(ctk.CTkToplevel):
             ctk.CTkLabel(self, text=label).grid(row=row, column=0, padx=12, pady=4, sticky="w")
             e = ctk.CTkEntry(self)
             e.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
+            # Только буквы и дефис, первая буква заглавная
+            e.configure(validate="key", validatecommand=(self.register(self._only_letters), "%P", key))
+            e.bind("<FocusOut>", lambda ev, k=key: self._capitalize(k))
             self.entries[key] = e
             row += 1
 
-        # Дата рождения через календарь
+        # Дата рождения через календарь с русскими месяцами
         ctk.CTkLabel(self, text="Дата рождения").grid(row=row, column=0, padx=12, pady=4, sticky="w")
         self.birth_date_entry = DateEntry(
             self, width=12, date_pattern='dd-mm-yyyy',
             background=COL_BG_DARK, foreground=COL_TEXT_LIGHT,
             fieldbackground=COL_WEEKEND, borderwidth=0,
             selectbackground=COL_ACCENT, selectforeground=COL_SELECTION,
-            year=2005, month=1, day=1)
+            year=2005, month=1, day=1,
+            locale="ru_RU",  # русские названия месяцев
+            showothermonthdays=False,
+        )
         self.birth_date_entry.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
         row += 1
 
@@ -49,6 +58,10 @@ class AthleteDialog(ctk.CTkToplevel):
             ctk.CTkLabel(self, text=label).grid(row=row, column=0, padx=12, pady=4, sticky="w")
             e = ctk.CTkEntry(self)
             e.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
+            if key in ("height_cm", "weight_kg"):
+                # Только неотрицательные числа
+                e.configure(validate="key",
+                            validatecommand=(self.register(self._only_nonneg_number), "%P"))
             self.entries[key] = e
             row += 1
 
@@ -72,11 +85,53 @@ class AthleteDialog(ctk.CTkToplevel):
                     self.entries[key].insert(0, str(data[key]))
             if data.get("birth_date"):
                 try:
-                    self.birth_date_entry.set_date(
-                        datetime.date.fromisoformat(str(data["birth_date"])))
-                except ValueError:
+                    d = data["birth_date"]
+                    if isinstance(d, str):
+                        d = datetime.date.fromisoformat(d)
+                    self.birth_date_entry.set_date(d)
+                except (ValueError, TypeError):
                     pass
             self.gender_var.set(data.get("gender", "M"))
+
+    # ---------- валидация ввода ----------
+    def _bring_to_front(self):
+        """Поднимает диалог поверх других окон и даёт фокус."""
+        try:
+            if not self.winfo_exists():
+                return
+            self.lift()
+            self.focus_force()
+        except Exception:
+            pass
+
+    def _only_letters(self, proposed, key):
+        """Только буквы, пробелы и дефис для ФИО."""
+        if not proposed:
+            return True
+        allowed = re.fullmatch(r"[А-Яа-яЁёA-Za-z\s-]*", proposed)
+        return bool(allowed)
+
+    def _capitalize(self, key):
+        """Первая буква заглавная, остальные — строчные."""
+        e = self.entries.get(key)
+        if not e:
+            return
+        text = e.get().strip()
+        if text:
+            e.delete(0, "end")
+            e.insert(0, text[0].upper() + text[1:].lower())
+
+    def _only_date_chars(self, proposed):
+        """Разрешены только цифры и дефисы для даты."""
+        if not proposed:
+            return True
+        return bool(re.fullmatch(r"[0-9-]*", proposed))
+
+    def _only_nonneg_number(self, proposed):
+        """Только неотрицательные числа (целые или дробные)."""
+        if not proposed:
+            return True
+        return bool(re.fullmatch(r"\d*\.?\d*", proposed))
 
     def _on_save(self):
         last = self.entries["last_name"].get().strip()
@@ -95,13 +150,16 @@ class AthleteDialog(ctk.CTkToplevel):
             if not v:
                 return None
             try:
-                return cast(v)
+                val = cast(v)
+                if val <= 0:
+                    return None
+                return val
             except ValueError:
                 return None
 
         self.result = {"last_name": last, "first_name": first,
                        "middle_name": self.entries["middle_name"].get().strip(),
-                       "birth_date": bd.isoformat(),
+                       "birth_date": bd,
                        "gender": self.gender_var.get(),
                        "height_cm": opt_num("height_cm", int),
                        "weight_kg": opt_num("weight_kg", float),

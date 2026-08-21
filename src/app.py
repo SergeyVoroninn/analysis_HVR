@@ -70,6 +70,14 @@ if __name__ == "__main__":
     panel.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
     panel.grid_propagate(False)
 
+    # После изменения карточки атлета — перезагружаем данные графиков
+    def _on_panel_changed():
+        cur = panel.selected()
+        orchestrator.sync_athlete(cur[0] if cur else None)
+        hm.refresh()
+        charts.refresh()
+    panel.on_change = _on_panel_changed
+
     def _sync_athletes_width(event):
         if event.widget is root:
             w = max(ATHLETES_COLUMN_MIN, int(event.width * ATHLETES_COLUMN_FRACTION))

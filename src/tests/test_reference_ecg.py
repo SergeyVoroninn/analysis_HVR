@@ -1,4 +1,5 @@
 """Эталонные ЭКГ: импорт в базу и сверка с расчётом внешней программы."""
+import datetime
 import json
 import os
 import sys
@@ -33,7 +34,7 @@ def db_with_athlete(tmp_path):
     try:
         session.add(Athlete(
             id=aid, last_name="Эталон", first_name="Тест", middle_name="",
-            gender="M", birth_date="2000-01-01",
+            gender="M", birth_date=datetime.date(2000, 1, 1),
             height_cm=180, weight_kg=75, resting_hr=60, max_hr=190,
             hrv_rmssd_baseline=50, avg_rr_ms=1000, polar_id=polar))
         session.commit()

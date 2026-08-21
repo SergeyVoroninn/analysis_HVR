@@ -116,7 +116,9 @@ class AthletesPanel(tk.Frame):
             return
         d = dlg.result
         import datetime
-        bd = datetime.date.fromisoformat(d["birth_date"])
+        bd = d["birth_date"]
+        if isinstance(bd, str):
+            bd = datetime.date.fromisoformat(bd)
         age = _calc_age(bd)
         gender = d["gender"]
         height = d["height_cm"] or _estimate_height_cm(age, gender)
