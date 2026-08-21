@@ -1,6 +1,12 @@
 """Выводит полную структуру базы данных (таблицы, колонки, индексы, FK)."""
 import os
+import sys
 import sqlite3
+
+SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if SRC not in sys.path:
+    sys.path.insert(0, SRC)
+
 from database import get_db_path
 
 db_path = get_db_path()

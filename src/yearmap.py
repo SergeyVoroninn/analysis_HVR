@@ -56,6 +56,7 @@ class YearHeatmap(tk.Canvas):
         self._click_t = 0.0
         self._click_w = -1
         self._single_timer = None
+        self._load_seq = 0
         self.on_week_dbl = None           # callback(week, monday) — двойной клик
 
         self.bind("<Button-1>", self._on_click)
@@ -119,15 +120,35 @@ class YearHeatmap(tk.Canvas):
     def _load_data(self):
         self._date_map = {}
         if self._athlete_id is None:
+            self._redraw_cells()
             return
+
+        self._load_seq += 1
+        seq = self._load_seq
+        athlete = self._athlete_id
+
+        def worker():
+            try:
+                rows = self._fetch_rows(athlete)
+            except Exception:
+                rows = []
+            self.after(0, lambda: self._apply_loaded(seq, athlete, rows))
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _fetch_rows(self, athlete):
         session = get_session(self.db_path)
         try:
-            rows = (session.query(ECGRecord.recorded_at, ECGRecord.status)
-                    .filter(ECGRecord.athlete_id == self._athlete_id)
-                    .all())
+            return (session.query(ECGRecord.recorded_at, ECGRecord.status)
+                    .filter(ECGRecord.athlete_id == athlete).all())
         finally:
             session.close()
 
+    def _apply_loaded(self, seq, athlete, rows):
+        if seq != self._load_seq or athlete != self._athlete_id:
+            return
+        self._date_map = {}
         for recorded_at, status in rows:
             dkey = datetime.datetime.fromisoformat(recorded_at).date().isoformat()
             m = self._date_map.setdefault(dkey, {"count": 0, "worst": None})
@@ -136,6 +157,7 @@ class YearHeatmap(tk.Canvas):
                 m["worst"] = "crit"
             elif status == "warn" and m["worst"] != "crit":
                 m["worst"] = "warn"
+        self._redraw_cells()
 
     # ================= ресайз =================
     def height_for_step(self, step):

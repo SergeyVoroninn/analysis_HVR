@@ -1,6 +1,12 @@
 """Переносит raw_data из ecg_records в ecg_raw и сжимает БД."""
 import sqlite3
 import os
+import sys
+
+SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if SRC not in sys.path:
+    sys.path.insert(0, SRC)
+
 from database import get_db_path
 
 db_path = get_db_path()

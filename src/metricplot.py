@@ -67,6 +67,8 @@ class MetricPlot(tk.Frame):
         self._values = []
         self.view = None
         self._pan = None
+        self._load_seq = 0          # порядковый номер загрузки (отсев устаревших)
+        self._loading = False       # идёт фоновая загрузка
         self._single_timer = None
         self._click_t = 0.0
         self._click_x = 0.0
@@ -125,10 +127,20 @@ class MetricPlot(tk.Frame):
         self._draw()
 
     # ---------------- данные ----------------
-    def _reload(self):
+    def _reload(self, async_load=True):
         self._values = []
         if not self._athlete:
             self._draw()
+            return
+        if async_load:
+            self._start_background_load()
+            return
+        self._load_sync()
+
+    def _load_sync(self):
+        """Синхронная загрузка данных из БД (используется в фоновом потоке)."""
+        self._values = []
+        if not self._athlete:
             return
         session = get_session(self.db_path)
         try:
@@ -151,6 +163,56 @@ class MetricPlot(tk.Frame):
         if self._start is None and self._values:
             self._start = min(d for d, _ in self._values).date()
             self._end = max(d for d, _ in self._values).date()
+
+    def _start_background_load(self):
+        """Запускает загрузку данных в фоновом потоке, отсеивая устаревшие."""
+        self._load_seq += 1
+        seq = self._load_seq
+        athlete = self._athlete
+        self._loading = True
+
+        def worker():
+            try:
+                values = self._fetch_values(athlete)
+            except Exception:
+                values = []
+            self.after(0, lambda: self._apply_background_load(seq, athlete, values))
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _fetch_values(self, athlete):
+        """Тяжёлый SQL-запрос — выполняется в фоновом потоке."""
+        if not athlete:
+            return []
+        session = get_session(self.db_path)
+        try:
+            q = session.query(ECGRecord).filter(
+                ECGRecord.athlete_id == athlete)
+            if self._start:
+                q = q.filter(ECGRecord.recorded_at >=
+                             self._start.isoformat() + " 00:00:00")
+            if self._end:
+                q = q.filter(ECGRecord.recorded_at <
+                             self._end.isoformat() + " 23:59:59")
+            out = []
+            for rec in q.all():
+                v = self.spec.value(rec)
+                if v is not None:
+                    out.append((datetime.datetime.fromisoformat(rec.recorded_at), v))
+            return out
+        finally:
+            session.close()
+
+    def _apply_background_load(self, seq, athlete, values):
+        """Применяет результат загрузки, если за это время не сменили атлета."""
+        if seq != self._load_seq or athlete != self._athlete:
+            return  # устаревший результат — игнорируем
+        self._values = values
+        if self._start is None and self._values:
+            self._start = min(d for d, _ in self._values).date()
+            self._end = max(d for d, _ in self._values).date()
+        self._loading = False
         self._draw()
 
     # ---------------- ординалы и view ----------------

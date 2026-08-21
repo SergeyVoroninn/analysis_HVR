@@ -78,9 +78,7 @@ class Heatmap(ctk.CTkFrame):
         self.year_map.athlete = self.year_map.athlete
         self.week_map.athlete = self.week_map.athlete
         self.year_map._load_data()
-        self.year_map._redraw_cells()
         self.week_map._load_data()
-        self.week_map._redraw()
 
     @property
     def year(self):
