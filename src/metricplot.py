@@ -176,7 +176,10 @@ class MetricPlot(tk.Frame):
                 values = self._fetch_values(athlete)
             except Exception:
                 values = []
-            self.after(0, lambda: self._apply_background_load(seq, athlete, values))
+            try:
+                self.after(0, lambda: self._apply_background_load(seq, athlete, values))
+            except RuntimeError:
+                pass  # Tk уже разрушен — результат не нужен
 
         import threading
         threading.Thread(target=worker, daemon=True).start()

@@ -105,7 +105,10 @@ class WeekHeatmap(tk.Frame):
                 rows = self._fetch_rows(athlete)
             except Exception:
                 rows = []
-            self.after(0, lambda: self._apply_loaded(seq, athlete, rows))
+            try:
+                self.after(0, lambda: self._apply_loaded(seq, athlete, rows))
+            except RuntimeError:
+                pass  # Tk уже разрушен
 
         import threading
         threading.Thread(target=worker, daemon=True).start()

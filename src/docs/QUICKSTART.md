@@ -179,12 +179,14 @@ analysis_HVR\src\
 |   atlets.py                      Панель списка спортсменов: отображение, CRUD, импорт записей
 |   build.bat                      Скрипт сборки AnalysisHVR.exe через PyInstaller с прогоном тестов
 |   charts.py                      Контейнер графиков TP/Стресс, синхронизация масштаба
+|   database.py                    Менеджер пути к БД с учётом режима запуска (exe/исходники/тесты)
 |   dialogs.py                     Диалоги AthleteDialog (создание/редактирование) и ECGListDialog (список ЭКГ)
 |   ghost.py                       ResizeController — адаптивный ресайз виджетов
 |   heatmap.py                     Составной виджет: годовой heatmap + недельный + переключатель года
 |   importer.py                    Импорт записей Polar H10 в БД (привязка по polar_id)
 |   logo21.png                     Логотип 512×512 для заставки при запуске приложения
 |   metricplot.py                  Отрисовка одного графика ВРС: зум, панорама, клики, ПКМ
+|   models.py                      ORM-модели SQLAlchemy: Athlete, ECGRecord, ECGRaw и get_session
 |   orchestrator.py                Централизованный менеджер состояния: координация виджетов
 |   splash.py                      SplashScreen — полноэкранная заставка с прогрессом загрузки модулей
 |   theme.py                       Цветовая палитра и константы стилей для единого оформления GUI
@@ -212,14 +214,12 @@ analysis_HVR\src\
 |   |   calibrate_ecg.py           Автокалибровка профилей ЭКГ по целевым метрикам качества (SNR, дрейф)
 |   |   config.yaml                Настройки генерации БД: длительность, сид, список спортсменов, расписание
 |   |   config_big.yaml            Альтернативный конфиг с увеличенными объёмами данных
-|   |   database.py                Менеджер пути к БД с учётом режима запуска (exe/исходники/тесты)
 |   |   db_info.py                 Диагностика БД: размер файла, количество записей, средние метрики ВРС
 |   |   db_schema.py               Вывод полной схемы БД: таблицы, колонки, индексы, внешние ключи
 |   |   ecg_generator.py           Генерация синтетических ЭКГ в формате TeamLoggerH10 по профилю
 |   |   ecg_profiles.yaml          Профили формы сигнала ЭКГ: default, high_quality, fast, real_c8208e2e
 |   |   fit_profile_from_real.py   Извлечение профиля ЭКГ из реальной записи Polar H10
 |   |   migrate_split_raw.py       Миграция: вынос raw_data из ecg_records в отдельную таблицу ecg_raw
-|   |   models.py                  ORM-модели SQLAlchemy: Athlete, ECGRecord, ECGRaw и get_session
 |   |   prepare_database.py        Главный скрипт: очистка БД, генерация спортсменов, построение расписания, генерация ЭКГ с прогресс-баром. Поддерживает --config
 |   |   schedule_engine.py         Построение расписаний записей ЭКГ для каждого спортсмена
 |   |
