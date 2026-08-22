@@ -129,11 +129,25 @@ def test_sync_athlete_restores_range(orchestrator):
 
 
 def test_sync_athlete_no_saved_range(orchestrator):
+    """
+    Проверяет, что при отсутствии сохраненного диапазона (после ПКМ),
+    графики корректно сбрасываются в полный диапазон нового атлета.
+    """
     orch, hm, charts, p0, _ = orchestrator
+    
+    # Имитируем состояние после ПКМ
     orch._saved_range = None
     orch._redraw_called[0] = False
+    
+    # Выполняем смену атлета
     orch.sync_athlete("other_id")
-    assert not orch._redraw_called[0]
+    
+    # НОВОЕ ПРАВИЛЬНОЕ ПОВЕДЕНИЕ:
+    # 1. Redraw ДОЛЖЕН быть вызван, чтобы применить изменения
+    assert orch._redraw_called[0], "redraw() должен быть вызван для обновления вида"
+    
+    # 2. view графика должен быть явно сброшен в None
+    assert p0.view is None, "view графика должен быть сброшен в None для отображения полного диапазона"
 
 
 # ======================== СОХРАНЕНИЕ/ВОССТАНОВЛЕНИЕ СОСТОЯНИЯ ========================
