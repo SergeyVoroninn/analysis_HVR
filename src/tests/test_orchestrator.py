@@ -148,8 +148,7 @@ def test_sync_athlete_no_saved_range(orchestrator):
     
     # 2. view графика должен быть явно сброшен в None
     assert p0.view is None, "view графика должен быть сброшен в None для отображения полного диапазона"
-
-
+    
 # ======================== СОХРАНЕНИЕ/ВОССТАНОВЛЕНИЕ СОСТОЯНИЯ ========================
 
 def test_save_state_uses_view_ordinals(orchestrator):

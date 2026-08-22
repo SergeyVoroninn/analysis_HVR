@@ -287,16 +287,26 @@ class YearHeatmap(tk.Canvas):
             self.on_week_pick(w, monday)
 
     def _on_right_click(self, event):
-        """ПКМ на любой ячейке heatmap устанавливает диапазон года на графиках."""
+        """ПКМ на любой ячейке heatmap устанавливает диапазон года и синхронизирует курсор."""
         w = (event.x - X0) // self._step
         if not (0 <= w < 53):
             return
 
-        clicked_date = self._year_start + datetime.timedelta(weeks=w, days=3)  # середина недели
+        # 1. Устанавливаем курсор на кликнутую неделю
+        self.week = w
+        monday = self.week_start_date(w)
+
+        # 2. ВАЖНО: Уведомляем heatmap, чтобы он обновил weekmap!
+        if self.on_week_pick and monday is not None:
+            self.on_week_pick(w, monday)
+
+        # 3. Вычисляем диапазон года для графиков
+        clicked_date = self._year_start + datetime.timedelta(weeks=w, days=3)
         year = clicked_date.year
         start_date = datetime.date(year, 1, 1)
         end_date = datetime.date(year, 12, 31)
 
+        # 4. Уведомляем оркестратор о зуме
         if self.on_year_zoom:
             self.on_year_zoom(start_date, end_date)
 

@@ -59,12 +59,30 @@ class AppOrchestrator:
         self.heatmap.year = year
 
     def _handle_chart_reset(self):
+        """ПКМ: показать весь период данных, курсор на последнюю запись."""
+        # Сбрасываем сохраненный диапазон
         self._saved_range = None
+        
+        # Находим последнюю запись среди всех графиков
+        last_date = None
         for p in self.charts._plots:
-            p._start = p._end = None
+            if p._end is not None:
+                if last_date is None or p._end > last_date:
+                    last_date = p._end
+        
+        # Перемещаем курсор и год на последнюю запись
+        if last_date is not None:
+            self.heatmap.set_cursor_by_date(last_date)
+            # Устанавливаем год на год последней записи
+            self.heatmap.year = last_date.year
+        
+        # Сбрасываем view графиков в None (покажет полный диапазон)
+        for p in self.charts._plots:
             p.view = None
             p._reload()
-        self.heatmap.reset_to_data_center()
+        
+        # Сбрасываем heatmap в центр данных
+        self.heatmap.reset_to_data_last()
 
     def _handle_chart_single_click(self, d):
         self.heatmap.set_cursor_by_date(d)

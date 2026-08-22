@@ -150,29 +150,15 @@ class Heatmap(ctk.CTkFrame):
         if w is not None:
             self.week_map.week_start = self.year_map.week_start_date(w)
 
-    def reset_to_data_center(self):
-        session = get_session(self.db_path)
-        try:
-            row = (session.query(ECGRecord.recorded_at)
-                   .filter(ECGRecord.athlete_id == self.year_map.athlete)
-                   .order_by(ECGRecord.recorded_at.asc()).first())
-            if not row or not row[0]:
-                return
-            first = datetime.datetime.fromisoformat(row[0]).date()
-            row = (session.query(ECGRecord.recorded_at)
-                   .filter(ECGRecord.athlete_id == self.year_map.athlete)
-                   .order_by(ECGRecord.recorded_at.desc()).first())
-            last = datetime.datetime.fromisoformat(row[0]).date()
-        finally:
-            session.close()
-
-        mid = first + (last - first) / 2
-        self.year = mid.year
-        w = mid.isocalendar()[1] - 1
-        self.week = max(0, min(52, w))
-        d = self.year_map.week_start_date(self.week)
-        if d:
-            self.week_map.week_start = d
+    def reset_to_data_last(self):
+        """Сбросить heatmap в сегодня (или на последнюю запись)."""
+        # Если есть данные, перемещаемся на последнюю запись
+        if hasattr(self, '_last_record_date') and self._last_record_date:
+            self.set_cursor_by_date(self._last_record_date)
+            self.year = self._last_record_date.year
+        else:
+            # Fallback: текущий год
+            self.year = datetime.date.today().year
 
     def _ctrl_req(self):
         hs = [c.winfo_reqheight() for c in self._ctrl.winfo_children()]
