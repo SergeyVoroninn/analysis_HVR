@@ -137,19 +137,20 @@ python app.py
 
 | Жест | Действие |
 | --- | --- |
-| Колесо мыши | Зум к положению курсора (увеличить/уменьшить) |
+| Колесо мыши | Зум к положению курсора (увеличить/уменьшить), минимальный span = 1 день |
 | Зажать и тянуть | Панорамирование по времени |
-| Одинарный клик | Курсор на yearmap — на неделю кликнутой даты |
-| ПКМ | Сброс на весь период выбранного атлета (оркестратор очищает и перезагружает оба графика + heatmap) |
+| Одинарный клик | Курсор yearmap на неделю кликнутой даты (с задержкой ~500 мс) |
+| Двойной клик | Игнорируется (намеренно отключено как неэргономичное) |
+| ПКМ | Сброс: весь период данных атлета + курсор и год heatmap на последнюю запись, heatmap перерисовывается |
 
 ### Годовой heatmap (yearmap)
 
 | Жест | Действие |
 | --- | --- |
-| Одинарный клик | Курсор на неделю + центрирование графика по четвергу недели |
-| Двойной клик | Диапазон графика = месяц ±15 дней от середины выбранной недели |
+| Одинарный клик | Курсор на неделю + weekmap синхронизируется на эту неделю, графики центрируются по четвергу недели |
+| Двойной клик | Диапазон графика = месяц ±15 дней от середины выбранной недели; weekmap синхронизируется |
 | Колесо мыши | Переключение года (вперёд/назад) |
-| ПКМ | Диапазон графика = весь год (с 1 января по 31 декабря) |
+| ПКМ | Диапазон графика = весь год (с 1 января по 31 декабря); курсор на кликнутую неделю + weekmap синхронизируется |
 
 ### Недельный heatmap (weekmap)
 
@@ -178,16 +179,17 @@ analysis_HVR\src\
 |   appsettings.py                 Сохранение/восстановление состояния (атлет, год, неделя, зум) в JSON
 |   atlets.py                      Панель списка спортсменов: отображение, CRUD, импорт записей
 |   build.bat                      Скрипт сборки AnalysisHVR.exe через PyInstaller с прогоном тестов
-|   charts.py                      Контейнер графиков TP/Стресс, синхронизация масштаба
+|   charts.py                      Контейнер графиков TP/Стресс, синхронизация масштаба, колбэки кликов
 |   database.py                    Менеджер пути к БД с учётом режима запуска (exe/исходники/тесты)
-|   dialogs.py                     Диалоги AthleteDialog (создание/редактирование) и ECGListDialog (список ЭКГ)
+|   dialogs.py                     Диалоги AthleteDialog (создание/редактирование), ECGListDialog (список ЭКГ); DateEntry поверх окна
 |   ghost.py                       ResizeController — адаптивный ресайз виджетов
 |   heatmap.py                     Составной виджет: годовой heatmap + недельный + переключатель года
 |   importer.py                    Импорт записей Polar H10 в БД (привязка по polar_id)
 |   logo21.png                     Логотип 512×512 для заставки при запуске приложения
 |   metricplot.py                  Отрисовка одного графика ВРС: зум, панорама, клики, ПКМ
-|   models.py                      ORM-модели SQLAlchemy: Athlete, ECGRecord, ECGRaw и get_session
-|   orchestrator.py                Централизованный менеджер состояния: координация виджетов
+|   models.py                      ORM-модели SQLAlchemy: Athlete, ECGRecord, ECGRaw, GenderType и get_session
+|   orchestrator.py                Централизованный менеджер состояния: координация виджетов и жестов
+|   requirements-test.txt          Доп. зависимости для тестов (pytest и пр.)
 |   splash.py                      SplashScreen — полноэкранная заставка с прогрессом загрузки модулей
 |   theme.py                       Цветовая палитра и константы стилей для единого оформления GUI
 |   timeframe.py                   Таймфреймы баров (HOUR3, DAY, WEEK), подбор по span, зебра, границы лет
@@ -196,6 +198,7 @@ analysis_HVR\src\
 |
 +---data
 |       ecg.db                     SQLite-база данных: таблицы athletes, ecg_records и ecg_raw
+|       app_settings.json          Сохранённое состояние приложения (атлет, год, неделя, зум)
 |
 +---docs
 |   |   QUICKSTART.md              Руководство по быстрому старту: установка, генерация БД, запуск
@@ -225,12 +228,18 @@ analysis_HVR\src\
 |   |
 \---tests
         etalons.json               Эталонные метрики (RMSSD, ИС, TP) из Омега.Диагностика для сверки
+        test_athlete_zoom_persistence.py  Сохранение масштаба при смене атлета
+        test_calendar.py           Тесты календаря (DateEntry) в диалоге атлета
+        test_chart_right_click.py  Интеграция: ПКМ по графику → сброс масштаба
+        test_ghost_resize.py       Адаптивный ресайз виджетов (ResizeController)
         test_metricplot.py         Клик, двойной клик, ПКМ, панорамирование на графиках
         test_orchestrator.py       Сохранение/восстановление масштаба, смена атлета, полный цикл save/restore
         test_reference_ecg.py      Импорт эталонной ЭКГ в базу и сверка метрик с etalons.json
         test_timeframe.py          Подбор таймфрейма, зебра, границы лет
         test_weekmap.py            Клик/двойной/ПКМ по weekmap (зелёная/пустая ячейка)
+        test_weekmap_right_click.py ПКМ по weekmap: диапазон недели + синхронизация курсора
         test_yearmap.py            Клик/двойной/ПКМ/колесо по yearmap
+        test_yearmap_right_click.py ПКМ по yearmap: диапазон года + синхронизация weekmap
         reference\                 Эталонные файлы .teamloggerh10 для test_reference_ecg.py
 ```
 
@@ -891,19 +900,27 @@ my_profile:
 ```text
 src/
 └── tests/
-    ├── etalons.json               # эталонные метрики Омега.Диагностика
-    ├── test_metricplot.py         # клик, двойной клик, ПКМ, панорамирование на графиках
-    ├── test_orchestrator.py       # сохранение/восстановление масштаба, смена атлета
-    ├── test_reference_ecg.py      # сверка с эталонной записью Polar H10
-    ├── test_timeframe.py          # подбор таймфрейма, зебра, границы лет
-    ├── test_weekmap.py            # клик/двойной/ПКМ по weekmap (зелёная/пустая ячейка)
-    ├── test_yearmap.py            # клик/двойной/ПКМ/колесо по yearmap
-    └── reference/                 # эталонные файлы .teamloggerh10
+    ├── etalons.json                  # эталонные метрики Омега.Диагностика
+    ├── test_athlete_zoom_persistence.py  # сохранение масштаба после ПКМ при смене атлета (3 атлета × все переходы)
+    ├── test_calendar.py              # календарь DateEntry: базовые операции + устойчивость GUI при смене месяца/года
+    ├── test_chart_right_click.py     # ПКМ по графику → on_reset → сброс масштаба ровно на диапазон данных
+    ├── test_ghost_resize.py          # ResizeController: защита от зацикливания ресайза
+    ├── test_metricplot.py            # жесты MetricPlot: клик, двойной клик, ПКМ, колесо, панорамирование
+    ├── test_orchestrator.py          # оркестратор: сохранение/восстановление масштаба, смена атлета, save/restore
+    ├── test_reference_ecg.py         # сверка метрик с эталонной записью Polar H10 (Омега.Диагностика)
+    ├── test_timeframe.py             # подбор таймфрейма баров (MIN5/HOUR1/…), зебра, границы лет
+    ├── test_weekmap.py               # одинарный/двойной клик по weekmap (зелёная/пустая ячейка)
+    ├── test_weekmap_right_click.py   # ПКМ по weekmap: зум на неделю + синхронизация курсора yearmap + персистентность
+    ├── test_yearmap.py               # клик/двойной/ПКМ/колесо по yearmap (заполненные/пустые недели)
+    ├── test_yearmap_right_click.py   # ПКМ по yearmap: зум на год + синхронизация yearmap/weekmap/charts + персистентность
+    └── reference/                    # эталонные файлы .teamloggerh10 для test_reference_ecg.py
 ```
 
 ### Установка
 
 ```bash
+pip install -r requirements-test.txt    # pytest + pytest-cov + pytest-mock
+# или просто:
 pip install pytest
 ```
 
@@ -912,19 +929,45 @@ pip install pytest
 ```bash
 cd C:\s21\projects\analysis_HVR\src
 
-python -m pytest tests -v                        # все тесты (6 файлов)
-python -m pytest tests/test_metricplot.py -v     # жесты на графиках
-python -m pytest tests/test_weekmap.py -v        # жесты weekmap
-python -m pytest tests/test_yearmap.py -v        # жесты yearmap
-python -m pytest tests/test_orchestrator.py -v   # масштаб и смена атлета
-python -m pytest tests/test_reference_ecg.py -v  # сверка с эталонами Омега.Диагностика
+python -m pytest tests -v                              # все тесты (12 файлов)
+python -m pytest tests/test_metricplot.py -v           # жесты на графиках
+python -m pytest tests/test_weekmap.py -v              # жесты weekmap
+python -m pytest tests/test_yearmap.py -v              # жесты yearmap
+python -m pytest tests/test_orchestrator.py -v         # масштаб и смена атлета
+python -m pytest tests/test_reference_ecg.py -v        # сверка с эталонами Омега.Диагностика
+python -m pytest tests/test_calendar.py -v             # календарь в диалоге атлета
+python -m pytest tests/test_chart_right_click.py -v    # ПКМ по графику → сброс
+python -m pytest tests/test_weekmap_right_click.py -v  # ПКМ по weekmap
+python -m pytest tests/test_yearmap_right_click.py -v  # ПКМ по yearmap
+python -m pytest tests/test_ghost_resize.py -v         # адаптивный ресайз
+python -m pytest tests/test_athlete_zoom_persistence.py -v  # масштаб после ПКМ при смене атлета
+python -m pytest tests/test_timeframe.py -v            # таймфреймы
 ```
+
+### Что покрывают тесты
+
+| Файл | Тестов | Проверяет |
+| --- | --- | --- |
+| `test_athlete_zoom_persistence.py` | 1 | Сохранение масштаба после ПКМ при переключении между 3 атлетами (10 лет / 1 год / 1 месяц), все комбинации переходов |
+| `test_calendar.py` | 2 | DateEntry: начальная/программная дата, открытие/закрытие dropdown, календарь не исчезает при клике на заголовок месяца |
+| `test_chart_right_click.py` | 1 | ПКМ по графику → оркестратор вызывает `on_reset`, график сбрасывает масштаб ровно на диапазон данных |
+| `test_ghost_resize.py` | 4 | `ResizeController`: защита от зацикливания ресайза (settle/poll, перерисовка не чаще нужного) |
+| `test_metricplot.py` | 18 | Клик/двойной клик/ПКМ/колесо/панорамирование на графике: вызовы `on_single_click`, `on_reset`, `_commit_view` |
+| `test_orchestrator.py` | 13 | Сохранение/восстановление масштаба, `zoom`, `sync_athlete`, полный цикл save/restore, колбэки heatmap |
+| `test_reference_ecg.py` | 1 | Импорт эталонной Polar H10 и сверка RMSSD, индекса стресса, TP с `etalons.json` (Омега.Диагностика) |
+| `test_timeframe.py` | 10 | Подбор таймфрейма баров по span (MIN5/HOUR1/…), зебра, границы лет |
+| `test_weekmap.py` | 9 | Одинарный/двойной клик по weekmap: зелёная и пустая ячейки, `on_pick`/`on_day_dbl` |
+| `test_weekmap_right_click.py` | 1 | ПКМ по weekmap → зум на 7 дней + курсор yearmap + персистентность при смене атлета |
+| `test_yearmap.py` | 10 | Клик/двойной/ПКМ/колесо по yearmap: заполненные/пустые недели, вне сетки, `on_year_zoom` |
+| `test_yearmap_right_click.py` | 1 | ПКМ по yearmap → зум на год + синхронизация yearmap/weekmap/charts + персистентность |
 
 ### Тесты сверки с эталонами (`test_reference_ecg.py`)
 
 Импортирует эталонную запись Polar H10 из `tests/reference/` в базу через `importer._import_one`
-(тем же путём, что и приложение) и сверяет рассчитанные метрики (RMSSD, индекс стресса, TP) с
-ожидаемыми значениями из `tests/etalons.json` (источник — «Омега.Диагностика»).
+(тем же путём, что и приложение) и сверяет рассчитанные метрики с ожидаемыми значениями из
+`tests/etalons.json` (источник — «Омега.Диагностика»). Сверяются: RMSSD, индекс стресса (ИС),
+Мо, NN50, pNN50, TP — каждая со своим допуском `tol`. Метрики спектра (HF, LF, VLF, LF/HF)
+сравниваются только как справочные (`not_compared`).
 
 | Файл | Назначение |
 | --- | --- |
