@@ -246,8 +246,8 @@ analysis_HVR\src\
 │    last_name                 VARCHAR          [NOT NULL]
 │    first_name                VARCHAR          [NOT NULL]
 │    middle_name               VARCHAR
-│    gender                    VARCHAR
-│    birth_date                VARCHAR
+│    gender                    BOOLEAN
+│    birth_date                DATE
 │    height_cm                 INTEGER
 │    weight_kg                 FLOAT
 │    resting_hr                INTEGER

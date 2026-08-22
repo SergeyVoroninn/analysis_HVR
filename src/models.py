@@ -1,12 +1,30 @@
 """ORM-модели и подключение к БД."""
 import os
 from sqlalchemy import (
-    create_engine, Column, String, Integer, Float, Date, Text,
-    ForeignKey, event
+    create_engine, Column, String, Integer, Float, Date, Text, Boolean,
+    ForeignKey, event, types
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 Base = declarative_base()
+
+
+class GenderType(types.TypeDecorator):
+    """Пол спортсмена: в БД хранится как BOOLEAN (True = мужской),
+    в Python-коде остаётся строка 'M'/'F'."""
+
+    impl = Boolean
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return value == "M" or value is True
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return "M" if value else "F"
 
 
 class Athlete(Base):
@@ -16,7 +34,7 @@ class Athlete(Base):
     last_name = Column(String, nullable=False)
     first_name = Column(String, nullable=False)
     middle_name = Column(String)
-    gender = Column(String)
+    gender = Column(GenderType)
     birth_date = Column(Date)
     height_cm = Column(Integer)
     weight_kg = Column(Float)

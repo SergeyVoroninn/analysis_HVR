@@ -11,6 +11,51 @@ from theme import (COL_BG_DARK, COL_TEXT_LIGHT, COL_WEEKEND,
                    COL_ACCENT, COL_SELECTION)
 
 
+class _ForegroundDateEntry(DateEntry):
+    """DateEntry, который не пропадает при смене месяца/года."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._rebuild_lock = False  # Блокировка от рекурсии
+
+    def drop_down(self):
+        super().drop_down()
+        self._ensure_foreground()
+
+    def _ensure_foreground(self, event=None):
+        """Возвращает календарь на передний план."""
+        try:
+            if not hasattr(self, '_top_cal') or not self._top_cal.winfo_exists():
+                return
+            
+            # Поднимаем окно наверх
+            self._top_cal.lift()
+            self._top_cal.attributes("-topmost", True)
+            self._top_cal.attributes("-topmost", False)
+            self._top_cal.focus_force()
+            
+            # Отслеживаем перестройку календаря (смена месяца/года)
+            if not self._rebuild_lock:
+                self._top_cal.bind('<Configure>', self._on_calendar_rebuild, add='+')
+                
+        except Exception:
+            pass
+
+    def _on_calendar_rebuild(self, event=None):
+        """Срабатывает после перестройки календаря."""
+        if self._rebuild_lock:
+            return
+        try:
+            self._rebuild_lock = True
+            # Ждем завершения перестройки и возвращаем окно наверх
+            self.master.after(50, self._ensure_foreground)
+        finally:
+            # Снимаем блокировку через 100 мс
+            self.master.after(100, self._release_lock)
+            
+    def _release_lock(self):
+        self._rebuild_lock = False
+
 class AthleteDialog(ctk.CTkToplevel):
     def __init__(self, parent, title, data=None):
         super().__init__(parent)
@@ -19,9 +64,6 @@ class AthleteDialog(ctk.CTkToplevel):
         self.resizable(False, False)
         self.transient(parent)
         self.result = None
-
-        # Диалог должен быть поверх главного окна
-        self.after(10, self._bring_to_front)
 
         row = 0
         fields_top = [("last_name", "Фамилия"), ("first_name", "Имя"),
@@ -42,7 +84,7 @@ class AthleteDialog(ctk.CTkToplevel):
 
         # Дата рождения через календарь с русскими месяцами
         ctk.CTkLabel(self, text="Дата рождения").grid(row=row, column=0, padx=12, pady=4, sticky="w")
-        self.birth_date_entry = DateEntry(
+        self.birth_date_entry = _ForegroundDateEntry(
             self, width=12, date_pattern='dd-mm-yyyy',
             background=COL_BG_DARK, foreground=COL_TEXT_LIGHT,
             fieldbackground=COL_WEEKEND, borderwidth=0,
@@ -68,8 +110,8 @@ class AthleteDialog(ctk.CTkToplevel):
         self.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(self, text="Пол").grid(row=row, column=0, padx=12, pady=4, sticky="w")
-        self.gender_var = ctk.StringVar(value="M")
-        ctk.CTkOptionMenu(self, values=["M", "F"], variable=self.gender_var
+        self.gender_var = ctk.StringVar(value="м")
+        ctk.CTkOptionMenu(self, values=["м", "ж"], variable=self.gender_var
                           ).grid(row=row, column=1, padx=12, pady=4, sticky="ew")
         row += 1
 
@@ -91,7 +133,10 @@ class AthleteDialog(ctk.CTkToplevel):
                     self.birth_date_entry.set_date(d)
                 except (ValueError, TypeError):
                     pass
-            self.gender_var.set(data.get("gender", "M"))
+            self.gender_var.set("м" if data.get("gender") == "M" else "ж" if data.get("gender") == "F" else "м")
+
+        # Поднимаем диалог поверх главного окна сразу, без мигания
+        self._bring_to_front()
 
     # ---------- валидация ввода ----------
     def _bring_to_front(self):
@@ -160,7 +205,7 @@ class AthleteDialog(ctk.CTkToplevel):
         self.result = {"last_name": last, "first_name": first,
                        "middle_name": self.entries["middle_name"].get().strip(),
                        "birth_date": bd,
-                       "gender": self.gender_var.get(),
+                       "gender": "M" if self.gender_var.get() == "м" else "F",
                        "height_cm": opt_num("height_cm", int),
                        "weight_kg": opt_num("weight_kg", float),
                        "polar_id": self.entries["polar_id"].get().strip()}

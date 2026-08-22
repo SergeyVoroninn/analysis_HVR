@@ -40,8 +40,10 @@ class AthletesPanel(tk.Frame):
         self.tree.column("fio", width=130, stretch=True)
         self.tree.column("age", width=50, anchor="center", stretch=False)
         self.tree.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        self.tree.bind("<<TreeviewSelect>>", self._on_select)
-        self.tree.bind("<Double-Button-1>", lambda e: self.edit())
+        self._select_timer = None
+        # Одинарный клик откладываем, чтобы двойной успел открыть диалог
+        self.tree.bind("<<TreeviewSelect>>", self._on_select_scheduled)
+        self.tree.bind("<Double-Button-1>", self._on_double_click)
 
         mgmt = ctk.CTkFrame(self, fg_color="transparent")
         mgmt.grid(row=2, column=0, pady=5)
@@ -90,6 +92,25 @@ class AthletesPanel(tk.Frame):
         if self.on_select:
             cur = self.selected()
             self.on_select(cur[0] if cur else None)
+
+    def _on_select_scheduled(self, event=None):
+        """Выбор атлета откладываем: даёт двойному клику открыть диалог первым."""
+        if self._select_timer is not None:
+            try:
+                self.after_cancel(self._select_timer)
+            except Exception:
+                pass
+        self._select_timer = self.after(350, self._on_select)
+
+    def _on_double_click(self, event=None):
+        """Двойной клик: отменяем отложенный выбор и открываем редактирование."""
+        if self._select_timer is not None:
+            try:
+                self.after_cancel(self._select_timer)
+                self._select_timer = None
+            except Exception:
+                pass
+        self.edit()
 
     def _changed(self):
         if self.on_change:
@@ -161,30 +182,29 @@ class AthletesPanel(tk.Frame):
         dlg = AthleteDialog(self.winfo_toplevel(), "Редактирование спортсмена",
                             data=full)
         self.wait_window(dlg)
-        if not dlg.result:
-            return
-        d = dlg.result
+        if dlg.result:
+            d = dlg.result
+            session = self._session()
+            try:
+                a = session.get(Athlete, cur[0])
+                if a is not None:
+                    a.last_name = d["last_name"]
+                    a.first_name = d["first_name"]
+                    a.middle_name = d["middle_name"]
+                    a.gender = d["gender"]
+                    a.birth_date = d["birth_date"]
+                    a.height_cm = d["height_cm"]
+                    a.weight_kg = d["weight_kg"]
+                    a.polar_id = d["polar_id"] or full["polar_id"]
+                    session.commit()
+            except Exception as e:
+                session.rollback()
+                messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{e}")
+            finally:
+                session.close()
 
-        session = self._session()
-        try:
-            a = session.get(Athlete, cur[0])
-            if a is None:
-                return
-            a.last_name = d["last_name"]
-            a.first_name = d["first_name"]
-            a.middle_name = d["middle_name"]
-            a.gender = d["gender"]
-            a.birth_date = d["birth_date"]
-            a.height_cm = d["height_cm"]
-            a.weight_kg = d["weight_kg"]
-            a.polar_id = d["polar_id"] or full["polar_id"]
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{e}")
-        finally:
-            session.close()
-
+        # После закрытия диалога — всегда выбираем кликнутого атлета
+        # и перезагружаем его данные на графиках
         self.reload(select_id=cur[0])
         self._changed()
 

@@ -84,12 +84,20 @@ class AppOrchestrator:
     # ================= Публичные методы =================
 
     def sync_athlete(self, aid):
+        """Смена атлета с сохранением текущего масштаба (или полного диапазона)."""
         saved = self._saved_range
         self.heatmap.athlete = aid
         self.charts.athlete = aid
-        if saved:
+    
+        if saved is not None:
+            # Если был установлен конкретный зум, применяем его
             self.charts.zoom = saved
-            self.charts.redraw()
+        else:
+            # Если был сброшен на полный диапазон (ПКМ), явно указываем это графикам
+            for p in self.charts._plots:
+                p.view = None
+            
+        self.charts.redraw()
 
     def restore_state(self, saved_athlete_id, saved_year, saved_week, saved_zoom):
         if saved_zoom and len(saved_zoom) == 2 and saved_zoom[0] and saved_zoom[1]:

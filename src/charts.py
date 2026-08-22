@@ -128,12 +128,7 @@ class ChartsPanel(tk.Frame):
 
     @zoom.setter
     def zoom(self, view):
-        if self._plots:
-            p0 = self._plots[0]
-            if p0._start is not None or p0._end is not None:
-                p0._start = p0._end = None
-                for p in self._plots:
-                    p._reload()
+        """Установить масштаб без лишней перезагрузки данных."""
         self._apply_zoom(view)
 
     def redraw(self):

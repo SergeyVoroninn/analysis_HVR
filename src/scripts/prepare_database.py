@@ -7,6 +7,7 @@ import os
 import random
 import sys
 import shutil
+import datetime 
 
 from sqlalchemy import insert, func
 
@@ -101,7 +102,8 @@ def prepare_database(config_path="config.yaml"):
                 "first_name":          athlete["first_name"],
                 "middle_name":         athlete["middle_name"],
                 "gender":              athlete["gender"],
-                "birth_date":          athlete["birth_date"],
+                # ИСПРАВЛЕНО: преобразуем строку 'YYYY-MM-DD' в объект datetime.date
+                "birth_date":          datetime.date.fromisoformat(athlete["birth_date"]) if isinstance(athlete["birth_date"], str) else athlete["birth_date"],
                 "height_cm":           athlete["height_cm"],
                 "weight_kg":           athlete["weight_kg"],
                 "resting_hr":          athlete["resting_hr"],
