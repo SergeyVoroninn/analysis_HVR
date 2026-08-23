@@ -46,7 +46,7 @@ SDNN, RMSSD, индекса стресса, тепловые карты и гр�
 
 | Библиотека | Назначение | Установка |
 | --- | --- | --- |
-| `pytest` | Автотесты | `pip install pytest` |
+| `pytest`, `pytest-cov`, `pytest-mock` | Автотесты | `pip install -r requirements-test.txt` |
 | `pyinstaller` | Сборка в `AnalysisHVR.exe` | `pip install pyinstaller` |
 | `pillow` | Прозрачный фон логотипа в заставке (необязательно) | `pip install pillow` |
 
@@ -232,7 +232,7 @@ analysis_HVR\src\
         test_calendar.py           Тесты календаря (DateEntry) в диалоге атлета
         test_chart_right_click.py  Интеграция: ПКМ по графику → сброс масштаба
         test_ghost_resize.py       Адаптивный ресайз виджетов (ResizeController)
-        test_metricplot.py         Клик, двойной клик, ПКМ, панорамирование на графиках
+        test_metricplot.py         Клик, ПКМ, колесо, панорамирование на графиках
         test_orchestrator.py       Сохранение/восстановление масштаба, смена атлета, полный цикл save/restore
         test_reference_ecg.py      Импорт эталонной ЭКГ в базу и сверка метрик с etalons.json
         test_timeframe.py          Подбор таймфрейма, зебра, границы лет
@@ -905,7 +905,7 @@ src/
     ├── test_calendar.py              # календарь DateEntry: базовые операции + устойчивость GUI при смене месяца/года
     ├── test_chart_right_click.py     # ПКМ по графику → on_reset → сброс масштаба ровно на диапазон данных
     ├── test_ghost_resize.py          # ResizeController: защита от зацикливания ресайза
-    ├── test_metricplot.py            # жесты MetricPlot: клик, двойной клик, ПКМ, колесо, панорамирование
+    ├── test_metricplot.py            # жесты MetricPlot: клик, ПКМ, колесо, панорамирование (двойной клик игнорируется)
     ├── test_orchestrator.py          # оркестратор: сохранение/восстановление масштаба, смена атлета, save/restore
     ├── test_reference_ecg.py         # сверка метрик с эталонной записью Polar H10 (Омега.Диагностика)
     ├── test_timeframe.py             # подбор таймфрейма баров (MIN5/HOUR1/…), зебра, границы лет
@@ -952,7 +952,7 @@ python -m pytest tests/test_timeframe.py -v            # таймфреймы
 | `test_calendar.py` | 2 | DateEntry: начальная/программная дата, открытие/закрытие dropdown, календарь не исчезает при клике на заголовок месяца |
 | `test_chart_right_click.py` | 1 | ПКМ по графику → оркестратор вызывает `on_reset`, график сбрасывает масштаб ровно на диапазон данных |
 | `test_ghost_resize.py` | 4 | `ResizeController`: защита от зацикливания ресайза (settle/poll, перерисовка не чаще нужного) |
-| `test_metricplot.py` | 18 | Клик/двойной клик/ПКМ/колесо/панорамирование на графике: вызовы `on_single_click`, `on_reset`, `_commit_view` |
+| `test_metricplot.py` | 18 | Клик/ПКМ/колесо/панорамирование на графике: вызовы `on_single_click`, `on_reset`, `_commit_view` (двойной клик намеренно игнорируется) |
 | `test_orchestrator.py` | 13 | Сохранение/восстановление масштаба, `zoom`, `sync_athlete`, полный цикл save/restore, колбэки heatmap |
 | `test_reference_ecg.py` | 1 | Импорт эталонной Polar H10 и сверка RMSSD, индекса стресса, TP с `etalons.json` (Омега.Диагностика) |
 | `test_timeframe.py` | 10 | Подбор таймфрейма баров по span (MIN5/HOUR1/…), зебра, границы лет |
@@ -1010,10 +1010,12 @@ build.bat --fast   ← только сборка (если тесты уже п�
 | --- | --- |
 | `--onedir` | Папка с exe + файлами (быстрый старт, проще отлаживать) |
 | `--windowed` | Без чёрного окна консоли |
+| `--paths scripts` | Путь поиска модулей (скрипты генерации) |
 | `--add-data "logo21.png;."` | Логотип внутрь сборки |
 | `--add-data "scripts\ecg_profiles.yaml;."` | Профили ЭКГ внутрь сборки |
+| `--add-data "scripts\config.yaml;."` | Конфиг генерации внутрь сборки |
 | `--collect-all customtkinter` | Темы и шрифты customtkinter |
-| `--hidden-import ...` | Модули, которые PyInstaller не нашёл сам |
+| `--hidden-import ...` | Модули, которые PyInstaller не нашёл сам (splash, theme, dialogs, models, tkcalendar, babel и др.) |
 
 ### Результат
 
