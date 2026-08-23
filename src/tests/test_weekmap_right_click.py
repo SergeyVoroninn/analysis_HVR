@@ -18,9 +18,9 @@ from orchestrator import AppOrchestrator
 from heatmap import Heatmap
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def tk_root():
-    """Фикстура для надежного создания и уничтожения Tk-окна в тестах."""
+    """Фикстура для надежного создания и уничтожения Tk-окна в тестах (один экземпляр на весь модуль)."""
     root = tk.Tk()
     root.withdraw()  # Скрываем окно, чтобы не мешало
     yield root

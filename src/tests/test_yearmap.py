@@ -1,4 +1,7 @@
-"""Тесты кликов по yearmap: одинарный/двойной/ПКМ, заполненные/пустые недели."""
+"""
+Тесты кликов по yearmap: одинарный, двойной, ПКМ, заполненные/пустые недели.
+Проверяет реальное поведение и синхронизацию с оркестратором.
+"""
 import datetime
 import os
 import sys
@@ -22,11 +25,14 @@ def yearmap():
     wm._week = None
     wm._year_start = datetime.date(2026, 1, 1) - datetime.timedelta(days=datetime.date(2026, 1, 1).weekday())
     wm.db_path = ""
+    
+    # Колбэки
     wm.on_week_pick = Mock()
     wm.on_week_dbl = Mock()
     wm.on_year_zoom = Mock()
     wm.on_month_zoom = Mock()
     wm.on_year_change = Mock()
+    
     wm._date_map = {
         "2026-08-17": {"count": 1, "worst": None},
         "2026-08-19": {"count": 3, "worst": None},
@@ -36,11 +42,15 @@ def yearmap():
     wm._cells = [Mock() for _ in range(53 * 7)]
     wm._colors = [None] * (53 * 7)
     wm._month_labels = [Mock() for _ in range(12)]
+    
+    # Состояние кликов
     wm._click_t = 0.0
     wm._click_w = -1
     wm._single_timer = None
-    # yearmap — tk.Canvas, нужен after
+    
+    # Методы Tkinter
     wm.after = Mock(return_value="timer_123")
+    wm.after_cancel = Mock()
     wm.coords = Mock()
     wm.delete = Mock()
     wm.itemconfigure = Mock()
@@ -51,22 +61,44 @@ def yearmap():
 
 
 def _fire_single_now(yearmap, monday):
+    """Прямой вызов для проверки payload колбэка."""
     yearmap._fire_week_pick(monday)
+
+
+def _simulate_click(yearmap, w, time_offset=0.0):
+    """Симулирует событие клика в _on_click."""
+    x = X0 + w * yearmap._step + yearmap._cell // 2
+    y = Y0 + 3 * yearmap._step + yearmap._cell // 2
+    event = Mock()
+    event.x = x
+    event.y = y
+    
+    yearmap._click_t = _time.monotonic() - time_offset
+    yearmap._click_w = w
+    # Не сбрасываем _single_timer, чтобы тесты могли управлять им
+    
+    yearmap._on_click(event)
 
 
 # ======================== ОДИНАРНЫЙ КЛИК ========================
 
-def test_single_click_filled_week(yearmap):
-    """Одинарный клик по неделе с данными → on_week_pick(monday)."""
+def test_single_click_schedules_timer(yearmap):
+    """Одинарный клик планирует вызов on_week_pick через 300 мс."""
+    _simulate_click(yearmap, w=33, time_offset=1.0) # 1 сек назад = новый клик
+    yearmap.after.assert_called_once()
+    args, _ = yearmap.after.call_args
+    assert args[0] == 300  # Задержка 300 мс
+
+def test_single_click_filled_week_payload(yearmap):
+    """Одинарный клик по неделе с данными → корректный payload."""
     monday = datetime.date(2026, 8, 17)
     _fire_single_now(yearmap, monday)
     yearmap.on_week_pick.assert_called_once()
     w, d = yearmap.on_week_pick.call_args[0]
     assert d == monday
 
-
-def test_single_click_empty_week(yearmap):
-    """Одинарный клик по пустой неделе → on_week_pick всё равно вызывается с monday."""
+def test_single_click_empty_week_payload(yearmap):
+    """Одинарный клик по пустой неделе → корректный payload."""
     monday = datetime.date(2026, 9, 14)
     _fire_single_now(yearmap, monday)
     yearmap.on_week_pick.assert_called_once()
@@ -74,60 +106,69 @@ def test_single_click_empty_week(yearmap):
     assert d == monday
 
 
-# ======================== ДВОЙНОЙ КЛИК (через _on_click) ========================
-
-def _double_click(yearmap, w):
-    x = X0 + w * yearmap._step + yearmap._cell // 2
-    event = Mock()
-    event.x = x
-    event.y = Y0 + 3 * yearmap._step + yearmap._cell // 2
-    yearmap._click_t = _time.monotonic()
-    yearmap._click_w = w
-    yearmap._single_timer = None
-    yearmap._on_click(event)
-
+# ======================== ДВОЙНОЙ КЛИК ========================
 
 def test_double_click_filled_week(yearmap):
-    """Двойной клик по неделе → on_week_dbl(week, monday), НЕ on_week_pick."""
-    _double_click(yearmap, w=33)  # 33-я неделя ≈ 17.08.2026
+    """Двойной клик по неделе → on_week_dbl, НЕ on_week_pick."""
+    _simulate_click(yearmap, w=33, time_offset=0.1) # 0.1 сек назад = двойной клик
     yearmap.on_week_dbl.assert_called_once()
     w, monday = yearmap.on_week_dbl.call_args[0]
     assert 0 <= w <= 52
     assert isinstance(monday, datetime.date)
     yearmap.on_week_pick.assert_not_called()
 
-
 def test_double_click_empty_week(yearmap):
     """Двойной клик по пустой неделе → on_week_dbl."""
-    _double_click(yearmap, w=50)
+    _simulate_click(yearmap, w=50, time_offset=0.1)
     yearmap.on_week_dbl.assert_called_once()
     yearmap.on_week_pick.assert_not_called()
 
-
-def test_double_click_does_not_trigger_single(yearmap):
-    """Двойной клик не вызывает on_week_pick (таймер отменён)."""
-    _double_click(yearmap, w=0)
+def test_double_click_cancels_single_timer(yearmap):
+    """Двойной клик отменяет таймер одинарного клика."""
+    yearmap._single_timer = "prev_timer"
+    _simulate_click(yearmap, w=0, time_offset=0.1)
+    yearmap.after_cancel.assert_called_once_with("prev_timer")
     yearmap.on_week_dbl.assert_called_once()
     yearmap.on_week_pick.assert_not_called()
+
+def test_slow_second_click_is_new_single(yearmap):
+    """Если между кликами прошло > 0.45 сек, это считается новым одинарным кликом."""
+    yearmap.after.reset_mock()
+    _simulate_click(yearmap, w=0, time_offset=1.0)
+    yearmap.after.assert_called()
+    yearmap.on_week_dbl.assert_not_called()
 
 
 # ======================== ПКМ ========================
 
-def test_right_click_sets_year_zoom(yearmap):
-    """ПКМ по yearmap → on_year_zoom(start, end) на весь год."""
+def test_right_click_syncs_week_and_zoom(yearmap):
+    """
+    ПКМ по yearmap:
+    1. Устанавливает зум на весь год (on_year_zoom).
+    2. Синхронизирует неделю (on_week_pick), чтобы обновить weekmap и оркестратор.
+    """
     x = X0 + 30 * yearmap._step + yearmap._cell // 2
     y = Y0 + 3 * yearmap._step + yearmap._cell // 2
     event = Mock()
     event.x = x
     event.y = y
+    
     yearmap._on_right_click(event)
+    
+    # Проверка зума на год
     yearmap.on_year_zoom.assert_called_once()
     s, e = yearmap.on_year_zoom.call_args[0]
     assert s == datetime.date(2026, 1, 1)
     assert e == datetime.date(2026, 12, 31)
+    
+    # Проверка синхронизации недели (КРИТИЧНО для работы оркестратора)
+    yearmap.on_week_pick.assert_called_once()
+    w, monday = yearmap.on_week_pick.call_args[0]
+    assert w == 30
+    assert isinstance(monday, datetime.date)
 
 
-# ======================== КОЛЕСО ========================
+# ======================== КОЛЕСО И КРАЙНИЕ СЛУЧАИ ========================
 
 def test_wheel_changes_year(yearmap):
     """Колесо мыши → on_year_change(delta)."""
@@ -142,9 +183,6 @@ def test_wheel_changes_year(yearmap):
     yearmap._on_wheel(event)
     yearmap.on_year_change.assert_called_with(-1)
 
-
-# ======================== КРАЙНИЕ СЛУЧАИ ========================
-
 def test_click_outside_grid(yearmap):
     """Клик вне сетки → ничего не вызывается."""
     yearmap.on_week_pick.reset_mock()
@@ -156,9 +194,8 @@ def test_click_outside_grid(yearmap):
     yearmap.on_week_pick.assert_not_called()
     yearmap.on_week_dbl.assert_not_called()
 
-
 def test_click_no_year(yearmap):
-    """Без года → monday=None → on_week_pick может не сработать корректно."""
+    """Без года → monday=None → on_week_pick вызывается с None."""
     yearmap._year_start = None
     yearmap.on_week_pick.reset_mock()
     _fire_single_now(yearmap, None)
@@ -166,12 +203,13 @@ def test_click_no_year(yearmap):
     _, d = yearmap.on_week_pick.call_args[0]
     assert d is None
 
-
 def test_right_click_outside_grid(yearmap):
-    """ПКМ вне сетки → on_year_zoom не вызывается."""
+    """ПКМ вне сетки → on_year_zoom и on_week_pick не вызываются."""
     yearmap.on_year_zoom.reset_mock()
+    yearmap.on_week_pick.reset_mock()
     event = Mock()
     event.x = -10
     event.y = -10
     yearmap._on_right_click(event)
     yearmap.on_year_zoom.assert_not_called()
+    yearmap.on_week_pick.assert_not_called()
