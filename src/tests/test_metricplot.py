@@ -224,3 +224,19 @@ def test_release_clears_pan(plot):
     plot._pan = (100, 100.0, 200.0)
     plot._on_release(_event())
     assert plot._pan is None
+
+def test_motion_cancels_single_click_timer(plot):
+    """Панорамирование (движение мыши) должно немедленно отменять таймер одинарного клика."""
+    # 1. Имитируем нажатие (таймер установлен)
+    plot._on_press(_event(button=1, xdata=738000, x=150, y=100))
+    assert plot._single_timer is not None, "Таймер должен быть установлен при нажатии"
+    
+    # Сохраняем ID таймера для проверки
+    timer_id = plot._single_timer
+
+    # 2. Имитируем движение мыши (начало панорамирования)
+    plot._on_motion(_event(button=1, x=200))
+    
+    # 3. Проверяем, что таймер был отменен и переменная обнулена
+    plot.after_cancel.assert_called_once_with(timer_id)
+    assert plot._single_timer is None, "Таймер должен быть обнулен после начала движения"

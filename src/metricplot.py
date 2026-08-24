@@ -306,6 +306,12 @@ class MetricPlot(tk.Frame):
     def _on_motion(self, event):
         if self._pan is None or event.button != 1:
             return
+        
+        # КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: если началось движение, отменяем таймер клика
+        if self._single_timer is not None:
+            self.after_cancel(self._single_timer)
+            self._single_timer = None
+            
         x0, lo0, hi0 = self._pan
         width_px = self.ax.get_window_extent().width
         if width_px <= 1:
