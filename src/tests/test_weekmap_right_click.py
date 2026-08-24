@@ -5,11 +5,10 @@
 import datetime
 import os
 import sys
-import tkinter as tk
 import pytest
 from unittest.mock import MagicMock, Mock
 
-PROJECT_DIR = r"C:\s21\projects\analysis_HVR\src"
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
@@ -18,29 +17,18 @@ from orchestrator import AppOrchestrator
 from heatmap import Heatmap
 
 
-@pytest.fixture(scope="module")
-def tk_root():
-    """Фикстура для надежного создания и уничтожения Tk-окна в тестах (один экземпляр на весь модуль)."""
-    root = tk.Tk()
-    root.withdraw()  # Скрываем окно, чтобы не мешало
-    yield root
-    try:
-        root.destroy()
-    except tk.TclError:
-        pass  # Игнорируем ошибки, если окно уже уничтожено
-
-
-def test_weekmap_right_click_sync_and_persistence(tk_root):
+# Используем общую фикстуру gui_root из conftest.py
+def test_weekmap_right_click_sync_and_persistence(gui_root):
     """
     Сценарий:
     1. Инициализируем Heatmap (yearmap + weekmap) и Charts.
-    2. Устанавливаем weekmap на конкретную неделю (например, 15-ю неделю 2024 года).
-    3. Делаем ПКМ по weekmap → должен установиться zoom на эту неделю (7 дней) и курсор yearmap.
+    2. Устанавливаем weekmap на конкретную неделю (15-я неделя 2024 года).
+    3. Делаем ПКМ по weekmap → zoom на неделю (7 дней) + курсор yearmap.
     4. Проверяем синхронизацию.
     5. Переключаемся на другого атлета.
     6. Проверяем, что ВСЕ состояния НЕ "уплыли".
     """
-    root = tk_root  # Используем фикстуру вместо tk.Tk()
+    root = gui_root
 
     # 1. Создаем составной виджет Heatmap и Charts
     heatmap = Heatmap(root, db_path=":memory:")
@@ -56,8 +44,7 @@ def test_weekmap_right_click_sync_and_persistence(tk_root):
     heatmap.year = 2024
     heatmap.year_map._recalc_year()
     
-    # Устанавливаем weekmap на 15-ю неделю 2024 года
-    # 15-я неделя 2024: понедельник = 8 апреля 2024
+    # Устанавливаем weekmap на 15-ю неделю 2024 года (понедельник = 8 апреля 2024)
     week_15_monday = datetime.date(2024, 4, 8)
     heatmap.week_map.week_start = week_15_monday
     
@@ -73,7 +60,7 @@ def test_weekmap_right_click_sync_and_persistence(tk_root):
 
     # 3. Симулируем ПКМ по weekmap
     event = Mock()
-    event.x = 50  # Координаты не важны, weekmap берет всю текущую неделю
+    event.x = 50
     event.y = 50
     
     heatmap.week_map._on_week_rmb_click(event)
@@ -98,11 +85,11 @@ def test_weekmap_right_click_sync_and_persistence(tk_root):
     assert heatmap.year_map.week == expected_yearmap_week, \
         f"yearmap.week должен быть {expected_yearmap_week}, получено {heatmap.year_map.week}"
     
-    # C. week_start в weekmap не изменился (он уже был установлен)
+    # C. week_start в weekmap не изменился
     assert heatmap.week_map.week_start == expected_week_start, \
         f"weekmap.week_start должен остаться {expected_week_start}, получено {heatmap.week_map.week_start}"
 
-    # Сохраняем состояние, как это делает оркестратор при изменении диапазона
+    # Сохраняем состояние, как это делает оркестратор
     orchestrator._saved_range = zoom
 
     # 4. Переключаемся на Атлета Б (тоже 2024 год)
@@ -134,22 +121,3 @@ def test_weekmap_right_click_sync_and_persistence(tk_root):
         f"weekmap.week_start должен остаться {expected_week_start}, получено {heatmap.week_map.week_start}"
 
     print("✅ Тест пройден: ПКМ по weekmap синхронизирует zoom и yearmap, и состояние сохраняется")
-
-
-if __name__ == "__main__":
-    print("\n" + "="*80)
-    print("ТЕСТ: ПКМ по weekmap, синхронизация yearmap и сохранение при смене атлетов")
-    print("="*80)
-    # Для запуска вне pytest создаем root вручную
-    root = tk.Tk()
-    root.withdraw()
-    try:
-        test_weekmap_right_click_sync_and_persistence(root)
-    finally:
-        try:
-            root.destroy()
-        except tk.TclError:
-            pass
-    print("\n" + "="*80)
-    print("ТЕСТ ЗАВЕРШЁН УСПЕШНО!")
-    print("="*80 + "\n")

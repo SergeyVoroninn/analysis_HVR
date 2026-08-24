@@ -9,7 +9,7 @@ import tkinter as tk
 from unittest.mock import MagicMock, patch
 import pytest
 
-PROJECT_DIR = r"C:\s21\projects\analysis_HVR\src"
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
@@ -48,55 +48,55 @@ class FakeBlock:
         pass
 
 
-@pytest.fixture(scope="module")
-def resize_env():
-    """Фикстура для создания окружения теста ресайза (один Tk на весь модуль)."""
-    root = tk.Tk()
-    root.geometry("500x500")
-    root.update_idletasks()
+@pytest.fixture
+def resize_env(gui_root):
+    """
+    Фикстура для создания окружения теста ресайза.
+    Каждый тест получает свежий контроллер с известным начальным состоянием.
+    """
+    root = gui_root
     
     block1 = FakeBlock("block1")
     block2 = FakeBlock("block2")
     
+    # Создаем НОВЫЙ контроллер для каждого теста
     controller = ResizeController(root, [block1, block2], gap=10)
     
-    yield root, controller, block1, block2
+    # Мокируем winfo_width, чтобы контроллер видел нужную ширину
+    # (реальное окно скрыто и winfo_width() возвращает неактуальные значения)
+    with patch.object(root, 'winfo_width', return_value=500):
+        # Принудительно инициализируем контроллер (первый вызов устанавливает _cur)
+        controller._on_configure(MagicMock(widget=root, width=500))
     
-    try:
-        root.destroy()
-    except tk.TclError:
-        pass
+    yield root, controller, block1, block2
 
 
 def test_resize_debounce_limits_redraws(resize_env):
     """
     Сценарий: 20 быстрых изменений ширины.
-    Ожидание: apply_size вызывается НЕ 20 раз (дебаунс работает), 
-    а значительно меньше (1-3 раза).
+    Ожидание: apply_size вызывается НЕ 20 раз (дебаунс работает).
     """
     root, controller, block1, block2 = resize_env
 
-    # Сбрасываем счетчики
+    # Сбрасываем счетчики после инициализации
     block1.apply_size_calls = 0
     block2.apply_size_calls = 0
 
     # Имитируем 20 быстрых изменений ширины БЕЗ зажатой мыши
-    with patch.object(controller, '_mouse_held', return_value=False):
-        for w in range(501, 522):
-            root.geometry(f"{w}x500")
-            root.update_idletasks()
-            
-            event = MagicMock()
-            event.widget = root
-            event.width = w
-            controller._on_configure(event)
+    with patch.object(root, 'winfo_width') as mock_width:
+        with patch.object(controller, '_mouse_held', return_value=False):
+            for w in range(501, 522):
+                mock_width.return_value = w
+                event = MagicMock()
+                event.widget = root
+                event.width = w
+                controller._on_configure(event)
 
     # Ждем оседания
     time.sleep(SETTLE_MS / 1000.0 + 0.2)
     root.update_idletasks()
 
     # КЛЮЧЕВАЯ ПРОВЕРКА: apply_size вызван значительно меньше 20 раз
-    # (в идеале 1-2 раза, но допускаем до 5 из-за асинхронности)
     assert block1.apply_size_calls < 10, \
         f"Дебаунс не работает! apply_size вызван {block1.apply_size_calls} раз вместо <10"
     
@@ -110,20 +110,17 @@ def test_resize_ghost_mode_blocks_apply(resize_env):
     """
     root, controller, block1, block2 = resize_env
 
-    # Сбрасываем счетчики
+    # Сбрасываем счетчики после инициализации
     block1.apply_size_calls = 0
     block1.ghost_shown_calls = 0
 
     # Имитируем ресайз с зажатой мышью
-    with patch.object(controller, '_mouse_held', return_value=True):
-        root.geometry("600x500")
-        root.update_idletasks()
-        
-        event = MagicMock()
-        event.widget = root
-        event.width = 600
-        controller._on_configure(event)
-        root.update_idletasks()
+    with patch.object(root, 'winfo_width', return_value=600):
+        with patch.object(controller, '_mouse_held', return_value=True):
+            event = MagicMock()
+            event.widget = root
+            event.width = 600
+            controller._on_configure(event)
 
     # Проверяем, что включился режим ghost и apply_size заблокирован
     assert block1.ghost_shown_calls >= 1, "ghost_shown должен быть вызван при зажатой мыши"
@@ -139,15 +136,16 @@ def test_resize_ignores_unchanged_width(resize_env):
     """
     root, controller, block1, block2 = resize_env
 
-    # Сбрасываем счетчики
+    # Сбрасываем счетчики после инициализации
     block1.target_size_calls = 0
 
-    with patch.object(controller, '_mouse_held', return_value=False):
-        # Отправляем событие с той же шириной
-        event = MagicMock()
-        event.widget = root
-        event.width = 600  # Текущая ширина после предыдущего теста
-        controller._on_configure(event)
+    with patch.object(root, 'winfo_width', return_value=500):
+        with patch.object(controller, '_mouse_held', return_value=False):
+            # Отправляем событие с той же шириной, что и при инициализации (500)
+            event = MagicMock()
+            event.widget = root
+            event.width = 500
+            controller._on_configure(event)
 
     # target_size не должен был вызываться
     assert block1.target_size_calls == 0, "Контроллер должен игнорировать неизменную ширину"
@@ -161,18 +159,15 @@ def test_resize_do_apply_direct(resize_env):
     """
     root, controller, block1, block2 = resize_env
 
-    # Сбрасываем счетчики
+    # Сбрасываем счетчики после инициализации
     block1.apply_size_calls = 0
     block2.apply_size_calls = 0
 
-    # Устанавливаем мышь в отпущенное состояние
-    with patch.object(controller, '_mouse_held', return_value=False):
-        # Меняем ширину
-        root.geometry("700x500")
-        root.update_idletasks()
-        
-        # Принудительно вызываем _do_apply
-        controller._do_apply()
+    # Устанавливаем мышь в отпущенное состояние и мокируем ширину
+    with patch.object(root, 'winfo_width', return_value=700):
+        with patch.object(controller, '_mouse_held', return_value=False):
+            # Принудительно вызываем _do_apply
+            controller._do_apply()
 
     # Проверяем, что размер применился
     assert block1.apply_size_calls == 1, "apply_size должен быть вызван после _do_apply"

@@ -8,7 +8,7 @@ import sys
 import tkinter as tk
 from unittest.mock import MagicMock
 
-PROJECT_DIR = r"C:\s21\projects\analysis_HVR\src"
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
