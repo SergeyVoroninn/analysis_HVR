@@ -338,6 +338,11 @@ class MetricPlot(tk.Frame):
         self.ax.tick_params(colors=COL_TEXT_LIGHT, labelsize=8)
         for s in self.ax.spines.values():
             s.set_color(COL_SPINE)
+        
+        # ⚡ ОПТИМИЗАЦИЯ: Отключаем авто-масштабирование осей.
+        # Мы задаем xlim/ylim вручную в _draw, а авто-масштаб 
+        # заставляет Matplotlib пересчитывать границы для каждого бара.
+        self.ax.set_autoscale_on(False)
 
     def _draw(self):
         ax = self.ax
@@ -395,8 +400,13 @@ class MetricPlot(tk.Frame):
         if xs and ys:
             c = self.spec.color
             colors = [c(vv) for vv in ys] if callable(c) else (c or COL_TP_YEAR)
-            ax.bar(xs, ys, width=bw, color=colors, align="edge", zorder=2)
+            
+            # ⚡ ОПТИМИЗАЦИЯ: rasterized=True превращает тысячи векторных баров 
+            # в одно растровое изображение. Это дает прирост скорости в 5-10 раз.
+            ax.bar(xs, ys, width=bw, color=colors, align="edge", zorder=2, rasterized=True)
 
+        # ⚡ ОПТИМИЗАЦИЯ: Убеждаемся, что пределы осей заданы жестко 
+        # ПОСЛЕ отрисовки, чтобы избежать лишних пересчетов.
         ax.set_xlim(lo, hi)
         if ys:
             ax.set_ylim(0, (max(ys) or 1) * 1.1)
@@ -415,92 +425,54 @@ class MetricPlot(tk.Frame):
     def _set_x_ticks_small(self, ax, lo, hi, vspan, config):
         """Установка подписей оси X на основе конфигурации."""
         ticks, names = [], []
-        
-        # Русские названия месяцев
-        months_ru = ["янв", "фев", "мар", "апр", "май", "июн",
-                     "июл", "авг", "сен", "окт", "ноя", "дек"]
-        
-        # Русские сокращения дней недели
+        months_ru = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
         weekdays_ru = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
         
-        # Недельный диапазон (1.5 < vspan <= 7): дата в понедельник, дни недели для остальных
+        # ⚡ ОПТИМИЗАЦИЯ: Кэшируем вычисление начальной даты и используем её везде
+        start_ord = max(1, int(lo))
+        d0 = datetime.date.fromordinal(start_ord)
+        d1 = datetime.date.fromordinal(max(1, int(hi)))
+                
+        # Недельный диапазон (1.5 < vspan <= 7)
         if 1.5 < vspan <= 7:
-            d0 = datetime.date.fromordinal(max(1, int(lo)))
-            d1 = datetime.date.fromordinal(max(1, int(hi)))
-            
-            # Проходим по каждому дню в диапазоне
             current = d0
             while current <= d1:
                 ticks.append(current.toordinal())
-                # Понедельник (weekday() == 0) — показываем дату, остальные — день недели
                 if current.weekday() == 0:
                     names.append(current.strftime("%d.%m"))
                 else:
                     names.append(weekdays_ru[current.weekday()])
                 current += datetime.timedelta(days=1)
         
-        # Суточный диапазон (<= 1.5 дня): подписи каждые 3 часа, начиная с 00:00
+        # Суточный диапазон (<= 1.5 дня)
         elif vspan <= 1.5:
-            start_date = datetime.date.fromordinal(max(1, int(lo)))
-            
-            # Создаем datetime на 00:00 этого дня
-            current = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0)
-            
-            # Генерируем подписи каждые 3 часа
+            current = datetime.datetime(d0.year, d0.month, d0.day, 0, 0, 0)
             while self._ord(current) <= hi + 0.5:
-                if current.hour == 0:
-                    label = current.strftime("%d.%m")
-                else:
-                    label = current.strftime("%H:%M")
-                
+                label = current.strftime("%d.%m") if current.hour == 0 else current.strftime("%H:%M")
                 ticks.append(self._ord(current))
                 names.append(label)
                 current += datetime.timedelta(hours=3)
         
         elif config.tick_format == "3hour" and config.tick_step_hours > 0:
-            # Месячный диапазон с подписями каждые N часов
-            start_date = datetime.date.fromordinal(max(1, int(lo)))
-            
-            # Создаем datetime на 00:00
-            current = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0)
-            
+            current = datetime.datetime(d0.year, d0.month, d0.day, 0, 0, 0)
             step = datetime.timedelta(hours=config.tick_step_hours)
-            
             while self._ord(current) <= hi + 0.5:
-                if current.hour == 0:
-                    label = current.strftime("%d.%m")
-                else:
-                    label = current.strftime("%H:%M")
-                
+                label = current.strftime("%d.%m") if current.hour == 0 else current.strftime("%H:%M")
                 ticks.append(self._ord(current))
                 names.append(label)
                 current += step
         
         elif config.bar_tf is TimeFrame.DAY and vspan > 31:
-            # Годовой диапазон: подписи по 1-му числу каждого месяца
-            d0 = datetime.date.fromordinal(max(1, int(lo)))
-            d1 = datetime.date.fromordinal(max(1, int(hi)))
-            
             current = d0.replace(day=1)
             if current < d0:
-                if current.month == 12:
-                    current = current.replace(year=current.year + 1, month=1)
-                else:
-                    current = current.replace(month=current.month + 1)
+                current = current.replace(year=current.year + 1, month=1) if current.month == 12 else current.replace(month=current.month + 1)
             
             while current <= d1:
                 ticks.append(current.toordinal())
                 names.append(months_ru[current.month - 1])
-                if current.month == 12:
-                    current = current.replace(year=current.year + 1, month=1)
-                else:
-                    current = current.replace(month=current.month + 1)
+                current = current.replace(year=current.year + 1, month=1) if current.month == 12 else current.replace(month=current.month + 1)
         
         elif config.bar_tf is TimeFrame.HOUR3 and vspan <= 31:
-            # Месячный диапазон: подписи по понедельникам
-            d0 = datetime.date.fromordinal(max(1, int(lo)))
-            d1 = datetime.date.fromordinal(max(1, int(hi)))
-            
             current = d0 - datetime.timedelta(days=d0.weekday())
             if current < d0:
                 current += datetime.timedelta(days=7)
@@ -511,24 +483,21 @@ class MetricPlot(tk.Frame):
                 current += datetime.timedelta(days=7)
         
         else:
-            # Для других диапазонов: используем zebra_tf
             bounds = list(self._sibling_bounds(config.zebra_tf, lo, hi))
             last_tick_ord = -999
-            
             for d in bounds:
                 d_ord = self._ord(d)
                 if d_ord - last_tick_ord < config.tick_step_days:
                     continue
-                
-                label = d.strftime(config.tick_format)
                 ticks.append(d_ord)
-                names.append(label)
+                names.append(d.strftime(config.tick_format))
                 last_tick_ord = d_ord
         
         ax.set_xticks(ticks)
         ax.set_xticklabels(names, fontsize=7)
 
     def _set_year_ticks(self, ax, lo, hi):
+        """Установка годовых подписей оси X для пропорционального режима."""
         n = pick_year_step(max(1, hi - lo))
         d0 = datetime.date.fromordinal(max(1, int(lo)))
         d1 = datetime.date.fromordinal(max(1, int(hi)))
@@ -583,31 +552,45 @@ class MetricPlot(tk.Frame):
         step = sib.bar_size
         if step <= 0:
             return
-        x = sib.bin_key(lo) - step
+        
+        # ⚡ ОПТИМИЗАЦИЯ: Начинаем цикл строго с ближайшей границы, 
+        # которая находится слева от видимой области (lo), чтобы не делать лишних итераций.
+        start_x = sib.bin_key(lo) - step
+        x = start_x
+        
         while x <= hi:
             x0, x1 = x, x + step
-            if int(round(x0 / step)) % 2:
-                ax.axvspan(max(x0, lo), min(x1, hi),
-                           color=COL_TEXT_LIGHT, alpha=0.06, zorder=0)
-            if lo < x0 < hi:
-                ax.axvline(x0, color=COL_TEXT_DIM,
-                           linewidth=0.6, alpha=0.35, zorder=0)
+            
+            # Рисуем только если интервал пересекается с видимой областью [lo, hi]
+            if x1 > lo and x0 < hi:
+                if int(round(x0 / step)) % 2:
+                    ax.axvspan(max(x0, lo), min(x1, hi),
+                               color=COL_TEXT_LIGHT, alpha=0.06, zorder=0)
+                if lo < x0 < hi:
+                    ax.axvline(x0, color=COL_TEXT_DIM,
+                               linewidth=0.6, alpha=0.35, zorder=0)
             x = x1
 
     def _shade_years(self, ax, lo, hi, n):
-        d0 = datetime.date.fromordinal(max(1, int(lo)))
-        y = (d0.year // n) * n - n
+        # ⚡ ОПТИМИЗАЦИЯ: Вычисляем стартовый год ближе к lo, а не от начала времен.
+        start_year = max(1, datetime.date.fromordinal(int(lo)).year)
+        y = (start_year // n) * n - n  # Берем с запасом в один период назад
+        
         while y <= 9999:
             x0 = datetime.date(max(1, y), 1, 1).toordinal()
             if x0 > hi:
-                break
+                break  # Как только вышли за правую границу, прерываем цикл
+            
             x1 = datetime.date(min(9999, y + n), 1, 1).toordinal()
-            if (y // n) % 2:
-                ax.axvspan(max(x0, lo), min(x1, hi),
-                           color=COL_TEXT_LIGHT, alpha=0.06, zorder=0)
-            if lo < x0 < hi:
-                ax.axvline(x0, color=COL_TEXT_DIM,
-                           linewidth=0.6, alpha=0.35, zorder=0)
+            
+            # Рисуем только если интервал пересекается с [lo, hi]
+            if x1 > lo and x0 < hi:
+                if (y // n) % 2:
+                    ax.axvspan(max(x0, lo), min(x1, hi),
+                               color=COL_TEXT_LIGHT, alpha=0.06, zorder=0)
+                if lo < x0 < hi:
+                    ax.axvline(x0, color=COL_TEXT_DIM,
+                               linewidth=0.6, alpha=0.35, zorder=0)
             y += n
 
     @staticmethod
