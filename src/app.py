@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
     root = tk.Tk()
     root.withdraw()
-    root.report_callback_exception = lambda *a: None
+    # root.report_callback_exception = lambda *a: None
     root.title("Просмотр ЭКГ — анализ ВСР (вариабельность сердечного ритма)")
     root.geometry("1400x800")
     root.configure(bg=COL_BG_DARK)

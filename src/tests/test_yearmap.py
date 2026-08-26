@@ -213,3 +213,48 @@ def test_right_click_outside_grid(yearmap):
     yearmap._on_right_click(event)
     yearmap.on_year_zoom.assert_not_called()
     yearmap.on_week_pick.assert_not_called()
+
+def test_yearmap_mouse_wheel_integration(gui_root):
+    """
+    Интеграционный тест: прокрутка колеса над yearmap должна уведомлять Оркестратора.
+    Проверяет, что виджет правильно делегирует событие, а не меняет состояние сам.
+    """
+    from heatmap import Heatmap
+    from unittest.mock import Mock
+    import time as _time
+
+    # Создаем реальный виджет Heatmap
+    hm = Heatmap(gui_root, db_path=":memory:")
+    hm.pack(fill="both", expand=True)
+    gui_root.update()
+    
+    initial_year = hm.year_map.year
+    
+    # Создаем мок для имитации Оркестратора
+    mock_orchestrator = Mock()
+    hm.on_year_change = mock_orchestrator
+
+    # 1. Эмулируем событие прокрутки колеса ВВЕРХ (delta > 0)
+    event_up = Mock()
+    event_up.delta = 120
+    hm.year_map._on_wheel(event_up)
+    gui_root.update()
+    
+    # Проверяем, что Оркестратор был уведомлен с delta=1
+    mock_orchestrator.assert_called_once_with(1)
+    
+    # Год НЕ должен был измениться локально (это делает Оркестратор)
+    assert hm.year_map.year == initial_year, \
+        f"Год не должен меняться локально, было {initial_year}, стало {hm.year_map.year}"
+    
+    # ⚡ Сбрасываем блокировку колеса, чтобы второй вызов не был проигнорирован
+    hm.year_map._wheel_lock = 0.0
+    
+    # 2. Эмулируем прокрутку ВНИЗ (delta < 0)
+    event_down = Mock()
+    event_down.delta = -120
+    hm.year_map._on_wheel(event_down)
+    gui_root.update()
+    
+    # Проверяем, что Оркестратор был уведомлен с delta=-1
+    mock_orchestrator.assert_called_with(-1)

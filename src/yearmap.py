@@ -60,8 +60,13 @@ class YearHeatmap(tk.Canvas):
         self.on_week_dbl = None           # callback(week, monday) — двойной клик
 
         self.bind("<Button-1>", self._on_click)
-        self.bind("<Button-3>", self._on_right_click)  # НОВОЕ: ПКМ для зума на месяц
+        self.bind("<Button-3>", self._on_right_click)
         self.bind("<MouseWheel>", self._on_wheel)
+        
+        # ⚡ ИСПРАВЛЕНИЕ: Tkinter Canvas часто игнорирует колесо мыши, если у него нет фокуса.
+        # Эта строка заставляет канвас получать фокус при наведении курсора.
+        self.bind("<Enter>", lambda event: self.focus_set())
+        
         self._y_shift = None
 
     # ================= свойства =================
