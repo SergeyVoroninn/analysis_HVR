@@ -147,9 +147,28 @@ if __name__ == "__main__":
 
     saved_id = settings.get("athlete_id")
     panel.reload(select_id=saved_id)
-    panel.on_select = orchestrator.sync_athlete  # <-- ИСПРАВЛЕНО
     cur = panel.selected()
-    orchestrator.sync_athlete(cur[0] if cur else None)  # <-- ИСПРАВЛЕНО
+    
+    # Устанавливаем обработчик ДО синхронизации
+    panel.on_select = orchestrator.sync_athlete
+    
+    # Синхронизируем состояние
+    orchestrator.sync_athlete(cur[0] if cur else None)
+    
+    # Восстанавливаем масштаб и позицию (год, неделя)
+    orchestrator.restore_state(
+        saved_athlete_id=cur[0] if cur else None,
+        saved_year=settings.get("year"),
+        saved_week=settings.get("week"),
+        saved_zoom=settings.get("zoom")
+    )
+    
+    # ⚡ ИСПРАВЛЕНИЕ: Явно вызываем refresh, чтобы гарантировать загрузку данных.
+    # Это обходит любые "early returns" в сеттерах, которые могли сработать из-за 
+    # порядка вызовов при инициализации, и делает запуск идентичным ручному переключению.
+    hm.refresh()
+    charts.refresh()
+    
     root.update()
     
     # Восстанавливаем состояние heatmap и charts через оркестратор
