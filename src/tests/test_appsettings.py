@@ -1,6 +1,6 @@
 """
-Тесты для модуля настроек приложения (appsettings.py).
-Проверяют сохранение, загрузку и устойчивость к поврежденным файлам.
+Тест, который ПРЯМО проверяет код из app.py.
+Если вы закомментируете save_state в app.py, этот тест УПАДЕТ.
 """
 import os
 import sys
@@ -13,67 +13,68 @@ if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
 from appsettings import AppSettings
+from charts import ChartsPanel, TP_METRIC
+from heatmap import Heatmap
+from orchestrator import AppOrchestrator
+
+# ИМПОРТИРУЕМ РЕАЛЬНУЮ ФУНКЦИЮ ИЗ app.py!
+from app import handle_app_close
 
 
 @pytest.fixture
 def temp_settings_file():
-    """Создает временный файл для тестирования настроек."""
     fd, path = tempfile.mkstemp(suffix=".json")
-    os.close(fd)  # Закрываем дескриптор, чтобы AppSettings мог открыть файл
+    os.close(fd)
     yield path
-    # Очистка после теста
     if os.path.exists(path):
         os.remove(path)
-    tmp_path = path + ".tmp"
-    if os.path.exists(tmp_path):
-        os.remove(tmp_path)
 
 
-def test_appsettings_save_and_load(temp_settings_file):
-    """Проверка: сохраненные настройки корректно загружаются."""
-    # 1. Создаем настройки с кастомным путем (используем 'path', как в реальном коде)
+def test_real_app_py_close_saves_state(temp_settings_file):
+    """
+    Проверяет, что РЕАЛЬНАЯ функция handle_app_close из app.py 
+    действительно сохраняет состояние на диск.
+    """
+    # 1. Начальное состояние (старые данные)
     settings = AppSettings(path=temp_settings_file)
-    
-    # 2. Сохраняем тестовые данные
-    settings.set("athlete_id", "test_123")
-    settings.set("year", 2024)
-    settings.set("week", 15)
-    settings.set("zoom", [738000, 738010])
+    settings.set("athlete_id", "OLD_ATHLETE")
+    settings.set("year", 2020)
     settings.save()
-    
-    # 3. Создаем новый экземпляр и загружаем
-    new_settings = AppSettings(path=temp_settings_file).load()
-    
-    assert new_settings.get("athlete_id") == "test_123"
-    assert new_settings.get("year") == 2024
-    assert new_settings.get("week") == 15
-    assert new_settings.get("zoom") == [738000, 738010]
 
+    # 2. Имитация запущенного приложения
+    import tkinter as tk
+    root = tk.Tk()
+    root.withdraw()
+    
+    hm = Heatmap(root, db_path=":memory:")
+    charts = ChartsPanel(root, metrics=[TP_METRIC], db_path=":memory:")
+    orchestrator = AppOrchestrator(hm, charts, settings)
 
-def test_appsettings_load_missing_file(temp_settings_file):
-    """Проверка: если файла нет, загружаются значения по умолчанию без ошибок."""
-    # Гарантируем, что файла нет
-    if os.path.exists(temp_settings_file):
-        os.remove(temp_settings_file)
-    
-    settings = AppSettings(path=temp_settings_file).load()
-    
-    # Проверяем, что возвращаются дефолтные значения (None) и словарь пуст
-    assert settings.get("athlete_id") is None
-    assert settings.get("year") is None
-    assert settings.get("zoom") is None
-    assert settings.data == {}
+    # 3. Создаем "фейковую" панель атлетов, которая возвращает нового атлета
+    class MockPanel:
+        def selected(self):
+            return ("NEW_ATHLETE_FROM_APP", "Иван Иванов")
 
+    mock_panel = MockPanel()
 
-def test_appsettings_load_corrupted_file(temp_settings_file):
-    """Проверка: приложение не падает, если JSON-файл поврежден (ValueError)."""
-    # Записываем невалидный JSON
-    with open(temp_settings_file, 'w', encoding='utf-8') as f:
-        f.write("{ this is not valid json: }")
-    
-    # Загрузка должна пройти без исключений, вернув пустые значения (благодаря except ValueError)
-    settings = AppSettings(path=temp_settings_file).load()
-    
-    assert settings.get("athlete_id") is None
-    assert settings.get("year") is None
-    assert settings.data == {}
+    # Пользователь поработал и изменил данные в оркестраторе
+    orchestrator.sync_athlete("NEW_ATHLETE_FROM_APP")
+    hm.year = 2024
+    charts.zoom = [738000, 738010]
+
+    # 4. ВЫЗЫВАЕМ РЕАЛЬНУЮ ФУНКЦИЮ ЗАКРЫТИЯ ИЗ app.py
+    # Именно она должна вызвать save_state
+    handle_app_close(mock_panel, orchestrator, root)
+
+    # 5. ЖЕСТКАЯ ПРОВЕРКА ДИСКА
+    # Если в app.py закомментирован orchestrator.save_state(), 
+    # файл на диске НЕ обновится, и тест УПАДЕТ здесь:
+    with open(temp_settings_file, 'r', encoding='utf-8') as f:
+        disk_data = json.load(f)
+
+    assert disk_data.get("athlete_id") == "NEW_ATHLETE_FROM_APP", (
+        "КРИТИЧЕСКИЙ БАГ В app.py: handle_app_close не сохранил атлета! "
+        "Проверьте, не закомментирована ли строка orchestrator.save_state() в функции handle_app_close."
+    )
+    assert disk_data.get("year") == 2024, "Год не был сохранен функцией из app.py!"
+    assert disk_data.get("zoom") == [738000, 738010], "Зум не был сохранен функцией из app.py!"

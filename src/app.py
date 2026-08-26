@@ -22,6 +22,16 @@ from orchestrator import AppOrchestrator  # ИМПОРТ ОРКЕСТРАТОР�
 ATHLETES_COLUMN_FRACTION = 1 / 7
 ATHLETES_COLUMN_MIN = 150
 
+def handle_app_close(panel, orchestrator, root):
+    """
+    Реальная логика закрытия приложения.
+    Вынесена отдельно, чтобы её можно было протестировать.
+    """
+    cur = panel.selected()
+    # ⚠️ ЕСЛИ ВЫ ЗАКОММЕНТИРУЕТЕ ЭТУ СТРОКУ ЗДЕСЬ, ТЕСТ УПАДЕТ!
+    orchestrator.save_state(current_athlete_id=cur[0] if cur else None)
+    root.destroy()
+
 if __name__ == "__main__":
     settings = AppSettings().load()
 
@@ -184,12 +194,5 @@ if __name__ == "__main__":
     splash.close_splash()
     root.deiconify()
 
-    # ---------- сохранение при закрытии ----------
-    def on_close():
-        cur = panel.selected()
-        orchestrator.save_state(current_athlete_id=cur[0] if cur else None)
-        root.destroy()
-
-    root.protocol("WM_DELETE_WINDOW", on_close)
-
+    root.protocol("WM_DELETE_WINDOW", lambda: handle_app_close(panel, orchestrator, root))
     root.mainloop()
