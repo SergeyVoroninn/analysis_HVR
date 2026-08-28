@@ -25,8 +25,8 @@ def get_db_path(relative_path: Optional[str] = None, db_name: str = "ecg.db") ->
 
     # === ОБЫЧНЫЙ РЕЖИМ (python app.py или тесты) ===
     if relative_path is None:
-        # По умолчанию ищем ../data/ecg.db относительно директории src/
-        relative_path = f"../data/{db_name}"
+        # По умолчанию ищем data/ecg.db относительно директории src/
+        relative_path = f"data/{db_name}"
 
     if os.path.isabs(relative_path):
         return os.path.normpath(relative_path)
