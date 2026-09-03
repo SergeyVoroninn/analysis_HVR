@@ -19,7 +19,7 @@ def _si_color(v):
 
 
 TP_METRIC = MetricSpec("tp", "TP", "мс²",
-                       lambda r: r.sdnn * r.sdnn if r.sdnn is not None else None)
+                       lambda r: r.tp if r.tp is not None else None)
 SI_METRIC = MetricSpec("si", "Стресс", "ИС",
                        lambda r: r.stress_si, _si_color)
 

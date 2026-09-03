@@ -5,10 +5,10 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 from tkcalendar import DateEntry, Calendar
 
-from models import get_session, Athlete, ECGRecord, ECGRaw  # ← добавлен ECGRaw
+from models import get_session, Athlete, ECGRecord, ECGRaw
 
 from theme import (COL_BG_DARK, COL_TEXT_LIGHT, COL_WEEKEND,
-                   COL_ACCENT, COL_SELECTION)
+                   COL_ACCENT, COL_SELECTION, COL_CRIT, COL_DANGER_HOVER)
 
 
 class _ForegroundDateEntry(DateEntry):
@@ -55,6 +55,7 @@ class _ForegroundDateEntry(DateEntry):
             
     def _release_lock(self):
         self._rebuild_lock = False
+
 
 class AthleteDialog(ctk.CTkToplevel):
     def __init__(self, parent, title, data=None):
@@ -215,7 +216,7 @@ class AthleteDialog(ctk.CTkToplevel):
 class ECGListDialog(ctk.CTkToplevel):
     """Окно со списком ЭКГ за выбранный интервал (ORM-версия)."""
 
-    DISPLAY_COLS = ("Время", "Профиль", "ЧСС", "RMSSD", "SDNN", "ИС", "Статус")
+    DISPLAY_COLS = ("Время", "Профиль", "ЧСС", "RMSSD", "SDNN", "ИС", "TP", "Статус")
 
     def __init__(self, parent, athlete_id, date_from, date_to, title, on_change=None):
         super().__init__(parent)
@@ -239,7 +240,12 @@ class ECGListDialog(ctk.CTkToplevel):
         self.tree = ttk.Treeview(frame, columns=self.DISPLAY_COLS, show="headings",
                                  height=14)
         for c in self.DISPLAY_COLS:
-            w = 90 if c == "Время" else 70
+            if c == "Время":
+                w = 110  # Чуть шире для даты и времени
+            elif c == "TP":
+                w = 80   # Ширина для TP
+            else:
+                w = 70
             self.tree.heading(c, text=c)
             self.tree.column(c, width=w, anchor="center")
         self.tree.pack(side="left", fill="both", expand=True)
@@ -251,12 +257,13 @@ class ECGListDialog(ctk.CTkToplevel):
 
         btns = ctk.CTkFrame(self, fg_color="transparent")
         btns.pack(pady=8)
-        self.btn_export = ctk.CTkButton(btns, text="⬇ Экспорт в файл",
+        self.btn_export = ctk.CTkButton(btns, text=" Экспорт в файл",
                                         command=self._export, state="disabled")
         self.btn_export.pack(side="left", padx=4)
         self.btn_delete = ctk.CTkButton(btns, text="🗑 Удалить",
                                         command=self._delete, state="disabled",
-                                        fg_color="#da3633", hover_color="#b12b2b")
+                                        fg_color=COL_CRIT, 
+                                        hover_color=COL_DANGER_HOVER)
         self.btn_delete.pack(side="left", padx=4)
         ctk.CTkButton(btns, text="Закрыть", fg_color="gray",
                       command=self.destroy).pack(side="left", padx=4)
@@ -335,6 +342,7 @@ class ECGListDialog(ctk.CTkToplevel):
                     f"{rec.rmssd:.1f}" if rec.rmssd is not None else "",
                     f"{rec.sdnn:.1f}" if rec.sdnn is not None else "",
                     f"{rec.stress_si:.0f}" if rec.stress_si is not None else "",
+                    f"{rec.tp:.0f}" if rec.tp is not None else "",
                     rec.status or "",
                 ))
         finally:
@@ -369,7 +377,7 @@ class ECGListDialog(ctk.CTkToplevel):
                 return
 
             rec_at = rec.recorded_at
-            raw = rec.raw.raw_data   # ← было: rec.raw_data
+            raw = rec.raw.raw_data
         finally:
             session.close()
 

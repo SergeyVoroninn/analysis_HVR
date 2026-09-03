@@ -1,5 +1,5 @@
 """
-importer.py — импорт записей Polar H10 в БД (как в app.py).
+importer.py — импорт записей Polar H10 в БД.
 """
 import uuid
 import datetime
@@ -8,7 +8,8 @@ from tkinter import messagebox, filedialog
 
 from database import get_db_path
 from models import get_session, Athlete, ECGRecord, ECGRaw
-from analysis import parse_rr, calc_metrics, calc_stress
+# ИСПРАВЛЕНИЕ: добавляем compute_psd в импорт
+from analysis import parse_rr, calc_metrics, calc_stress, filter_rr, compute_psd
 
 
 def _parse_header(raw):
@@ -23,7 +24,6 @@ def _parse_header(raw):
 
 
 def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactive=True):
-    """status_cb(text) — вывод в статус-бар."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             raw = f.read()
@@ -55,9 +55,20 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
 
         aid = athlete[0]
         rr = parse_rr(raw)
-        m = calc_metrics(rr) if rr else None
-        s = calc_stress(rr) if rr else None
+        seq = filter_rr(rr) if rr else [] 
+
+        m = calc_metrics(seq) if seq else None
+        s = calc_stress(seq) if seq else None
         duration = sum(rr) / 1000.0 if rr else 0.0
+
+        # === НОВОЕ: Расчёт спектрального TP для сохранения в БД ===
+        spectral_tp = None
+        if seq and len(seq) >= 3:
+            try:
+                _, _, bands = compute_psd(seq)
+                spectral_tp = bands.get("tp")
+            except Exception:
+                spectral_tp = None
 
         rec = ECGRecord(
             athlete_id=aid,
@@ -69,6 +80,7 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
             sdnn=m["sdnn"] if m else None,
             status=m["status"] if m else "ok",
             stress_si=s["si"] if s else None,
+            tp=spectral_tp,  # <-- СОХРАНЯЕМ СПЕКТРАЛЬНЫЙ TP
         )
         session.add(rec)
         session.flush()
@@ -85,7 +97,6 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
     if interactive and status_cb:
         status_cb(f"Запись добавлена: {dt:%d.%m.%Y %H:%M}")
     return "added", aid
-
 
 def import_ecg(parent, db_path, athletes, selected_athlete, status_cb):
     """Диалог выбора файлов и пакетный импорт. Возвращает id изменённого атлета."""

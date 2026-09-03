@@ -19,7 +19,7 @@ sys.path.insert(0, SRC_DIR)
 
 from schedule_engine import build_schedules, load_config
 from ecg_generator import create_record
-from analysis import parse_rr, calc_metrics, calc_stress
+from analysis import parse_rr, calc_metrics, calc_stress, compute_psd  # <-- ДОБАВЛЕНО compute_psd
 from database import get_db_path
 from models import get_session, Athlete, ECGRecord, ECGRaw
 
@@ -138,6 +138,11 @@ def prepare_database(config_path="config.yaml"):
                 rr = parse_rr(raw_str)
                 m = calc_metrics(rr)
                 s = calc_stress(rr)
+                
+                # === РАСЧЁТ TP ===
+                _, _, bands = compute_psd(rr)
+                tp_value = bands.get("tp")
+                # ================
 
                 # 1) Создаём лёгкую запись (без raw)
                 rec = ECGRecord(
@@ -150,6 +155,7 @@ def prepare_database(config_path="config.yaml"):
                     sdnn=m["sdnn"],
                     status=m["status"],
                     stress_si=s["si"] if s else None,
+                    tp=tp_value,  # <-- ТЕПЕРЬ TP СОХРАНЯЕТСЯ
                 )
                 session.add(rec)
                 session.flush()  # ← получаем rec.id

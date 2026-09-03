@@ -1,9 +1,10 @@
-"""Эталонные ЭКГ: импорт в базу и сверка с расчётом внешней программы."""
+"""Reference ECGs: import to database and comparison with external program calculation."""
 import datetime
 import json
 import os
 import sys
 import uuid
+import math
 
 import pytest
 
@@ -20,20 +21,29 @@ ETALONS = os.path.join(os.path.dirname(__file__), "etalons.json")
 
 
 def _load_etalons():
-    with open(ETALONS, encoding="utf-8") as f:
-        return json.load(f)
+    """Загружает эталоны, гарантированно обрабатывая UTF-8 BOM."""
+    with open(ETALONS, "rb") as f:
+        content = f.read()
+    
+    # Если файл начинается с UTF-8 BOM (байты EF BB BF), удаляем их
+    if content.startswith(b'\xef\xbb\xbf'):
+        content = content[3:]
+        
+    return json.loads(content.decode('utf-8'))
 
 
 @pytest.fixture()
-def db_with_athlete(tmp_path):
-    """Создаёт пустую БД со спортсменом-приёмником и возвращает (db_path, polar_id, athlete_id)."""
-    polar = "C821EB2E"
+def db_with_athlete(tmp_path, request):
+    """Creates an empty DB with a recipient athlete and returns (db_path, polar_id, athlete_id)."""
+    etalon = request.node.callspec.params.get("etalon")
+    polar = etalon["polar_id"]  # Get the actual polar_id from JSON
+    
     aid = str(uuid.uuid4())
     db_path = str(tmp_path / "ref.db")
     session = get_session(db_path)
     try:
         session.add(Athlete(
-            id=aid, last_name="Эталон", first_name="Тест", middle_name="",
+            id=aid, last_name="Reference", first_name="Test", middle_name="",
             gender="M", birth_date=datetime.date(2000, 1, 1),
             height_cm=180, weight_kg=75, resting_hr=60, max_hr=190,
             hrv_rmssd_baseline=50, avg_rr_ms=1000, polar_id=polar))
@@ -44,25 +54,35 @@ def db_with_athlete(tmp_path):
 
 
 def _metrics_from_record(rec):
+    """Extracts metrics from the DB."""
     return {
-        "rmssd": rec.rmssd,
-        "stress_si": rec.stress_si,
-        "mean_hr": rec.mean_hr,
-        "sdnn": rec.sdnn,
+        "rmssd": getattr(rec, "rmssd", None),
+        "stress_si": getattr(rec, "stress_si", None),
+        "mean_hr": getattr(rec, "mean_hr", None),
+        "sdnn": getattr(rec, "sdnn", None),
+        "tp": getattr(rec, "tp", None),
+        "mo_ms": getattr(rec, "mo_ms", None),
     }
 
 
 def _metrics_from_rr(rr):
+    """Calculates metrics on the fly from filtered RR intervals."""
     seq = hrv.filter_rr(rr)
-    s = hrv.calc_stress(rr) or {}
+    
+    # 1. Stress metrics
+    s = hrv.calc_stress(seq) or {}  
+    
+    # 2. RMSSD
     diffs = [abs(b - a) for a, b in zip(seq, seq[1:])]
-    nn50 = sum(1 for d in diffs if d > 50)
-    pnn50 = 100.0 * nn50 / len(diffs) if diffs else 0.0
+    rmssd = math.sqrt(sum(d**2 for d in diffs) / len(diffs)) if diffs else 0.0
+    
+    # 3. Spectral metrics
     _, _, bands = hrv.compute_psd(seq)
+    
     return {
         "mo_ms": s.get("mo_ms"),
-        "nn50": nn50,
-        "pnn50": pnn50,
+        "stress_si": s.get("stress_si") or s.get("si"),
+        "rmssd": rmssd,
         "tp": bands.get("tp"),
     }
 
@@ -74,48 +94,107 @@ def test_reference_ecg(etalon, db_with_athlete):
     path = etalon["file"]
     if not os.path.isabs(path):
         path = os.path.join(ROOT, path)
-    assert os.path.exists(path), f"Эталонный файл не найден: {path}"
+    assert os.path.exists(path), f"Reference file not found: {path}"
 
-    # --- список спортсменов в формате (id, last, first, age, gender, polar_id) ---
     from athlete_generator import _calc_age
-    athletes = [(aid, "Эталон", "Тест", _calc_age("2000-01-01"), "M", polar)]
+    athletes = [(aid, "Reference", "Test", _calc_age("2000-01-01"), "M", polar)]
     selected = athletes[0]
 
-    # === 1. Импорт ЭКГ в базу ===
+    # === 1. Import ECG to DB ===
     status, changed_aid = _import_one(db_path, path, athletes, selected, None, interactive=False)
-    assert status == "added", f"Импорт не выполнен: статус '{status}'"
+    assert status == "added", f"Import failed: status '{status}'"
 
-    # === 2. Наши метрики: БД + на лету из RR ===
+    # === 2. Separate metrics: what's in DB and what's calculated on the fly ===
     session = get_session(db_path)
     try:
         rec = session.query(ECGRecord).filter_by(athlete_id=aid).one()
-        ours = _metrics_from_record(rec)
+        db_metrics = _metrics_from_record(rec)
     finally:
         session.close()
 
     with open(path, encoding="utf-8") as f:
         rr = hrv.parse_rr(f.read())
-    ours.update(_metrics_from_rr(rr))
+    calc_metrics = _metrics_from_rr(rr)
 
-    # === Наша строка в формате Омеги ===
-    print(f"\n=== НАША СТРОКА (формат Омеги) ===")
-    print(f"ИН={ours['stress_si']:.1f}  Мо={ours['mo_ms']:.0f}  "
-          f"RMSSD={ours['rmssd']:.1f}  NN50={ours['nn50']}  "
-          f"pNN50={ours['pnn50']:.1f}  TP={ours['tp']:.0f}  "
-          f"ЧСС={ours['mean_hr']:.0f}")
+    ours = {**db_metrics, **calc_metrics}
 
-    # === 3. Сверка с эталоном ===
+    # === Extract reference values for visual comparison ===
+    exp = etalon["expected"]
+    ref_si = exp.get("stress_si", {}).get("value", 0)
+    ref_mo = exp.get("mo_ms", {}).get("value", 0)
+    ref_rmssd = exp.get("rmssd", {}).get("value", 0)
+    ref_tp = exp.get("tp", {}).get("value", 0)
+
+    print(f"\n=== OUR STRING (Calculated)   ===")
+    print(f"SI={ours.get('stress_si', 0):>6.1f}  Mo={ours.get('mo_ms', 0):>4.0f}  "
+          f"RMSSD={ours.get('rmssd', 0):>5.1f}  TP={ours.get('tp', 0):>6.0f}  "
+          f"HR={ours.get('mean_hr', 0):>3.0f}")
+    
+    print(f"=== REFERENCE STRING (Expected) ===")
+    print(f"SI={ref_si:>6.1f}  Mo={ref_mo:>4.0f}  "
+          f"RMSSD={ref_rmssd:>5.1f}  TP={ref_tp:>6.0f}  "
+          f"HR={'N/A':>3}")
+    print("-" * 78)
+
+    # === 3. Localized comparison with reference ===
     problems = []
-    for key, spec in etalon["expected"].items():
-        value, tol = spec["value"], spec.get("tol", 0.10)
-        got = ours.get(key)
-        if got is None:
-            problems.append(f"{key}: наша программа не вычисляет эту метрику")
-            continue
-        diff = abs(got - value)
-        if diff > abs(value) * tol:
-            problems.append(
-                f"{key}: эталон {value}, получено {got:.1f} "
-                f"(расхождение {diff / abs(value):.1%} > допуска {tol:.0%})")
+    
+    # Metrics that are actually saved in the DB
+    DB_STORED_FIELDS = {"mean_hr", "rmssd", "sdnn", "stress_si", "tp"}
+    
+    # Metrics that we DO NOT check (not used in the application)
+    SKIP_METRICS = {"nn50", "pnn50"}
+    
+    def fmt(v):
+        return f"{v:.1f}" if v is not None else "None"
 
-    assert not problems, "Расхождение с эталоном:\n" + "\n".join(problems)
+    for key, spec in etalon["expected"].items():
+        # Skip unused metrics
+        if key in SKIP_METRICS:
+            continue
+            
+        value = spec["value"]
+        tol = spec.get("tol", 0.10)
+        
+        db_val = db_metrics.get(key)
+        calc_val = calc_metrics.get(key)
+
+        if calc_val is None and db_val is None:
+            problems.append(f"[{key}] our program does not calculate and does not store this metric")
+            continue
+            
+        # Check calculation discrepancy (on the fly)
+        is_calc_ok = False
+        if calc_val is not None:
+            diff_calc = abs(calc_val - value)
+            is_calc_ok = diff_calc <= abs(value) * tol
+            
+        # Check discrepancy with DB
+        is_db_ok = False
+        if db_val is not None:
+            diff_db = abs(db_val - value)
+            is_db_ok = diff_db <= abs(value) * tol
+        elif key not in DB_STORED_FIELDS:
+            is_db_ok = True 
+
+        # Form precise error messages
+        if not is_calc_ok and not is_db_ok:
+            problems.append(
+                f"[{key}] CRITICAL DISCREPANCY: reference={value}, "
+                f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
+                f"(tolerance {tol:.0%})"
+            )
+        elif not is_calc_ok and is_db_ok:
+            problems.append(
+                f"[{key}] CALCULATION ERROR (DB is correct): reference={value}, "
+                f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
+                f"(calculation discrepancy {diff_calc/abs(value):.1%} > tolerance {tol:.0%})"
+            )
+        elif is_calc_ok and not is_db_ok:
+            problems.append(
+                f"[{key}] IMPORT/DB ERROR (calculation is correct!): reference={value}, "
+                f"calculation={fmt(calc_val)}, but in DB: {fmt(db_val)} "
+                f"(DB discrepancy > tolerance {tol:.0%})"
+            )
+
+    assert not problems, "Localized discrepancies with reference:\n" + "\n".join(problems)

@@ -72,30 +72,33 @@ def stress_level(si):
     if si < 150:  return "высокий"
     return "перенапряжение"
 
-
 def calc_stress(rr):
     if len(rr) < 10:
         return None
-    rr = filter_rr(rr)
-    if len(rr) < 10:
-        return None
-    vals = [r / 1000.0 for r in rr]
-    mn, mx = min(vals), max(vals)
-    mxdmn = mx - mn
+    
+    vals_sec = np.array(rr) / 1000.0
+    
+    # Использовать перцентили вместо min/max для устойчивости к артефактам
+    p95 = np.percentile(vals_sec, 95)
+    p5 = np.percentile(vals_sec, 5)
+    mxdmn = p95 - p5
+    
     if mxdmn <= 0:
         return None
 
+    mn, mx = min(vals_sec), max(vals_sec)
     bin_w = 0.05
-    nbins = int(mxdmn // bin_w) + 1
+    nbins = int((mx - mn) // bin_w) + 1
     hist = [0] * nbins
-    for v in vals:
+    for v in vals_sec:
         hist[min(int((v - mn) / bin_w), nbins - 1)] += 1
 
     max_count = max(hist)
     mode_idx = hist.index(max_count)
     mo = mn + (mode_idx + 0.5) * bin_w
-    amo = max_count / len(vals) * 100.0
-    si = amo / (2 * mo * mxdmn)
+    amo = max_count / len(vals_sec) * 100.0
+    
+    si = amo / (mo * mxdmn)
 
     return {"si": si, "amo": amo, "mo_ms": mo * 1000,
             "mxdmn_ms": mxdmn * 1000, "level": stress_level(si)}
@@ -178,14 +181,23 @@ def _status(mean_hr, rmssd):
     return 'ok'
 
 def filter_rr(rr, dev=0.30, min_rr=300, max_rr=2000):
-    """Удаляет артефактные RR: вне физиологического диапазона
-    и резкие скачки (> dev от предыдущего)."""
-    clean, prev = [], None
-    for r in rr:
-        if not (min_rr <= r <= max_rr):
+    """
+    Корректирует артефактные RR, заменяя их на предыдущее валидное значение.
+    """
+    if len(rr) < 10:
+        return list(rr)
+    
+    clean = list(rr)
+    
+    for i in range(1, len(clean)):
+        prev = clean[i-1]
+        current = clean[i]
+        
+        if not (min_rr <= current <= max_rr):
+            clean[i] = prev
             continue
-        if prev is not None and abs(r - prev) > dev * prev:
-            continue
-        clean.append(r)
-        prev = r
-    return clean if len(clean) >= 10 else list(rr)
+            
+        if abs(current - prev) > dev * prev:
+            clean[i] = prev
+            
+    return clean
