@@ -227,7 +227,7 @@ analysis_HVR\src\
 |   |   schedule_engine.py         Построение расписаний записей ЭКГ для каждого спортсмена
 |   |
 \---tests
-        etalons.json               Эталонные метрики (RMSSD, ИС, TP) из Омега.Диагностика для сверки
+        etalons.json               Эталонные метрики (RMSSD, ИС, Мо, TP) из Омега.Диагностика для сверки
         test_athlete_zoom_persistence.py  Сохранение масштаба при смене атлета
         test_calendar.py           Тесты календаря (DateEntry) в диалоге атлета
         test_chart_right_click.py  Интеграция: ПКМ по графику → сброс масштаба
@@ -283,6 +283,7 @@ analysis_HVR\src\
 │    sdnn                      FLOAT
 │    status                    VARCHAR
 │    stress_si                 FLOAT
+│    tp                        FLOAT
 │
 │  Foreign Keys:
 │    athlete_id → athletes.id  ON DELETE CASCADE
@@ -966,8 +967,7 @@ python -m pytest tests/test_timeframe.py -v            # таймфреймы
 Импортирует эталонную запись Polar H10 из `tests/reference/` в базу через `importer._import_one`
 (тем же путём, что и приложение) и сверяет рассчитанные метрики с ожидаемыми значениями из
 `tests/etalons.json` (источник — «Омега.Диагностика»). Сверяются: RMSSD, индекс стресса (ИС),
-Мо, NN50, pNN50, TP — каждая со своим допуском `tol`. Метрики спектра (HF, LF, VLF, LF/HF)
-сравниваются только как справочные (`not_compared`).
+Мо и TP — каждая со своим допуском `tol`.
 
 | Файл | Назначение |
 | --- | --- |
