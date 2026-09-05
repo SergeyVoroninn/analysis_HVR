@@ -79,11 +79,25 @@ def _metrics_from_rr(rr):
     # 3. Spectral metrics
     _, _, bands = hrv.compute_psd(seq)
     
+    # 4. Mean HR and SDNN
+    if seq:
+        mean_rr = sum(seq) / len(seq)
+        mean_hr = 60000.0 / mean_rr if mean_rr > 0 else 0.0
+        
+        # SDNN (стандартное отклонение всех RR-интервалов)
+        variance = sum((x - mean_rr)**2 for x in seq) / len(seq)
+        sdnn = math.sqrt(variance)
+    else:
+        mean_hr = 0.0
+        sdnn = 0.0
+    
     return {
         "mo_ms": s.get("mo_ms"),
         "stress_si": s.get("stress_si") or s.get("si"),
         "rmssd": rmssd,
         "tp": bands.get("tp"),
+        "mean_hr": mean_hr,  # <-- Теперь точно вернется
+        "sdnn": sdnn,        # <-- Теперь точно вернется
     }
 
 
@@ -124,16 +138,22 @@ def test_reference_ecg(etalon, db_with_athlete):
     ref_mo = exp.get("mo_ms", {}).get("value", 0)
     ref_rmssd = exp.get("rmssd", {}).get("value", 0)
     ref_tp = exp.get("tp", {}).get("value", 0)
+    ref_hr = exp.get("mean_hr", {}).get("value", "N/A")   # <-- Добавлено
+    ref_sdnn = exp.get("sdnn", {}).get("value", "N/A")    # <-- Добавлено
+    
+    # Форматируем HR и SDNN для красивого вывода
+    hr_str = f"{ref_hr:>5.1f}" if isinstance(ref_hr, (int, float)) else "  N/A"
+    sdnn_str = f"{ref_sdnn:>5.1f}" if isinstance(ref_sdnn, (int, float)) else "  N/A"
 
     print(f"\n=== OUR STRING (Calculated)   ===")
     print(f"SI={ours.get('stress_si', 0):>6.1f}  Mo={ours.get('mo_ms', 0):>4.0f}  "
           f"RMSSD={ours.get('rmssd', 0):>5.1f}  TP={ours.get('tp', 0):>6.0f}  "
-          f"HR={ours.get('mean_hr', 0):>3.0f}")
+          f"HR={ours.get('mean_hr', 0):>5.1f}  SDNN={ours.get('sdnn', 0):>5.1f}")
     
     print(f"=== REFERENCE STRING (Expected) ===")
     print(f"SI={ref_si:>6.1f}  Mo={ref_mo:>4.0f}  "
           f"RMSSD={ref_rmssd:>5.1f}  TP={ref_tp:>6.0f}  "
-          f"HR={'N/A':>3}")
+          f"HR={hr_str:>5}  SDNN={sdnn_str:>5}")
     print("-" * 78)
 
     # === 3. Localized comparison with reference ===

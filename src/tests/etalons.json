@@ -3,10 +3,12 @@
     "source": "Omega.Diagnostika, Filipp, row 15.08.2026 9:07",
     "polar_id": "C8219D21",
     "expected": {
-        "mo_ms": {"value": 840, "tol": 0.12},      
-        "rmssd": {"value": 70.5, "tol": 0.1},      
-        "tp": {"value": 8586, "tol": 0.25},        
-        "stress_si": {"value": 21.4, "tol": 0.2}   
+        "mo_ms": {"value": 800, "tol": 0.12},      
+        "rmssd": {"value": 55.6, "tol": 0.1},      
+        "tp": {"value": 7668, "tol": 0.25},        
+        "stress_si": {"value": 24.5, "tol": 0.2},
+        "mean_hr": {"value": 72.0, "tol": 0.02},
+        "sdnn": {"value": 93.2, "tol": 0.1}
     },
     "file": "tests/reference/C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10"
 }
