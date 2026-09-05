@@ -457,7 +457,11 @@ class MetricPlot(tk.Frame):
             current = datetime.datetime(d0.year, d0.month, d0.day, 0, 0, 0)
             step = datetime.timedelta(hours=config.tick_step_hours)
             while self._ord(current) <= hi + 0.5:
-                label = current.strftime("%d.%m") if current.hour == 0 else current.strftime("%H:%M")
+                if current.hour == 0:
+                    wd = weekdays_ru[current.weekday()]
+                    label = f"{wd} {current.strftime('%d.%m')}"
+                else:
+                    label = current.strftime("%H:%M")
                 ticks.append(self._ord(current))
                 names.append(label)
                 current += step
@@ -472,15 +476,26 @@ class MetricPlot(tk.Frame):
                 names.append(months_ru[current.month - 1])
                 current = current.replace(year=current.year + 1, month=1) if current.month == 12 else current.replace(month=current.month + 1)
         
-        elif config.bar_tf is TimeFrame.HOUR3 and vspan <= 31:
-            current = d0 - datetime.timedelta(days=d0.weekday())
-            if current < d0:
-                current += datetime.timedelta(days=7)
+        elif config.bar_tf is TimeFrame.HOUR3:
+            # Для 3-часового масштаба: только дата в понедельник, иначе день недели
+            current = datetime.datetime(d0.year, d0.month, d0.day, 0, 0, 0)
+            step = datetime.timedelta(days=1)
             
-            while current <= d1:
-                ticks.append(current.toordinal())
-                names.append(current.strftime("%d.%m"))
-                current += datetime.timedelta(days=7)
+            while self._ord(current) <= hi + 0.5:
+                if current.hour == 0:
+                    weekday_num = current.weekday()
+                    if weekday_num == 0:  # Понедельник - только дата
+                        label = current.strftime('%d.%m')  # "29.07"
+                    else:
+                        # Остальные дни - только день недели
+                        label = weekdays_ru[weekday_num]  # "вт", "ср" и т.д.
+                else:
+                    # В течение дня - только время
+                    label = current.strftime("%H:%M")
+                
+                ticks.append(self._ord(current))
+                names.append(label)
+                current += step
         
         else:
             bounds = list(self._sibling_bounds(config.zebra_tf, lo, hi))

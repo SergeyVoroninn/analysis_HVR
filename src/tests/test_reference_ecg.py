@@ -66,38 +66,36 @@ def _metrics_from_record(rec):
 
 
 def _metrics_from_rr(rr):
-    """Calculates metrics on the fly from filtered RR intervals."""
+    """
+    Рассчитывает метрики "на лету", используя ИСКЛЮЧИТЕЛЬНО функции из analysis.py.
+    Это гарантирует 100% совпадение логики теста и приложения.
+    """
+    # 1. Сначала фильтруем артефакты (так же, как это делает приложение перед расчётом)
     seq = hrv.filter_rr(rr)
+    if not seq:
+        return {
+            "mo_ms": None, "stress_si": None, "rmssd": None, 
+            "tp": None, "mean_hr": None, "sdnn": None
+        }
     
-    # 1. Stress metrics
-    s = hrv.calc_stress(seq) or {}  
+    # 2. Временные метрики и ЧСС (внутри calc_metrics уже есть filter_rr, 
+    # но повторный вызов на очищенных данных безопасен и быстр)
+    time_metrics = hrv.calc_metrics(seq) or {}
     
-    # 2. RMSSD
-    diffs = [abs(b - a) for a, b in zip(seq, seq[1:])]
-    rmssd = math.sqrt(sum(d**2 for d in diffs) / len(diffs)) if diffs else 0.0
+    # 3. Метрики стресса (Баевский)
+    stress_metrics = hrv.calc_stress(seq) or {}
     
-    # 3. Spectral metrics
-    _, _, bands = hrv.compute_psd(seq)
+    # 4. Спектральные метрики (PSD)
+    _, _, bands = hrv.compute_psd(seq) or (None, None, {})
     
-    # 4. Mean HR and SDNN
-    if seq:
-        mean_rr = sum(seq) / len(seq)
-        mean_hr = 60000.0 / mean_rr if mean_rr > 0 else 0.0
-        
-        # SDNN (стандартное отклонение всех RR-интервалов)
-        variance = sum((x - mean_rr)**2 for x in seq) / len(seq)
-        sdnn = math.sqrt(variance)
-    else:
-        mean_hr = 0.0
-        sdnn = 0.0
-    
+    # Собираем словарь в том же формате, который ожидает тест
     return {
-        "mo_ms": s.get("mo_ms"),
-        "stress_si": s.get("stress_si") or s.get("si"),
-        "rmssd": rmssd,
-        "tp": bands.get("tp"),
-        "mean_hr": mean_hr,  # <-- Теперь точно вернется
-        "sdnn": sdnn,        # <-- Теперь точно вернется
+        "mo_ms": stress_metrics.get("mo_ms"),
+        "stress_si": stress_metrics.get("si"),  # В analysis.py ключ называется "si"
+        "rmssd": time_metrics.get("rmssd"),
+        "tp": bands.get("tp") if bands else None,
+        "mean_hr": time_metrics.get("mean_hr"),
+        "sdnn": time_metrics.get("sdnn"),
     }
 
 
