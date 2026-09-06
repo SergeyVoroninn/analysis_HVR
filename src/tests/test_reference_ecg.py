@@ -4,7 +4,6 @@ import json
 import os
 import sys
 import uuid
-import math
 
 import pytest
 
@@ -25,7 +24,6 @@ def _load_etalons():
     with open(ETALONS, "rb") as f:
         content = f.read()
     
-    # Если файл начинается с UTF-8 BOM (байты EF BB BF), удаляем их
     if content.startswith(b'\xef\xbb\xbf'):
         content = content[3:]
         
@@ -36,7 +34,7 @@ def _load_etalons():
 def db_with_athlete(tmp_path, request):
     """Creates an empty DB with a recipient athlete and returns (db_path, polar_id, athlete_id)."""
     etalon = request.node.callspec.params.get("etalon")
-    polar = etalon["polar_id"]  # Get the actual polar_id from JSON
+    polar = etalon["polar_id"]
     
     aid = str(uuid.uuid4())
     db_path = str(tmp_path / "ref.db")
@@ -70,7 +68,7 @@ def _metrics_from_rr(rr):
     Рассчитывает метрики "на лету", используя ИСКЛЮЧИТЕЛЬНО функции из analysis.py.
     Это гарантирует 100% совпадение логики теста и приложения.
     """
-    # 1. Сначала фильтруем артефакты (так же, как это делает приложение перед расчётом)
+    # 1. Сначала фильтруем артефакты
     seq = hrv.filter_rr(rr)
     if not seq:
         return {
@@ -78,20 +76,19 @@ def _metrics_from_rr(rr):
             "tp": None, "mean_hr": None, "sdnn": None
         }
     
-    # 2. Временные метрики и ЧСС (внутри calc_metrics уже есть filter_rr, 
-    # но повторный вызов на очищенных данных безопасен и быстр)
+    # 2. Временные метрики и ЧСС (через analysis.py)
     time_metrics = hrv.calc_metrics(seq) or {}
     
-    # 3. Метрики стресса (Баевский)
+    # 3. Метрики стресса (через analysis.py)
     stress_metrics = hrv.calc_stress(seq) or {}
     
-    # 4. Спектральные метрики (PSD)
+    # 4. Спектральные метрики (через analysis.py)
     _, _, bands = hrv.compute_psd(seq) or (None, None, {})
     
-    # Собираем словарь в том же формате, который ожидает тест
+    # Собираем словарь. Обратите внимание: в analysis.py ключ называется "si"
     return {
         "mo_ms": stress_metrics.get("mo_ms"),
-        "stress_si": stress_metrics.get("si"),  # В analysis.py ключ называется "si"
+        "stress_si": stress_metrics.get("si"),
         "rmssd": time_metrics.get("rmssd"),
         "tp": bands.get("tp") if bands else None,
         "mean_hr": time_metrics.get("mean_hr"),
@@ -136,10 +133,12 @@ def test_reference_ecg(etalon, db_with_athlete):
     ref_mo = exp.get("mo_ms", {}).get("value", 0)
     ref_rmssd = exp.get("rmssd", {}).get("value", 0)
     ref_tp = exp.get("tp", {}).get("value", 0)
-    ref_hr = exp.get("mean_hr", {}).get("value", "N/A")   # <-- Добавлено
-    ref_sdnn = exp.get("sdnn", {}).get("value", "N/A")    # <-- Добавлено
     
-    # Форматируем HR и SDNN для красивого вывода
+    # ИСПРАВЛЕНИЕ 1: Берем HR и SDNN из эталона, а не хардкодим N/A
+    ref_hr = exp.get("mean_hr", {}).get("value", "N/A")
+    ref_sdnn = exp.get("sdnn", {}).get("value", "N/A")
+    
+    # Форматируем для красивого вывода
     hr_str = f"{ref_hr:>5.1f}" if isinstance(ref_hr, (int, float)) else "  N/A"
     sdnn_str = f"{ref_sdnn:>5.1f}" if isinstance(ref_sdnn, (int, float)) else "  N/A"
 
@@ -156,18 +155,13 @@ def test_reference_ecg(etalon, db_with_athlete):
 
     # === 3. Localized comparison with reference ===
     problems = []
-    
-    # Metrics that are actually saved in the DB
     DB_STORED_FIELDS = {"mean_hr", "rmssd", "sdnn", "stress_si", "tp"}
-    
-    # Metrics that we DO NOT check (not used in the application)
     SKIP_METRICS = {"nn50", "pnn50"}
     
     def fmt(v):
         return f"{v:.1f}" if v is not None else "None"
 
     for key, spec in etalon["expected"].items():
-        # Skip unused metrics
         if key in SKIP_METRICS:
             continue
             
@@ -181,13 +175,11 @@ def test_reference_ecg(etalon, db_with_athlete):
             problems.append(f"[{key}] our program does not calculate and does not store this metric")
             continue
             
-        # Check calculation discrepancy (on the fly)
         is_calc_ok = False
         if calc_val is not None:
             diff_calc = abs(calc_val - value)
             is_calc_ok = diff_calc <= abs(value) * tol
             
-        # Check discrepancy with DB
         is_db_ok = False
         if db_val is not None:
             diff_db = abs(db_val - value)
@@ -195,7 +187,6 @@ def test_reference_ecg(etalon, db_with_athlete):
         elif key not in DB_STORED_FIELDS:
             is_db_ok = True 
 
-        # Form precise error messages
         if not is_calc_ok and not is_db_ok:
             problems.append(
                 f"[{key}] CRITICAL DISCREPANCY: reference={value}, "
