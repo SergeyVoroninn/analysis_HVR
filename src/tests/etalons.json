@@ -28,20 +28,6 @@
 }
 ,
 {
-    "source": "Omega.Diagnostika, Buzmakov Konstantin, row 05.08.2026 9:09",
-    "polar_id": "C821E528",
-    "expected": {
-        "mo_ms": {"value": 760, "tol": 0.1},
-        "rmssd": {"value": 50.1, "tol": 0.15},
-        "tp": {"value": 4854, "tol": 0.25},
-        "stress_si": {"value": 50.0, "tol": 0.25},
-        "mean_hr": {"value": 76.0, "tol": 0.05},
-        "sdnn": {"value": 71.6, "tol": 0.15}
-    },
-    "file": "tests/reference/C821E528_2026_08_05_09_09_30_teamloggerh10.teamloggerh10"
-}
-,
-{
     "source": "Omega.Diagnostika, Kazakov Filipp, row 08.08.2026 9:17",
     "polar_id": "C821E528",
     "expected": {
@@ -53,5 +39,19 @@
         "sdnn": {"value": 84.7, "tol": 0.15}
     },
     "file": "tests/reference/C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10"
+}
+,
+{
+    "source": "Omega.Diagnostika, Kazakov Filipp, row 10.08.2026 8:33",
+    "polar_id": "C821E528",
+    "expected": {
+        "mo_ms": {"value": 920, "tol": 0.1},
+        "rmssd": {"value": 167.5, "tol": 0.15},
+        "tp": {"value": 42578, "tol": 0.25},
+        "stress_si": {"value": 6.5, "tol": 0.25},
+        "mean_hr": {"value": 60.0, "tol": 0.05},
+        "sdnn": {"value": 206.4, "tol": 0.15}
+    },
+    "file": "tests/reference/C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10"
 }
 ]
