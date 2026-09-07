@@ -85,10 +85,7 @@ def stress_level(si):
 
 
 def calc_stress(rr):
-    """
-    Расчёт индекса напряжения (SI = AMo / (Mo × MXDMN)).
-    """
-    # 1. Сначала фильтруем RR
+    # Сначала фильтруем данные!
     rr_clean = filter_rr(rr)
     
     if len(rr_clean) < 10:
@@ -96,22 +93,32 @@ def calc_stress(rr):
     
     vals_sec = np.array(rr_clean) / 1000.0
     
-    # 2. Устойчивая оценка размаха через перцентили 99 и 1
+    # 1. Размах (MXDMN) через перцентили (99 и 1) для устойчивости к выбросам
     p99, p1 = np.percentile(vals_sec, [99, 1])
     mxdmn = p99 - p1
     if mxdmn <= 0:
         return None
 
-    # 3. Оценка моды через гистограмму
+    # 2. Поиск моды (Mo) через гистограмму с мелким шагом
     mn, mx = np.min(vals_sec), np.max(vals_sec)
-    bin_w = 0.05
+    bin_w = 0.02  # Было 0.05, стало 0.02 (20 мс)
+    
+    # Защита от слишком узкого диапазона
+    if mx - mn < bin_w:
+        bin_w = mx - mn
+        
     counts, bin_edges = np.histogram(vals_sec, bins=np.arange(mn, mx + bin_w, bin_w))
     
     max_count = np.max(counts)
     mode_idx = np.argmax(counts)
+    # Центр бина, где находится максимум
     mo = bin_edges[mode_idx] + 0.5 * bin_w
     
     amo = (max_count / len(vals_sec)) * 100.0
+    
+    # Формула SI: AMo / (Mo * MXDMN)
+    # Обратите внимание: Mo и MXDMN должны быть в секундах для согласованности единиц,
+    # но так как AMo в %, а Mo в секундах, результат будет корректным.
     si = amo / (mo * mxdmn)
 
     return {
@@ -121,6 +128,7 @@ def calc_stress(rr):
         "mxdmn_ms": float(mxdmn * 1000), 
         "level": stress_level(si)
     }
+
 
 
 def parse_rr(raw_data, fs=None):
@@ -340,22 +348,38 @@ def _status(mean_hr, rmssd):
     return 'ok'
 
 
-def filter_rr(rr, dev=0.30, min_rr=300, max_rr=2000):
-    """
-    Корректирует артефактные RR, заменяя их на предыдущее валидное значение.
-    """
+def filter_rr(rr, dev=0.25, min_rr=300, max_rr=1500, window_size=9):
     if len(rr) < 10:
         return list(rr)
     
     clean = np.array(rr, dtype=float)
+    half_win = window_size // 2
     
-    for i in range(1, len(clean)):
-        prev = clean[i-1]
-        current = clean[i]
+    # Маска выбросов
+    outlier_mask = np.zeros_like(clean, dtype=bool)
+    
+    # 1. Абсолютные границы
+    outlier_mask |= (clean < min_rr) | (clean > max_rr)
+    
+    # 2. Относительное отклонение от скользящей медианы
+    for i in range(len(clean)):
+        start = max(0, i - half_win)
+        end = min(len(clean), i + half_win + 1)
+        neighbors = clean[start:end]
         
-        if not (min_rr <= current <= max_rr):
-            clean[i] = prev
-        elif abs(current - prev) > dev * prev:
-            clean[i] = prev
+        # Медиана соседей (без текущего элемента для чистоты оценки)
+        # Если окно маленькое, берем медиану всего окна
+        med = np.median(neighbors)
+        
+        if abs(clean[i] - med) > dev * med:
+            outlier_mask[i] = True
             
+    if np.any(outlier_mask):
+        clean[outlier_mask] = np.nan
+        # Линейная интерполяция вместо замены на предыдущее значение
+        nans = np.isnan(clean)
+        if np.any(nans) and np.any(~nans):
+            indices = np.arange(len(clean))
+            clean[nans] = np.interp(indices[nans], indices[~nans], clean[~nans])
+    
     return clean.tolist()
