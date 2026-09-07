@@ -53,7 +53,7 @@ def test_weekmap_right_click_sync_and_persistence(gui_root):
         p._athlete = "athlete_A"
         p._start = datetime.date(2024, 1, 1)
         p._end = datetime.date(2024, 12, 31)
-        p._values = [(datetime.datetime(2024, 6, 1), 50)]
+        p._values = [(p._ord(datetime.datetime(2024, 6, 1)), 50)]
         p._loading = False
         p._draw()
     root.update()
@@ -97,7 +97,7 @@ def test_weekmap_right_click_sync_and_persistence(gui_root):
         p._athlete = "athlete_B"
         p._start = datetime.date(2024, 1, 1)
         p._end = datetime.date(2024, 12, 31)
-        p._values = [(datetime.datetime(2024, 8, 1), 60)]
+        p._values = [(p._ord(datetime.datetime(2024, 8, 1)), 60)]
         p._loading = False
         p._draw()
     

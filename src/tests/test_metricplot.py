@@ -20,7 +20,6 @@ def plot():
     """Создает частично замоканный экземпляр MetricPlot для тестирования логики событий."""
     spec = MetricSpec("test", "Test", "unit", lambda r: r.value)
     
-    # Используем __new__, чтобы избежать вызова __init__ и создания реальных Tk-виджетов
     p = MetricPlot.__new__(MetricPlot)
     p.spec = spec
     p.db_path = ""
@@ -41,6 +40,11 @@ def plot():
     p.on_reset = Mock()
     p.on_single_click = Mock()
     
+    # Новые атрибуты для debounce
+    p._draw_timer = None
+    p._pending_view = None
+    p._pan_throttle_ms = 33
+    
     # Мокаем методы Tkinter и Matplotlib
     p.after = Mock(return_value="timer_ok")
     p.after_cancel = Mock()
@@ -55,8 +59,10 @@ def plot():
     p._commit_view = Mock()
     p._draw = Mock()
     
+    # ⚡ ВАЖНО: НЕ мокаем _apply_pending_view, чтобы тест проверил реальную логику!
+    # Удалите строку: p._apply_pending_view = Mock()
+    
     return p
-
 
 def _event(button=1, xdata=None, x=100, y=100):
     """Хелпер для создания фейкового события мыши."""
@@ -195,7 +201,7 @@ def test_click_cancels_previous_timer(plot):
 # ======================== ПАНОРАМИРОВАНИЕ ========================
 
 def test_motion_pans_view(plot):
-    """Движение мыши с зажатой ЛКМ должно вызывать _commit_view со сдвигом."""
+    """Движение мыши с зажатой ЛКМ должно планировать сдвиг через debounce-таймер."""
     plot._on_press(_event(button=1, xdata=738000, x=150, y=100))
     assert plot._pan is not None
 
@@ -203,6 +209,16 @@ def test_motion_pans_view(plot):
     event = _event(button=1, x=200)
     plot._on_motion(event)
     
+    # 1. Проверяем, что состояние было отложено, а не применено мгновенно
+    assert plot._pending_view is not None
+    
+    # 2. Проверяем, что запланирована перерисовка через 16 мс
+    plot.after.assert_called_with(16, plot._apply_pending_view)
+    
+    # 3. Имитируем срабатывание таймера (то, что делает Tkinter через 16 мс)
+    plot._apply_pending_view()
+    
+    # 4. Теперь _commit_view должен быть вызван с корректными аргументами
     plot._commit_view.assert_called()
     lo, hi = plot._commit_view.call_args[0]
     assert lo < hi  # Диапазон должен быть валидным
