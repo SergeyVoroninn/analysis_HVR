@@ -16,6 +16,7 @@ metricplot.py — отрисовка одного графика парамет�
 import datetime
 import time as _time
 import tkinter as tk
+import bisect
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -79,6 +80,9 @@ class MetricPlot(tk.Frame):
         self.on_year_pick = None
         self.on_reset = None
         self.on_single_click = None
+        self._draw_timer = None      # Таймер для debounce-перерисовки
+        self._pending_view = None    # Отложенное состояние вида
+        self._pan_throttle_ms = 33  # Ограничиваем перерисовку до ~30 FPS при драге        
 
         self.fig = Figure(dpi=100)
         self.fig.patch.set_facecolor(COL_BG_DARK)
@@ -138,31 +142,34 @@ class MetricPlot(tk.Frame):
         self._load_sync()
 
     def _load_sync(self):
-        """Синхронная загрузка данных из БД (используется в фоновом потоке)."""
+        """Синхронная загрузка данных из БД."""
         self._values = []
         if not self._athlete:
             return
         session = get_session(self.db_path)
         try:
             q = session.query(ECGRecord).filter(
-                ECGRecord.athlete_id == self._athlete)
+                ECGRecord.athlete_id == self._athlete
+            ).order_by(ECGRecord.recorded_at)  # <-- ГАРАНТИРУЕМ СОРТИРОВКУ
+            
             if self._start:
-                q = q.filter(ECGRecord.recorded_at >=
-                             self._start.isoformat() + " 00:00:00")
+                q = q.filter(ECGRecord.recorded_at >= self._start.isoformat() + " 00:00:00")
             if self._end:
-                q = q.filter(ECGRecord.recorded_at <
-                             self._end.isoformat() + " 23:59:59")
+                q = q.filter(ECGRecord.recorded_at < self._end.isoformat() + " 23:59:59")
+                
             for rec in q.all():
                 v = self.spec.value(rec)
                 if v is not None:
-                    self._values.append(
-                        (datetime.datetime.fromisoformat(rec.recorded_at), v))
+                    dt = datetime.datetime.fromisoformat(rec.recorded_at)
+                    # <-- ИСПРАВЛЕНО: сразу сохраняем ординал, как в _fetch_values
+                    self._values.append((self._ord(dt), v))
         finally:
             session.close()
 
         if self._start is None and self._values:
-            self._start = min(d for d, _ in self._values).date()
-            self._end = max(d for d, _ in self._values).date()
+            # <-- ИСПРАВЛЕНО: извлекаем дату из ординала
+            self._start = datetime.date.fromordinal(int(min(d for d, _ in self._values)))
+            self._end = datetime.date.fromordinal(int(max(d for d, _ in self._values)))
 
     def _start_background_load(self):
         """Запускает загрузку данных в фоновом потоке, отсеивая устаревшие."""
@@ -191,18 +198,21 @@ class MetricPlot(tk.Frame):
         session = get_session(self.db_path)
         try:
             q = session.query(ECGRecord).filter(
-                ECGRecord.athlete_id == athlete)
+                ECGRecord.athlete_id == athlete
+            ).order_by(ECGRecord.recorded_at)  # <-- 1. ГАРАНТИРУЕМ СОРТИРОВКУ
+            
             if self._start:
-                q = q.filter(ECGRecord.recorded_at >=
-                             self._start.isoformat() + " 00:00:00")
+                q = q.filter(ECGRecord.recorded_at >= self._start.isoformat() + " 00:00:00")
             if self._end:
-                q = q.filter(ECGRecord.recorded_at <
-                             self._end.isoformat() + " 23:59:59")
+                q = q.filter(ECGRecord.recorded_at < self._end.isoformat() + " 23:59:59")
+            
             out = []
             for rec in q.all():
                 v = self.spec.value(rec)
                 if v is not None:
-                    out.append((datetime.datetime.fromisoformat(rec.recorded_at), v))
+                    dt = datetime.datetime.fromisoformat(rec.recorded_at)
+                    # <-- 2. СРАЗУ ВЫЧИСЛЯЕМ И СОХРАНЯЕМ ОРДИНАЛ
+                    out.append((self._ord(dt), v))
             return out
         finally:
             session.close()
@@ -211,10 +221,13 @@ class MetricPlot(tk.Frame):
         """Применяет результат загрузки, если за это время не сменили атлета."""
         if seq != self._load_seq or athlete != self._athlete:
             return  # устаревший результат — игнорируем
+        
         self._values = values
         if self._start is None and self._values:
-            self._start = min(d for d, _ in self._values).date()
-            self._end = max(d for d, _ in self._values).date()
+            # <-- ИСПРАВЛЕНО: корректное получение даты из ординала (float)
+            self._start = datetime.date.fromordinal(int(min(d for d, _ in self._values)))
+            self._end = datetime.date.fromordinal(int(max(d for d, _ in self._values)))
+            
         self._loading = False
         self._draw()
 
@@ -307,7 +320,7 @@ class MetricPlot(tk.Frame):
         if self._pan is None or event.button != 1:
             return
         
-        # КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: если началось движение, отменяем таймер клика
+        # Отменяем таймер одиночного клика при начале движения
         if self._single_timer is not None:
             self.after_cancel(self._single_timer)
             self._single_timer = None
@@ -316,11 +329,37 @@ class MetricPlot(tk.Frame):
         width_px = self.ax.get_window_extent().width
         if width_px <= 1:
             return
+            
         span = hi0 - lo0
         shift = (x0 - event.x) * span / width_px
-        self._commit_view(lo0 + shift, lo0 + shift + span)
+        
+        # Сразу вычисляем новые границы, но НЕ рисуем их мгновенно
+        new_lo = lo0 + shift
+        new_hi = new_lo + span
+        self._pending_view = (new_lo, new_hi)
+
+        # ⚡ ГЛАВНЫЙ СЕКРЕТ ПЛАВНОСТИ (Debounce):
+        # Если уже есть запланированная перерисовка, отменяем её
+        if self._draw_timer is not None:
+            self.after_cancel(self._draw_timer)
+        
+        # Планируем новую перерисовку через 16 мс (~60 FPS)
+        self._draw_timer = self.after(16, self._apply_pending_view)
+
+    def _apply_pending_view(self):
+        """Применяет отложенное изменение вида и запускает перерисовку."""
+        self._draw_timer = None
+        if self._pending_view is not None:
+            lo, hi = self._pending_view
+            self._pending_view = None
+            self._commit_view(lo, hi)        
 
     def _on_release(self, event):
+        # Если есть отложенная перерисовка, применяем её прямо сейчас
+        if self._draw_timer is not None:
+            self.after_cancel(self._draw_timer)
+            self._apply_pending_view()
+            
         self._pan = None
 
     def center_on_week(self, week_start_date):
@@ -384,13 +423,19 @@ class MetricPlot(tk.Frame):
             tf_label = tf.label
 
         # Фильтруем данные для текущего view
-        view_values = [(dt, vv) for dt, vv in self._values 
-                       if lo <= self._ord(dt) < hi]
+        # --- БЫЛО (МЕДЛЕННО, O(N) при каждом движении мыши): ---
+        # view_values = [(dt, vv) for dt, vv in self._values if lo <= self._ord(dt) < hi]
+
+        # --- СТАЛО (МОЛНИЕНОСНО, O(log N) благодаря бинарному поиску): ---
+        # self._values теперь содержит кортежи (ordinal, value) и отсортирован по ordinal
+        start_idx = bisect.bisect_left(self._values, (lo, -float('inf')))
+        end_idx = bisect.bisect_right(self._values, (hi, float('inf')))
+        view_values = self._values[start_idx:end_idx]
+        # -----------------------------------------------------------
 
         # Агрегируем данные
         agg = {}
-        for dt, vv in view_values:
-            x = self._ord(dt)
+        for x, vv in view_values:  # x здесь уже является ординалом (float)
             agg.setdefault(key(x), []).append(vv)
         
         xs = sorted(agg)
