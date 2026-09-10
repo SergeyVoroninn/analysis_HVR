@@ -96,22 +96,26 @@ def calc_stress(rr):
     """Индекс стресса (ИС) по Баевскому: ИС = AMo / (2*Mo*MxDMn)."""
     if len(rr) < 10:
         return None
-    vals = [r / 1000.0 for r in rr]
-    mn, mx = min(vals), max(vals)
+
+    rr = [val / 1000.0 for val in rr] # Перевод в секунды
+    
+    mn, mx = min(rr), max(rr)
     mxdmn = mx - mn
     if mxdmn <= 0:
         return None
 
     bin_w = 0.05
-    nbins = int(mxdmn // bin_w) + 1
+    nbins = 28
+    st = 0.3
+    end = 1.7
     hist = [0] * nbins
-    for v in vals:
-        hist[min(int((v - mn) / bin_w), nbins - 1)] += 1
-
+    for v in rr:
+        hist[min(int((v - st) / bin_w), nbins - 1)] += 1
+    # Наивно полагаем что максимум один
     max_count = max(hist)
     mode_idx = hist.index(max_count)
-    mo = mn + (mode_idx + 0.5) * bin_w
-    amo = max_count / len(vals) * 100.0
+    mo = mode_idx * bin_w + st 
+    amo = max_count / len(rr) * 100.0
     si = amo / (2 * mo * mxdmn)
 
     return {"si": si, "amo": amo, "mo_ms": mo * 1000,
