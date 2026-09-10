@@ -3,13 +3,16 @@ importer.py — импорт записей Polar H10 в БД.
 """
 import uuid
 import datetime
+import os
 
 from tkinter import messagebox, filedialog
 
 from database import get_db_path
 from models import get_session, Athlete, ECGRecord, ECGRaw
-# ИСПРАВЛЕНИЕ: добавляем compute_psd в импорт
 from analysis import parse_rr, calc_metrics, calc_stress, filter_rr, compute_psd
+
+# ИМПОРТ НОВЫХ ФУНКЦИЙ БИОМЕТРИИ
+from ecg_biometrics import check_ownership_with_saved_template, get_saved_template
 
 
 def _parse_header(raw):
@@ -23,7 +26,7 @@ def _parse_header(raw):
     return dt_str, polar
 
 
-def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactive=True):
+def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactive=True, parent_window=None):
     try:
         with open(path, "r", encoding="utf-8") as f:
             raw = f.read()
@@ -54,6 +57,35 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
             athlete = selected_athlete
 
         aid = athlete[0]
+        
+        # ⚡ НОВОЕ: БИОМЕТРИЧЕСКАЯ ПРОВЕРКА ПЕРЕД ИМПОРТОМ (по сохраненному шаблону)
+        if interactive and parent_window:
+            status, distance, prob = check_ownership_with_saved_template(db_path, aid, path)
+            
+            if status == "NO_TEMPLATE":
+                if not messagebox.askyesno("Биометрия", 
+                    "Для этого атлета еще не создан биометрический шаблон.\n"
+                    "Рекомендуется создать его в списке записей атлета.\n\n"
+                    "Продолжить импорт?", parent=parent_window, icon='info'):
+                    return "cancelled", None
+                    
+            elif status == "SUSPICIOUS":
+                msg = (
+                    f"🚨 ВНИМАНИЕ: Низкое биометрическое сходство!\n\n"
+                    f"Индекс различия: {distance:.3f} (порог: 0.30)\n"
+                    f"Вероятность совпадения: {prob*100:.1f}%\n\n"
+                    f"Эта запись, скорее всего, принадлежит ДРУГОМУ человеку.\n"
+                    f"Вы уверены, что хотите импортировать её этому атлету?"
+                )
+                if not messagebox.askyesno("Проверка принадлежности", msg, parent=parent_window, icon='warning'):
+                    return "cancelled", None
+                    
+            elif status == "LOW_CONFIDENCE":
+                messagebox.showinfo("Биометрия", 
+                    f"ℹ️ Запись распознана с умеренной уверенностью ({prob*100:.1f}%).\n"
+                    f"Рекомендуется проверить правильность выбора атлета.", 
+                    parent=parent_window, icon='info')
+
         rr = parse_rr(raw)
         seq = filter_rr(rr) if rr else [] 
 
@@ -61,7 +93,6 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         s = calc_stress(seq) if seq else None
         duration = sum(rr) / 1000.0 if rr else 0.0
 
-        # === НОВОЕ: Расчёт спектрального TP для сохранения в БД ===
         spectral_tp = None
         if seq and len(seq) >= 3:
             try:
@@ -74,13 +105,13 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
             athlete_id=aid,
             recorded_at=recorded_at,
             duration_seconds=duration,
-            profile="import",
+            # profile="import",  <-- УДАЛЕНО, так как поля больше нет в models.py
             mean_hr=m["mean_hr"] if m else None,
             rmssd=m["rmssd"] if m else None,
             sdnn=m["sdnn"] if m else None,
             status=m["status"] if m else "ok",
             stress_si=s["si"] if s else None,
-            tp=spectral_tp,  # <-- СОХРАНЯЕМ СПЕКТРАЛЬНЫЙ TP
+            tp=spectral_tp,
         )
         session.add(rec)
         session.flush()
@@ -98,8 +129,9 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         status_cb(f"Запись добавлена: {dt:%d.%m.%Y %H:%M}")
     return "added", aid
 
+
 def import_ecg(parent, db_path, athletes, selected_athlete, status_cb):
-    """Диалог выбора файлов и пакетный импорт. Возвращает id изменённого атлета."""
+    """Диалог выбора файлов и пакетный импорт."""
     paths = filedialog.askopenfilenames(
         title="Выберите файлы записей ЭКГ (Ctrl/Shift — несколько)",
         filetypes=[("Polar H10", "*.teamloggerh10"), ("Все файлы", "*.*")])
@@ -109,18 +141,20 @@ def import_ecg(parent, db_path, athletes, selected_athlete, status_cb):
     changed_aid = None
 
     if len(paths) == 1:
-        _, changed_aid = _import_one(db_path, paths[0], athletes,
-                                      selected_athlete, status_cb, interactive=True)
+        status, changed_aid = _import_one(db_path, paths[0], athletes,
+                                          selected_athlete, status_cb, 
+                                          interactive=True, parent_window=parent)
         return changed_aid
 
-    stats = {"added": 0, "dup": 0, "skip": 0, "err": 0}
+    # Пакетный импорт без биометрических проверок (чтобы не блокировать UI)
+    stats = {"added": 0, "dup": 0, "skip": 0, "err": 0, "cancelled": 0}
     for p in paths:
         s, aid = _import_one(db_path, p, athletes,
-                             selected_athlete, None, interactive=False)
-        stats[s] += 1
+                             selected_athlete, None, interactive=False, parent_window=None)
+        stats[s] = stats.get(s, 0) + 1
         if aid:
             changed_aid = aid
-        total = stats["added"] + stats["dup"] + stats["skip"] + stats["err"]
+        total = sum(stats.values())
         if total % 10 == 0 or total == len(paths):
             status_cb(f"Импорт... {total}/{len(paths)}")
 

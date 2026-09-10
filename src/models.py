@@ -1,7 +1,8 @@
 """ORM-модели и подключение к БД."""
 import os
+from datetime import datetime
 from sqlalchemy import (
-    create_engine, Column, String, Integer, Float, Date, Text, Boolean,
+    create_engine, Column, String, Integer, Float, Date, DateTime, Text, Boolean,
     ForeignKey, event, types
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
@@ -12,7 +13,6 @@ Base = declarative_base()
 class GenderType(types.TypeDecorator):
     """Пол спортсмена: в БД хранится как BOOLEAN (True = мужской),
     в Python-коде остаётся строка 'M'/'F'."""
-
     impl = Boolean
     cache_ok = True
 
@@ -48,6 +48,12 @@ class Athlete(Base):
         "ECGRecord", back_populates="athlete",
         cascade="all, delete-orphan", passive_deletes=True
     )
+    
+    # Связь с биометрическим шаблоном (один к одному)
+    bio_template = relationship(
+        "BiometricTemplate", back_populates="athlete",
+        uselist=False, cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class ECGRecord(Base):
@@ -58,8 +64,11 @@ class ECGRecord(Base):
                         nullable=False, index=True)
     recorded_at = Column(String, nullable=False, index=True)
     duration_seconds = Column(Float)
-    profile = Column(String)
-    # raw_data больше НЕ хранится здесь
+    
+    # УДАЛЕНО: profile = Column(String)
+    # ДОБАВЛЕНО: время создания и последнего обновления для отладки
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    
     mean_hr = Column(Float)
     rmssd = Column(Float)
     sdnn = Column(Float)
@@ -68,6 +77,7 @@ class ECGRecord(Base):
     tp = Column(Float)
 
     athlete = relationship("Athlete", back_populates="ecg_records")
+    
     # Ленивая связь 1-к-1 с сырыми данными
     raw = relationship(
         "ECGRaw", back_populates="record",
@@ -87,6 +97,24 @@ class ECGRaw(Base):
     raw_data = Column(Text, nullable=False)
 
     record = relationship("ECGRecord", back_populates="raw")
+
+
+class BiometricTemplate(Base):
+    """Хранит эталонный биометрический шаблон атлета для проверки при импорте."""
+    __tablename__ = "biometric_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    athlete_id = Column(String, ForeignKey("athletes.id", ondelete="CASCADE"), 
+                        unique=True, nullable=False, index=True)
+    
+    # Храним массивы NumPy как JSON-строки (SQLite не поддерживает массивы float нативно)
+    shape_template = Column(Text, nullable=False)
+    spectrum_template = Column(Text, nullable=False)
+    
+    records_used = Column(Integer, default=0)  # Сколько записей пошло в шаблон
+    created_at = Column(DateTime, default=datetime.now)
+
+    athlete = relationship("Athlete", back_populates="bio_template")
 
 
 # ============================================================
@@ -116,7 +144,10 @@ def get_session(db_path: str):
             _engine.dispose()
         _engine = create_engine(url, echo=False, pool_pre_ping=True)
         event.listen(_engine, "connect", _set_sqlite_pragma)
+        
+        # Создаст все таблицы, включая новую BiometricTemplate
         Base.metadata.create_all(_engine)
+        
         _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
     return _SessionLocal()

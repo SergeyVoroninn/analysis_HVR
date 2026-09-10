@@ -171,6 +171,51 @@ class AthletesPanel(tk.Frame):
         self.reload(select_id=new_id)
         self._changed()
 
+    def add(self):
+        # ⚡ ВАЖНО: db_path=self.db_path добавлен
+        dlg = AthleteDialog(self.winfo_toplevel(), "Новый спортсмен", db_path=self.db_path)
+        self.wait_window(dlg)
+        
+        if not dlg.result:
+            return  # Пользователь нажал "Отмена" или произошла ошибка валидации
+            
+        d = dlg.result
+        import datetime
+        bd = d["birth_date"]
+        if isinstance(bd, str):
+            bd = datetime.date.fromisoformat(bd)
+            
+        age = _calc_age(bd)
+        gender = d["gender"]
+        height = d["height_cm"] or _estimate_height_cm(age, gender)
+        weight = d["weight_kg"] or _estimate_weight_kg(height, age, gender)
+        resting = _estimate_resting_hr(age, gender)
+
+        athlete = Athlete(
+            id=str(uuid.uuid4()),
+            last_name=d["last_name"], first_name=d["first_name"],
+            middle_name=d["middle_name"], gender=gender,
+            birth_date=bd, height_cm=height, weight_kg=weight,
+            resting_hr=resting, max_hr=_estimate_max_hr(age),
+            hrv_rmssd_baseline=_estimate_hrv_rmssd(age),
+            avg_rr_ms=int(60000 / resting) if resting > 0 else 60,
+            polar_id=d["polar_id"] or _generate_polar_id(),
+        )
+        session = self._session()
+        try:
+            session.add(athlete)
+            session.commit()
+            new_id = athlete.id
+        except Exception as e:
+            session.rollback()
+            messagebox.showerror("Ошибка", f"Не удалось создать спортсмена:\n{e}")
+            return
+        finally:
+            session.close()
+
+        self.reload(select_id=new_id)
+        self._changed()
+
     def edit(self):
         cur = self.selected()
         if not cur:
@@ -179,9 +224,11 @@ class AthletesPanel(tk.Frame):
         if not full:
             return
 
+        # ⚡ ВАЖНО: db_path=self.db_path добавлен
         dlg = AthleteDialog(self.winfo_toplevel(), "Редактирование спортсмена",
-                            data=full)
+                            data=full, db_path=self.db_path)
         self.wait_window(dlg)
+        
         if dlg.result:
             d = dlg.result
             session = self._session()
@@ -203,8 +250,6 @@ class AthletesPanel(tk.Frame):
             finally:
                 session.close()
 
-        # После закрытия диалога — всегда выбираем кликнутого атлета
-        # и перезагружаем его данные на графиках
         self.reload(select_id=cur[0])
         self._changed()
 

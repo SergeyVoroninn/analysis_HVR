@@ -58,13 +58,17 @@ class _ForegroundDateEntry(DateEntry):
 
 
 class AthleteDialog(ctk.CTkToplevel):
-    def __init__(self, parent, title, data=None):
+    def __init__(self, parent, title, data=None, db_path=None):
         super().__init__(parent)
         self.title(title)
-        self.geometry("380x460")
+        self.geometry("380x520")  # ⚡ УВЕЛИЧИЛИ ВЫСОТУ (было 460), чтобы кнопка поместилась
         self.resizable(False, False)
         self.transient(parent)
         self.result = None
+
+        # ⚡ ДОБАВЛЕНО: Сохраняем параметры для проверки и открытия биометрии
+        self.db_path = db_path
+        self.athlete_id = data.get("id") if data else None
 
         row = 0
         fields_top = [("last_name", "Фамилия"), ("first_name", "Имя"),
@@ -77,13 +81,11 @@ class AthleteDialog(ctk.CTkToplevel):
             ctk.CTkLabel(self, text=label).grid(row=row, column=0, padx=12, pady=4, sticky="w")
             e = ctk.CTkEntry(self)
             e.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
-            # Только буквы и дефис, первая буква заглавная
             e.configure(validate="key", validatecommand=(self.register(self._only_letters), "%P", key))
             e.bind("<FocusOut>", lambda ev, k=key: self._capitalize(k))
             self.entries[key] = e
             row += 1
 
-        # Дата рождения через календарь с русскими месяцами
         ctk.CTkLabel(self, text="Дата рождения").grid(row=row, column=0, padx=12, pady=4, sticky="w")
         self.birth_date_entry = _ForegroundDateEntry(
             self, width=12, date_pattern='dd-mm-yyyy',
@@ -91,7 +93,7 @@ class AthleteDialog(ctk.CTkToplevel):
             fieldbackground=COL_WEEKEND, borderwidth=0,
             selectbackground=COL_ACCENT, selectforeground=COL_SELECTION,
             year=2005, month=1, day=1,
-            locale="ru_RU",  # русские названия месяцев
+            locale="ru_RU",
             showothermonthdays=False,
         )
         self.birth_date_entry.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
@@ -102,7 +104,6 @@ class AthleteDialog(ctk.CTkToplevel):
             e = ctk.CTkEntry(self)
             e.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
             if key in ("height_cm", "weight_kg"):
-                # Только неотрицательные числа
                 e.configure(validate="key",
                             validatecommand=(self.register(self._only_nonneg_number), "%P"))
             self.entries[key] = e
@@ -116,16 +117,31 @@ class AthleteDialog(ctk.CTkToplevel):
                           ).grid(row=row, column=1, padx=12, pady=4, sticky="ew")
         row += 1
 
+        # ⚡ ТЕПЕРЬ ЭТО УСЛОВИЕ СРАБОТАЕТ КОРРЕКТНО
+        if self.athlete_id and self.db_path:
+            self.btn_bio = ctk.CTkButton(self, text="🧬 Биометрический шаблон", 
+                                         command=self._open_biometrics,
+                                         fg_color=COL_ACCENT,
+                                         hover_color=COL_SELECTION)
+            self.btn_bio.grid(row=row, column=0, columnspan=2, pady=(15, 5), sticky="ew")
+            row += 1
+
         btns = ctk.CTkFrame(self, fg_color="transparent")
         btns.grid(row=row, column=0, columnspan=2, pady=12)
         ctk.CTkButton(btns, text="Сохранить", command=self._on_save).pack(side="left", padx=6)
         ctk.CTkButton(btns, text="Отмена", fg_color="gray",
                       command=self.destroy).pack(side="left", padx=6)
 
+        # Заполняем данные, если редактируем существующего атлета
         if data:
+            for key in self.entries:
+                self.entries[key].delete(0, "end")
+            
             for key, _ in fields_top + fields_bottom:
-                if data.get(key) is not None:
-                    self.entries[key].insert(0, str(data[key]))
+                val = data.get(key)
+                if val is not None and val != "":
+                    self.entries[key].insert(0, str(val))
+            
             if data.get("birth_date"):
                 try:
                     d = data["birth_date"]
@@ -135,10 +151,10 @@ class AthleteDialog(ctk.CTkToplevel):
                 except (ValueError, TypeError):
                     pass
             self.gender_var.set("м" if data.get("gender") == "M" else "ж" if data.get("gender") == "F" else "м")
-
-        # Поднимаем диалог поверх главного окна сразу, без мигания
+        
+        # ⚡ ДОБАВЛЕНО: Поднимаем диалог на передний план
         self._bring_to_front()
-
+        
     # ---------- валидация ввода ----------
     def _bring_to_front(self):
         """Поднимает диалог поверх других окон и даёт фокус."""
@@ -179,44 +195,68 @@ class AthleteDialog(ctk.CTkToplevel):
             return True
         return bool(re.fullmatch(r"\d*\.?\d*", proposed))
 
-    def _on_save(self):
+    def _open_biometrics(self):
+        # Импортируем здесь, чтобы избежать циклических зависимостей, если dialogs импортирует что-то еще
+        from dialogs import BiometricDialog 
+        
         last = self.entries["last_name"].get().strip()
         first = self.entries["first_name"].get().strip()
-        if not last or not first:
-            messagebox.showwarning("Проверка", "Фамилия и имя обязательны.")
-            return
+        athlete_name = f"{last} {first}" if last and first else "Атлет"
+        
+        BiometricDialog(self, self.db_path, self.athlete_id, athlete_name)    
 
-        bd = self.birth_date_entry.get_date()
-        if not datetime.date(1900, 1, 1) <= bd <= datetime.date.today():
-            messagebox.showwarning("Проверка", "Некорректная дата рождения.")
-            return
+    def _on_save(self):
+        try:
+            last = self.entries["last_name"].get().strip()
+            first = self.entries["first_name"].get().strip()
+            if not last or not first:
+                messagebox.showwarning("Проверка", "Фамилия и имя обязательны.")
+                return
 
-        def opt_num(key, cast):
-            v = self.entries[key].get().strip()
-            if not v:
-                return None
-            try:
-                val = cast(v)
-                if val <= 0:
+            bd = self.birth_date_entry.get_date()
+            # Дополнительная защита: если tkcalendar вернул строку вместо даты
+            if isinstance(bd, str):
+                bd = datetime.date.fromisoformat(bd)
+                
+            if not datetime.date(1900, 1, 1) <= bd <= datetime.date.today():
+                messagebox.showwarning("Проверка", "Некорректная дата рождения.")
+                return
+
+            def opt_num(key, cast):
+                v = self.entries[key].get().strip()
+                if not v:
                     return None
-                return val
-            except ValueError:
-                return None
+                try:
+                    val = cast(v)
+                    if val <= 0:
+                        return None
+                    return val
+                except ValueError:
+                    return None
 
-        self.result = {"last_name": last, "first_name": first,
-                       "middle_name": self.entries["middle_name"].get().strip(),
-                       "birth_date": bd,
-                       "gender": "M" if self.gender_var.get() == "м" else "F",
-                       "height_cm": opt_num("height_cm", int),
-                       "weight_kg": opt_num("weight_kg", float),
-                       "polar_id": self.entries["polar_id"].get().strip()}
-        self.destroy()
-
+            self.result = {
+                "last_name": last, 
+                "first_name": first,
+                "middle_name": self.entries["middle_name"].get().strip(),
+                "birth_date": bd,
+                "gender": "M" if self.gender_var.get() == "м" else "F",
+                "height_cm": opt_num("height_cm", int),
+                "weight_kg": opt_num("weight_kg", float),
+                "polar_id": self.entries["polar_id"].get().strip()
+            }
+            self.destroy()
+            
+        except Exception as e:
+            # ⚡ ЕСЛИ ПРОИЗОШЛА ОШИБКА, МЫ ЕЁ УВИДИМ
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Ошибка сохранения", f"Произошла непредвиденная ошибка:\n{e}")
 
 class ECGListDialog(ctk.CTkToplevel):
     """Окно со списком ЭКГ за выбранный интервал (ORM-версия)."""
 
-    DISPLAY_COLS = ("Время", "Профиль", "ЧСС", "RMSSD", "SDNN", "ИС", "TP", "Статус")
+    # ⚡ ЗАМЕНИЛИ "Профиль" на "Обновлено"
+    DISPLAY_COLS = ("Время", "Обновлено", "ЧСС", "RMSSD", "SDNN", "ИС", "TP", "Статус")
 
     def __init__(self, parent, athlete_id, date_from, date_to, title, on_change=None):
         super().__init__(parent)
@@ -241,9 +281,11 @@ class ECGListDialog(ctk.CTkToplevel):
                                  height=14)
         for c in self.DISPLAY_COLS:
             if c == "Время":
-                w = 110  # Чуть шире для даты и времени
+                w = 110
+            elif c == "Обновлено":  # ⚡ НОВАЯ КОЛОНКА
+                w = 110
             elif c == "TP":
-                w = 80   # Ширина для TP
+                w = 80
             else:
                 w = 70
             self.tree.heading(c, text=c)
@@ -269,17 +311,14 @@ class ECGListDialog(ctk.CTkToplevel):
                       command=self.destroy).pack(side="left", padx=4)
 
         self._load()
-        # Корректное закрытие при уничтожении родителя
         self.protocol("WM_DELETE_WINDOW", self._safe_close)
-        # Следим за уничтожением родителя
-        self._parent_watch = self.after(200, self._check_parent)        
+        self._parent_watch = self.after(200, self._check_parent)
 
     def _setup_grab(self):
         """Grab_set включается только когда календарь закрыт."""
         if not self.winfo_exists():
             return
         try:
-            # Проверяем, открыто ли окно календаря
             for w in self.master.winfo_children():
                 if hasattr(w, 'calendar') and w.winfo_exists():
                     self._calendar_open = True
@@ -335,9 +374,17 @@ class ECGListDialog(ctk.CTkToplevel):
             )
 
             for rec in records:
+                #  ФОРМАТИРОВАНИЕ updated_at
+                updated_str = ""
+                if rec.updated_at:
+                    if isinstance(rec.updated_at, datetime.datetime):
+                        updated_str = rec.updated_at.strftime("%d.%m.%Y %H:%M")
+                    else:
+                        updated_str = str(rec.updated_at)[:16]
+                
                 self.tree.insert("", "end", iid=str(rec.id), values=(
                     rec.recorded_at[:16] if rec.recorded_at else "",
-                    rec.profile or "",
+                    updated_str,  # ⚡ ВМЕСТО rec.profile
                     f"{rec.mean_hr:.0f}" if rec.mean_hr is not None else "",
                     f"{rec.rmssd:.1f}" if rec.rmssd is not None else "",
                     f"{rec.sdnn:.1f}" if rec.sdnn is not None else "",
@@ -367,7 +414,6 @@ class ECGListDialog(ctk.CTkToplevel):
         session = get_session(self.db_path)
         try:
             rec = session.get(ECGRecord, rid)
-            # raw теперь в связанной таблице ECGRaw через rec.raw
             if rec is None or rec.raw is None or not rec.raw.raw_data:
                 messagebox.showwarning(
                     "Экспорт",
@@ -417,3 +463,63 @@ class ECGListDialog(ctk.CTkToplevel):
         self._on_select()
         if self.on_change:
             self.on_change()
+
+class BiometricDialog(ctk.CTkToplevel):
+    """Окно управления биометрическим шаблоном атлета."""
+    def __init__(self, parent, db_path, athlete_id, athlete_name):
+        super().__init__(parent)
+        self.title(f"Биометрия: {athlete_name}")
+        self.geometry("450x280")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self.db_path = db_path
+        self.athlete_id = athlete_id
+
+        ctk.CTkLabel(self, text="Управление биометрическим шаблоном", 
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(pady=15)
+
+        self.status_lbl = ctk.CTkLabel(self, text="Загрузка статуса...", font=ctk.CTkFont(size=12))
+        self.status_lbl.pack(pady=10)
+
+        self.info_lbl = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=11), text_color="gray")
+        self.info_lbl.pack(pady=5)
+
+        self.btn_create = ctk.CTkButton(self, text="🧬 Сформировать / Обновить шаблон", 
+                                        command=self._on_create, height=40)
+        self.btn_create.pack(pady=20)
+
+        ctk.CTkButton(self, text="Закрыть", fg_color="gray", command=self.destroy).pack(pady=10)
+
+        self._update_status()
+
+    def _update_status(self):
+        from ecg_biometrics import get_saved_template
+        shape, spec = get_saved_template(self.db_path, self.athlete_id)
+        if shape is not None:
+            self.status_lbl.configure(text="✅ Шаблон активен", text_color="green")
+            self.info_lbl.configure(text="Используется для проверки при импорте новых записей.")
+            self.btn_create.configure(text="🔄 Обновить шаблон")
+        else:
+            self.status_lbl.configure(text="⚠️ Шаблон отсутствует", text_color="orange")
+            self.info_lbl.configure(text=f"Для создания требуется минимум 7 записей ЭКГ.")
+            self.btn_create.configure(text="✨ Создать шаблон")
+
+    def _on_create(self):
+        from ecg_biometrics import create_and_save_template
+        self.btn_create.configure(state="disabled", text="Анализ записей...")
+        self.update()
+        
+        def progress(msg):
+            self.info_lbl.configure(text=msg)
+            self.update()
+            
+        success, message = create_and_save_template(self.db_path, self.athlete_id, progress_cb=progress)
+        
+        if success:
+            messagebox.showinfo("Успех", message, parent=self)
+            self._update_status()
+        else:
+            messagebox.showerror("Ошибка", message, parent=self)
+            self.btn_create.configure(state="normal")
