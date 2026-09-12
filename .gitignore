@@ -10,7 +10,8 @@ __pycache__/
 .vscode/
 .pytest_cache
 myenv
-raw_data.pytest_cache
+raw_data
 dist
 build
 requirements-test.txt
+tools/сборы август 2026
