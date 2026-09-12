@@ -9,7 +9,7 @@ from tkinter import messagebox, filedialog
 from database import get_db_path
 from models import get_session, Athlete, ECGRecord, ECGRaw
 # ИСПРАВЛЕНИЕ: добавляем compute_psd в импорт
-from analysis import parse_rr, calc_metrics, calc_stress, filter_rr, compute_psd
+from analysis import parse_rr, calc_metrics, calc_stress, compute_psd
 
 
 def _parse_header(raw):
@@ -55,7 +55,8 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
 
         aid = athlete[0]
         rr = parse_rr(raw)
-        seq = filter_rr(rr) if rr else [] 
+        seq = rr 
+        # seq = filter_rr(rr) if rr else [] СТАРОЕ С ФИЛЬТРОМ
 
         m = calc_metrics(seq) if seq else None
         s = calc_stress(seq) if seq else None

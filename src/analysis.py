@@ -1,81 +1,89 @@
 """
 Анализ ЭКГ: парсинг сырых данных и расчёт метрик HRV.
 Используется и при генерации БД, и в приложении.
-
-Зависимости: numpy, scipy
-Установка: pip install numpy scipy
 """
 
-import re
+import math
 import numpy as np
-from scipy import signal
-from scipy.signal import butter, filtfilt, iirnotch
-from scipy.integrate import trapezoid
-from scipy.ndimage import median_filter
-
+from scipy.interpolate import CubicSpline
 # Границы анализа (уд/мин и мс)
 HR_CRIT = (35, 200)    # выход за эти границы → красный
 HR_WARN = (45, 180)    # выход за эти границы → жёлтый
 
 
-def detect_sampling_rate(raw_data):
+def compute_psd(rr, fs=4.0, nperseg=256):
     """
-    Пытается определить частоту дискретизации из метаданных файла.
-    Возвращает fs в Гц или None, если не удалось определить.
+    Считает спектральную плотность мощности RR-тахограммы (метод Вельча).
+
+    :param rr: список RR-интервалов (мс)
+    :param fs: частота ресемплинга (Гц)
+    :param nperseg: длина сегмента Вельча
+    :return: (freqs, psd, bands) где bands = {vlf, lf, hf, tp} в мс^2
     """
-    lines = raw_data.split('\n')
-    for line in lines[:50]:  # Проверяем первые 50 строк (метаданные обычно в начале)
-        line_upper = line.strip().upper()
-        if 'SAMPLE RATE' in line_upper or 'SAMPLING RATE' in line_upper or 'HZ' in line_upper or 'ГЦ' in line_upper:
-            try:
-                match = re.search(r'(\d+)', line)
-                if match:
-                    return float(match.group(1))
-            except Exception:
-                pass
-    return None
+    R_R = np.asarray(rr, dtype=float)
 
+    ####
+    # BLOCK в котором отрезают начало записи и конец
+    ####
+    start = int(len(R_R) * 0.1)
+    stop = int(len(R_R) * 0.9)
+    R_R = R_R[start:stop]
 
-def compute_psd(rr, fs=4.0, nperseg=None):
-    """
-    Спектральная плотность RR-тахограммы.
-    """
-    # 1. Фильтруем RR перед спектральным анализом
-    rr_clean = filter_rr(rr)
-    
-    rr_arr = np.asarray(rr_clean, dtype=float)
-    if len(rr_arr) < 4:
-        return None, None, None
+    #Переводим в секунды кардиоинтерваллограмму
+    R_R_sec = R_R / 1000
+    #Интерполяция:
+    #1. высчитываем временную шкалу
+    time_steps = np.cumsum(R_R_sec)
+    #2. Делаем шкалу с частотой дискретизации 0.25
+    new_time = np.arange(time_steps[0], time_steps[-1], 0.25)
+    #3. используем для отображения на новую шкалу кубическую интерполяцию
+    spline_model = CubicSpline(time_steps, R_R_sec)
+    R_R_interp = spline_model(new_time)
+    #Центрирование данных
+    R_R_centered = R_R_interp - np.mean(R_R_interp)
 
-    # 2. Интерполяция на равномерную сетку
-    t = np.cumsum(rr_arr) / 1000.0
-    t_uniform = np.arange(t[0], t[-1], 1.0 / fs)
-    x = np.interp(t_uniform, t, rr_arr)
-    x = x - np.mean(x)
+    ### Ритмограмма R-R Интерполированные Аппаратные данные
 
-    # 3. Расчёт PSD через scipy
-    if nperseg is None or nperseg > len(x):
-        nperseg = len(x)
-        
-    freqs, psd = signal.welch(x, fs=fs, nperseg=nperseg, window='hann')
+    ### Переход из частотной во временную область
+    R_R_spectral = np.fft.fft(R_R_centered)
 
-    # 4. Интегрирование по стандартным полосам (мс²)
-    def band_power(lo, hi):
-        mask = (freqs >= lo) & (freqs < hi)
-        return float(trapezoid(psd[mask], freqs[mask]))
+    #Задаём частоту дискретизации и преобразовываем ось
+    fs = 4
+    frequencies = np.fft.fftfreq(len(R_R_interp), d=1/fs)  # d — интервал дискретизации (1/fs)
+    frequencies[:10]
+    #Спектр (15) является зеркально симметричным (двусторонним) относительно своей центральной точки l=(N-l)/2, то есть: Xi=XN-i поэтому для его графического отображения и последующего исследования достаточно первых (N-l)/2 амплитуд (односторонний спектр). При переходе от двустороннего спектра к одностороннему необходимо нормирование его амплитуд умножением на √2 (нормировка спектра мощности производится умножением на 2)
+    #Мощность спектра
+    #$$ PSD(f)=\frac{2\cdot |z|{}^{2}}{f_{s}\cdot N}$$
+    N_interp = len(R_R_interp)
+    #Мощность спектра в секундах
+    psd_sec = 2 * np.abs(R_R_spectral) ** 2 / (fs *N_interp)  
+    #Мощность спектра в милисекундах
+    psd= psd_sec* 1000000
+    #Маска для нижних  частот (в которых работает наше тело?)
+    low_freq_mask = (frequencies > 0) & (frequencies < 0.4)
 
+    #Маски для каждой категории частот:
+    hf_mask = (frequencies > 0.15) & (frequencies <= 0.4)
+    lf_mask = (frequencies > 0.04) & (frequencies <= 0.15)
+    vlf_mask = (frequencies > 0.003) & (frequencies <= 0.04)
+    ulf_mask = (frequencies > 0) & (frequencies <= 0.003)
+
+    ### Расчёт совокупной мощности спектра
+    hf = np.trapz(psd[hf_mask], frequencies[hf_mask])
+    lf = np.trapz(psd[lf_mask], frequencies[lf_mask])
+    vlf = np.trapz(psd[vlf_mask], frequencies[vlf_mask])
+    ulf = np.trapz(psd[ulf_mask], frequencies[ulf_mask])
     bands = {
-        "vlf": band_power(0.0033, 0.04),
-        "lf":  band_power(0.04, 0.15),
-        "hf":  band_power(0.15, 0.4),
+        'hf':hf,
+        'lf':lf,
+        'vlf':vlf,
+        'ulf':ulf,
+        'tp':(hf+lf+vlf+ulf)
     }
-    bands["tp"] = bands["vlf"] + bands["lf"] + bands["hf"]
-    
-    return freqs, psd, bands
-
+    return frequencies, psd, bands
 
 def stress_level(si):
-    """Текстовый уровень стресса по индексу напряжения (Баевский)."""
+    """Текстовый уровень стресса по индексу."""
     if si is None:
         return None
     if si < 30:   return "низкий"
@@ -85,67 +93,37 @@ def stress_level(si):
 
 
 def calc_stress(rr):
-    # Сначала фильтруем данные!
-    rr_clean = filter_rr(rr)
-    
-    if len(rr_clean) < 10:
+    """Индекс стресса (ИС) по Баевскому: ИС = AMo / (2*Mo*MxDMn)."""
+    if len(rr) < 10:
         return None
+
+    rr = [val / 1000.0 for val in rr] # Перевод в секунды
     
-    vals_sec = np.array(rr_clean) / 1000.0
-    
-    # 1. Размах (MXDMN) через перцентили (99 и 1) для устойчивости к выбросам
-    p99, p1 = np.percentile(vals_sec, [99, 1])
-    mxdmn = p99 - p1
+    mn, mx = min(rr), max(rr)
+    mxdmn = mx - mn
     if mxdmn <= 0:
         return None
 
-    # 2. Поиск моды (Mo) через гистограмму с мелким шагом
-    mn, mx = np.min(vals_sec), np.max(vals_sec)
-    bin_w = 0.02  # Было 0.05, стало 0.02 (20 мс)
-    
-    # Защита от слишком узкого диапазона
-    if mx - mn < bin_w:
-        bin_w = mx - mn
-        
-    counts, bin_edges = np.histogram(vals_sec, bins=np.arange(mn, mx + bin_w, bin_w))
-    
-    max_count = np.max(counts)
-    mode_idx = np.argmax(counts)
-    # Центр бина, где находится максимум
-    mo = bin_edges[mode_idx] + 0.5 * bin_w
-    
-    amo = (max_count / len(vals_sec)) * 100.0
-    
-    # Формула SI: AMo / (Mo * MXDMN)
-    # Обратите внимание: Mo и MXDMN должны быть в секундах для согласованности единиц,
-    # но так как AMo в %, а Mo в секундах, результат будет корректным.
-    si = amo / (mo * mxdmn)
+    bin_w = 0.05
+    nbins = 28
+    st = 0.3
+    end = 1.7
+    hist = [0] * nbins
+    for v in rr:
+        hist[min(int((v - st) / bin_w), nbins - 1)] += 1
+    # Наивно полагаем что максимум один
+    max_count = max(hist)
+    mode_idx = hist.index(max_count)
+    mo = mode_idx * bin_w + st 
+    amo = max_count / len(rr) * 100.0
+    si = amo / (2 * mo * mxdmn)
 
-    return {
-        "si": float(si), 
-        "amo": float(amo), 
-        "mo_ms": float(mo * 1000),
-        "mxdmn_ms": float(mxdmn * 1000), 
-        "level": stress_level(si)
-    }
+    return {"si": si, "amo": amo, "mo_ms": mo * 1000,
+            "mxdmn_ms": mxdmn * 1000, "level": stress_level(si)}
 
-
-
-def parse_rr(raw_data, fs=None):
-    """
-    Извлекает RR-интервалы (мс) из сырой записи.
-    ПРИОРИТЕТ: Сначала читаем готовые аппаратные данные из [RR].
-    Только если их нет, пытаемся извлечь из [ECG].
-    """
-    # Автоопределение частоты, если не передана явно
-    if fs is None:
-        fs = detect_sampling_rate(raw_data)
-        if fs is None:
-            fs = 130.0  # Fallback для Polar H10 / teamlogger
-    
+def parse_rr(raw_data):
+    """Извлекает RR-интервалы (мс) из сырой записи."""
     lines = raw_data.split('\n')
-    
-    # 1. ПЕРВЫЙ ПРИОРИТЕТ: Читаем секцию [RR] (аппаратная детекция)
     in_rr = False
     rr = []
     for line in lines:
@@ -161,84 +139,36 @@ def parse_rr(raw_data, fs=None):
                 rr.extend(int(v) for v in line.split(',') if v.strip())
             except ValueError:
                 pass
-    
-    # Если нашли достаточно интервалов, возвращаем их сразу!
-    if len(rr) > 10:
-        return rr
-
-    # 2. Фоллбек: Если [RR] пуст или отсутствует, пытаемся извлечь из [ECG]
-    if '[ECG]' in raw_data:
-        in_ecg = False
-        samples = []
-        for line in lines:
-            line = line.strip()
-            if line == '[ECG]':
-                in_ecg = True
-                continue
-            if line.startswith('['):
-                in_ecg = False
-                continue
-            if in_ecg and ':' in line:
-                data_part = line.split(':', 1)[1]
-                try:
-                    samples.extend(int(v) for v in data_part.split(',') if v.strip())
-                except ValueError:
-                    pass
-        
-        if len(samples) > 100:
-            ecg_clean = clean_ecg(samples, fs=fs)
-            rr_from_ecg = extract_rr_from_ecg(ecg_clean, fs=fs)
-            if rr_from_ecg and len(rr_from_ecg) > 10:
-                return rr_from_ecg
-    
-    # Если ничего не получилось, возвращаем пустой список
     return rr
 
 
 def calc_metrics(rr):
-    """
-    Расчёт метрик HRV с предварительной фильтрацией RR.
-    """
-    # 1. Фильтруем артефакты в RR
-    rr_clean = filter_rr(rr)
-    
-    n = len(rr_clean)
-    if n < 3:
+    """Считает метрики HRV и определяет статус записи."""
+    if len(rr) < 3:
         return None
 
-    rr_array = np.array(rr_clean, dtype=float)
-    mean_rr = np.mean(rr_array)
-    
-    # ddof=1 обеспечивает несмещённую оценку (деление на n-1)
-    sdnn = np.std(rr_array, ddof=1)
-    
-    # RMSSD: квадратный корень из среднего квадратов разностей соседних интервалов
-    diffs = np.diff(rr_array)
-    rmssd = np.sqrt(np.mean(np.square(diffs)))
+    n = len(rr)
+    mean_rr = sum(rr) / n
+    sdnn = math.sqrt(sum((x - mean_rr) ** 2 for x in rr) / (n - 1))
+    diffs = [rr[i + 1] - rr[i] for i in range(n - 1)]
+    rmssd = math.sqrt(sum(d * d for d in diffs) / len(diffs))
 
-    mean_hr = 60000.0 / mean_rr
-    
+    mean_hr = 60000 / mean_rr
+    status = _status(mean_hr, rmssd)
+
     return {
-        "mean_hr": float(mean_hr),
-        "min_hr": float(60000.0 / np.max(rr_array)),
-        "max_hr": float(60000.0 / np.min(rr_array)),
-        "mean_rr": float(mean_rr),
-        "sdnn": float(sdnn),
-        "rmssd": float(rmssd),
+        "mean_hr": mean_hr,
+        "min_hr": 60000 / max(rr),
+        "max_hr": 60000 / min(rr),
+        "mean_rr": mean_rr,
+        "sdnn": sdnn,
+        "rmssd": rmssd,
         "count": n,
-        "status": _status(mean_hr, rmssd),
+        "status": status,
     }
 
-
-def parse_ecg(raw_data, clean=False, fs=None):
-    """
-    Извлекает семплы сигнала ЭКГ из сырой записи.
-    """
-    if fs is None:
-        fs = detect_sampling_rate(raw_data)
-        if fs is None:
-            fs = 130.0
-
+def parse_ecg(raw_data):
+    """Извлекает семплы сигнала ЭКГ из сырой записи."""
     lines = raw_data.split('\n')
     in_ecg = False
     samples = []
@@ -256,88 +186,7 @@ def parse_ecg(raw_data, clean=False, fs=None):
                 samples.extend(int(v) for v in data_part.split(',') if v.strip())
             except ValueError:
                 pass
-    
-    if clean and samples:
-        return clean_ecg(samples, fs=fs)
-    
     return samples
-
-
-def clean_ecg(ecg_signal, fs, notch_freq=50.0, band_low=0.5, band_high=40.0):
-    """
-    Очистка ЭКГ: удаление выбросов и частотная фильтрация.
-    fs передаётся явно из вызывающей функции.
-    """
-    sig = np.asarray(ecg_signal, dtype=float).copy()
-    if len(sig) < 100:
-        return sig
-    
-    # 1. Удаление выбросов через IQR (до фильтрации!)
-    q1, q3 = np.percentile(sig, [25, 75])
-    iqr = q3 - q1
-    lower = q1 - 3.0 * iqr
-    upper = q3 + 3.0 * iqr
-    outlier_mask = (sig < lower) | (sig > upper)
-    if np.any(outlier_mask):
-        sig[outlier_mask] = np.median(sig[~outlier_mask])
-    
-    # 2. Медианный фильтр (окно 5 семплов = ~38 мс при 130 Гц)
-    sig = median_filter(sig, size=5)
-    
-    # 3. Частотные фильтры с контролируемым padlen
-    nyq = 0.5 * fs
-    padlen = min(3 * max(len(sig) // 10, 50), len(sig) - 1)
-    
-    if 0 < notch_freq < nyq:
-        b_notch, a_notch = iirnotch(notch_freq / nyq, Q=30.0)
-        sig = filtfilt(b_notch, a_notch, sig, padlen=padlen)
-    
-    if 0 < band_low < band_high < nyq:
-        b_band, a_band = butter(4, [band_low / nyq, band_high / nyq], btype='band')
-        sig = filtfilt(b_band, a_band, sig, padlen=padlen)
-    
-    return sig
-
-
-def extract_rr_from_ecg(ecg_signal, fs, min_rr_ms=300, max_rr_ms=1500):
-    """
-    Детекция R-пиков с правильными параметрами (фоллбек, если нет секции [RR]).
-    fs передаётся явно из вызывающей функции.
-    """
-    sig = np.asarray(ecg_signal, dtype=float)
-    if len(sig) < 100:
-        return []
-    
-    min_distance_samples = int((min_rr_ms / 1000.0) * fs)
-    
-    # prominence = 0.4 от полного размаха (баланс между шумом и пропусками)
-    prominence_val = np.ptp(sig) * 0.4
-    
-    peaks, _ = signal.find_peaks(
-        sig, 
-        distance=min_distance_samples, 
-        prominence=prominence_val
-    )
-    
-    if len(peaks) < 2:
-        return []
-    
-    rr_intervals_ms = np.diff(peaks) / fs * 1000.0
-    
-    # Агрессивная постобработка: удаление и замена невозможных RR
-    valid_rr = []
-    for i, rr in enumerate(rr_intervals_ms):
-        if min_rr_ms <= rr <= max_rr_ms:
-            valid_rr.append(rr)
-        else:
-            # Заменяем на медиану предыдущих валидных (или 800 мс по умолчанию)
-            if valid_rr:
-                valid_rr.append(np.median(valid_rr[-10:]))
-            else:
-                valid_rr.append(800.0)
-    
-    return valid_rr
-
 
 def _status(mean_hr, rmssd):
     """Определяет, в пределах ли параметров анализа запись."""
@@ -346,40 +195,3 @@ def _status(mean_hr, rmssd):
     if mean_hr < HR_WARN[0] or mean_hr > HR_WARN[1] or rmssd < 10:
         return 'warn'
     return 'ok'
-
-
-def filter_rr(rr, dev=0.25, min_rr=300, max_rr=1500, window_size=9):
-    if len(rr) < 10:
-        return list(rr)
-    
-    clean = np.array(rr, dtype=float)
-    half_win = window_size // 2
-    
-    # Маска выбросов
-    outlier_mask = np.zeros_like(clean, dtype=bool)
-    
-    # 1. Абсолютные границы
-    outlier_mask |= (clean < min_rr) | (clean > max_rr)
-    
-    # 2. Относительное отклонение от скользящей медианы
-    for i in range(len(clean)):
-        start = max(0, i - half_win)
-        end = min(len(clean), i + half_win + 1)
-        neighbors = clean[start:end]
-        
-        # Медиана соседей (без текущего элемента для чистоты оценки)
-        # Если окно маленькое, берем медиану всего окна
-        med = np.median(neighbors)
-        
-        if abs(clean[i] - med) > dev * med:
-            outlier_mask[i] = True
-            
-    if np.any(outlier_mask):
-        clean[outlier_mask] = np.nan
-        # Линейная интерполяция вместо замены на предыдущее значение
-        nans = np.isnan(clean)
-        if np.any(nans) and np.any(~nans):
-            indices = np.arange(len(clean))
-            clean[nans] = np.interp(indices[nans], indices[~nans], clean[~nans])
-    
-    return clean.tolist()
