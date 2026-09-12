@@ -5,9 +5,10 @@ import datetime
 
 
 class AppOrchestrator:
-    def __init__(self, heatmap, charts, settings):
+    def __init__(self, heatmap, charts, recommendations, settings):
         self.heatmap = heatmap
         self.charts = charts
+        self.recommendations = recommendations
         self.settings = settings
         self._saved_range = None  # (lo, hi) в ординалах
 
@@ -33,7 +34,8 @@ class AppOrchestrator:
     def _handle_week_pick(self, w, d):
         self.heatmap.week_map.week_start = d
         self.charts.center_on_week(d)
-
+        self.recommendations.update_by_date(d, self.heatmap.athlete)
+        
     def _handle_week_dbl_pick(self, w, monday):
         mid_week = monday + datetime.timedelta(days=3)
         start = mid_week - datetime.timedelta(days=15)
@@ -75,7 +77,10 @@ class AppOrchestrator:
             self.heatmap.set_cursor_by_date(last_date)
             # Устанавливаем год на год последней записи
             self.heatmap.year = last_date.year
-        
+            self.recommendations.update_by_date(last_date, self.heatmap.athlete) 
+        else:
+            self.recommendations.refresh()
+
         # Сбрасываем view графиков в None (покажет полный диапазон)
         for p in self.charts._plots:
             p.view = None
@@ -86,11 +91,15 @@ class AppOrchestrator:
 
     def _handle_chart_single_click(self, d):
         self.heatmap.set_cursor_by_date(d)
+        self.recommendations.update_by_date(d, self.heatmap.athlete) 
+        
 
     def _handle_weekmap_day_dbl(self, day_start, day_end):
         lo = day_start.toordinal()
         hi = lo + 1.0
         self.charts.zoom = (lo, hi)
+        self.recommendations.update_by_date(day_start, self.heatmap.athlete)
+
 
     def _handle_weekmap_week_rmb(self, week_start, week_end):
         lo = week_start.toordinal()
@@ -106,7 +115,8 @@ class AppOrchestrator:
         saved = self._saved_range
         self.heatmap.athlete = aid
         self.charts.athlete = aid
-        
+        self.recommendations.refresh()
+
         if saved is not None:
             # Если был установлен конкретный зум (колесо, двойной клик), применяем его
             self.charts.zoom = saved

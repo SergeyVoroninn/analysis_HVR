@@ -9,8 +9,8 @@ from tkinter import messagebox, filedialog
 from database import get_db_path
 from models import get_session, Athlete, ECGRecord, ECGRaw
 # ИСПРАВЛЕНИЕ: добавляем compute_psd в импорт
-from analysis import parse_rr, calc_metrics, calc_stress, compute_psd
-
+from analysis import parse_rr, calc_metrics, calc_stress, compute_psd, calculate_tp_ratio
+sklearn_model = None 
 
 def _parse_header(raw):
     dt_str, polar = None, None
@@ -70,6 +70,21 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                 spectral_tp = bands.get("tp")
             except Exception:
                 spectral_tp = None
+                
+        tp_ratio = 0
+
+        if s["si"]  is not None and spectral_tp is not None:
+            # Если модель была успешно загружена в app.py при старте приложения
+            tp_ratio = calculate_tp_ratio(session, aid, spectral_tp) 
+            if sklearn_model is not None:
+                try:
+                    # Подаем признаки строго в том порядке, в котором обучали (например, [TP, SI])
+                    input_data = [[float(spectral_tp), float(s["si"]), float(tp_ratio)]]
+                    predicted_class = sklearn_model.predict(input_data)
+                    calculated_rec_code = int(predicted_class[0]) # Извлекаем число из массива
+                except Exception as e:
+                    print(f"[Model Predict Error] Ошибка инференса модели: {e}")
+                    calculated_rec_code = 0
 
         rec = ECGRecord(
             athlete_id=aid,
@@ -82,6 +97,8 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
             status=m["status"] if m else "ok",
             stress_si=s["si"] if s else None,
             tp=spectral_tp,  # <-- СОХРАНЯЕМ СПЕКТРАЛЬНЫЙ TP
+            rec_code=calculated_rec_code, 
+
         )
         session.add(rec)
         session.flush()

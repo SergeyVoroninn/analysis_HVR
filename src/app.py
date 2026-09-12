@@ -12,7 +12,7 @@ import tkinter as tk
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
 sys.path.insert(0, SCRIPTS_DIR)
-
+from recommendations import RecommendationsPanel
 from theme import COL_BG_DARK, COL_TEXT_DIM
 from ghost import ResizeController
 from appsettings import AppSettings
@@ -73,6 +73,22 @@ if __name__ == "__main__":
     from charts import ChartsPanel, TP_METRIC, SI_METRIC
     pump(0.80)
     from importer import import_ecg
+    import joblib
+    MODEL_PATH = os.path.join(BASE_DIR, "models", "model.joblib")
+    sklearn_model = None
+    
+    if os.path.exists(MODEL_PATH):
+        try:
+            sklearn_model = joblib.load(MODEL_PATH)
+            print(f"[Initialization] Модель успешно загружена из {MODEL_PATH}")
+        except Exception as e:
+            print(f"[Initialization Error] Ошибка загрузки модели: {e}")
+    else:
+        print(f"[Initialization Warning] Файл модели не найден по пути: {MODEL_PATH}")
+        
+    # Чтобы importer.py получил доступ к этой модели, мы просто прокинем её туда:
+    import importer
+    importer.sklearn_model = sklearn_model 
     pump(0.90)
 
     # ---------- левая колонка: спортсмены ----------
@@ -132,12 +148,13 @@ if __name__ == "__main__":
     # 1. Создаем виджеты (минимум колбэков здесь!)
     hm = Heatmap(right, on_pick=on_week_pick_action)
     charts = ChartsPanel(right, metrics=[TP_METRIC, SI_METRIC])
+    recommendations = RecommendationsPanel(right)
     
     # 2. Создаем Оркестратор и передаем ему виджеты
-    orchestrator = AppOrchestrator(hm, charts, settings)
+    orchestrator = AppOrchestrator(hm, charts, recommendations, settings)
     
     # 3. ResizeController
-    ResizeController(right, blocks=[hm, charts], gap=10)
+    ResizeController(right, blocks=[hm, charts, recommendations], gap=10)
 
     # ---------- импорт ----------
     def do_import():
@@ -178,7 +195,8 @@ if __name__ == "__main__":
     # порядка вызовов при инициализации, и делает запуск идентичным ручному переключению.
     hm.refresh()
     charts.refresh()
-    
+    recommendations.refresh()
+
     root.update()
     
     # Восстанавливаем состояние heatmap и charts через оркестратор

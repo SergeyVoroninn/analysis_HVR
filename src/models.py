@@ -66,7 +66,7 @@ class ECGRecord(Base):
     status = Column(String)
     stress_si = Column(Float)
     tp = Column(Float)
-
+    rec_code = Column(Integer, nullable=True, default=0)
     athlete = relationship("Athlete", back_populates="ecg_records")
     # Ленивая связь 1-к-1 с сырыми данными
     raw = relationship(

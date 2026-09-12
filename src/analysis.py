@@ -6,6 +6,8 @@
 import math
 import numpy as np
 from scipy.interpolate import CubicSpline
+from sqlalchemy import desc
+from models import ECGRecord
 # Границы анализа (уд/мин и мс)
 HR_CRIT = (35, 200)    # выход за эти границы → красный
 HR_WARN = (45, 180)    # выход за эти границы → жёлтый
@@ -195,3 +197,32 @@ def _status(mean_hr, rmssd):
     if mean_hr < HR_WARN[0] or mean_hr > HR_WARN[1] or rmssd < 10:
         return 'warn'
     return 'ok'
+
+def calculate_tp_ratio(session, athlete_id, current_tp) -> float:
+    """
+    Рассчитывает динамический признак: 
+    Текущий TP / Максимальный TP за последние 10 записей спортсмена.
+    """
+    if current_tp is None:
+        return 1.0
+        
+    try:
+        # Запрашиваем только поле 'tp' последних 10 записей конкретного атлета
+        history_rows = (session.query(ECGRecord.tp)
+                        .filter(ECGRecord.athlete_id == athlete_id, ECGRecord.tp.isnot(None))
+                        .order_by(desc(ECGRecord.recorded_at))
+                        .limit(10)
+                        .all())
+        
+        # Распаковываем кортежи SQLAlchemy в чистый список чисел
+        tp_values = [float(row[0]) for row in history_rows]
+        
+        if tp_values:
+            max_past_tp = max(tp_values)
+            if max_past_tp > 0:
+                return float(current_tp) / max_past_tp
+                
+    except Exception as e:
+        print(f"[Analysis Error] Не удалось рассчитать отношение TP: {e}")
+        
+    return 1.0  # Безопасный дефолт (холодный старт / ошибка)
