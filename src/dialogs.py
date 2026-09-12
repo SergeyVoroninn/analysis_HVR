@@ -1,13 +1,60 @@
 """Диалоговые окна приложения."""
 import datetime
+import re
 import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
-from tkcalendar import DateEntry
+from tkcalendar import DateEntry, Calendar
 
-from models import get_session, Athlete, ECGRecord
+from models import get_session, Athlete, ECGRecord, ECGRaw
 
 from theme import (COL_BG_DARK, COL_TEXT_LIGHT, COL_WEEKEND,
-                   COL_ACCENT, COL_SELECTION)
+                   COL_ACCENT, COL_SELECTION, COL_CRIT, COL_DANGER_HOVER)
+
+
+class _ForegroundDateEntry(DateEntry):
+    """DateEntry, который не пропадает при смене месяца/года."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._rebuild_lock = False  # Блокировка от рекурсии
+
+    def drop_down(self):
+        super().drop_down()
+        self._ensure_foreground()
+
+    def _ensure_foreground(self, event=None):
+        """Возвращает календарь на передний план."""
+        try:
+            if not hasattr(self, '_top_cal') or not self._top_cal.winfo_exists():
+                return
+            
+            # Поднимаем окно наверх
+            self._top_cal.lift()
+            self._top_cal.attributes("-topmost", True)
+            self._top_cal.attributes("-topmost", False)
+            self._top_cal.focus_force()
+            
+            # Отслеживаем перестройку календаря (смена месяца/года)
+            if not self._rebuild_lock:
+                self._top_cal.bind('<Configure>', self._on_calendar_rebuild, add='+')
+                
+        except Exception:
+            pass
+
+    def _on_calendar_rebuild(self, event=None):
+        """Срабатывает после перестройки календаря."""
+        if self._rebuild_lock:
+            return
+        try:
+            self._rebuild_lock = True
+            # Ждем завершения перестройки и возвращаем окно наверх
+            self.master.after(50, self._ensure_foreground)
+        finally:
+            # Снимаем блокировку через 100 мс
+            self.master.after(100, self._release_lock)
+            
+    def _release_lock(self):
+        self._rebuild_lock = False
 
 
 class AthleteDialog(ctk.CTkToplevel):
@@ -17,7 +64,6 @@ class AthleteDialog(ctk.CTkToplevel):
         self.geometry("380x460")
         self.resizable(False, False)
         self.transient(parent)
-        self.grab_set()
         self.result = None
 
         row = 0
@@ -31,17 +77,23 @@ class AthleteDialog(ctk.CTkToplevel):
             ctk.CTkLabel(self, text=label).grid(row=row, column=0, padx=12, pady=4, sticky="w")
             e = ctk.CTkEntry(self)
             e.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
+            # Только буквы и дефис, первая буква заглавная
+            e.configure(validate="key", validatecommand=(self.register(self._only_letters), "%P", key))
+            e.bind("<FocusOut>", lambda ev, k=key: self._capitalize(k))
             self.entries[key] = e
             row += 1
 
-        # Дата рождения через календарь
+        # Дата рождения через календарь с русскими месяцами
         ctk.CTkLabel(self, text="Дата рождения").grid(row=row, column=0, padx=12, pady=4, sticky="w")
-        self.birth_date_entry = DateEntry(
+        self.birth_date_entry = _ForegroundDateEntry(
             self, width=12, date_pattern='dd-mm-yyyy',
             background=COL_BG_DARK, foreground=COL_TEXT_LIGHT,
             fieldbackground=COL_WEEKEND, borderwidth=0,
             selectbackground=COL_ACCENT, selectforeground=COL_SELECTION,
-            year=2005, month=1, day=1)
+            year=2005, month=1, day=1,
+            locale="ru_RU",  # русские названия месяцев
+            showothermonthdays=False,
+        )
         self.birth_date_entry.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
         row += 1
 
@@ -49,14 +101,18 @@ class AthleteDialog(ctk.CTkToplevel):
             ctk.CTkLabel(self, text=label).grid(row=row, column=0, padx=12, pady=4, sticky="w")
             e = ctk.CTkEntry(self)
             e.grid(row=row, column=1, padx=12, pady=4, sticky="ew")
+            if key in ("height_cm", "weight_kg"):
+                # Только неотрицательные числа
+                e.configure(validate="key",
+                            validatecommand=(self.register(self._only_nonneg_number), "%P"))
             self.entries[key] = e
             row += 1
 
         self.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(self, text="Пол").grid(row=row, column=0, padx=12, pady=4, sticky="w")
-        self.gender_var = ctk.StringVar(value="M")
-        ctk.CTkOptionMenu(self, values=["M", "F"], variable=self.gender_var
+        self.gender_var = ctk.StringVar(value="м")
+        ctk.CTkOptionMenu(self, values=["м", "ж"], variable=self.gender_var
                           ).grid(row=row, column=1, padx=12, pady=4, sticky="ew")
         row += 1
 
@@ -72,11 +128,56 @@ class AthleteDialog(ctk.CTkToplevel):
                     self.entries[key].insert(0, str(data[key]))
             if data.get("birth_date"):
                 try:
-                    self.birth_date_entry.set_date(
-                        datetime.date.fromisoformat(str(data["birth_date"])))
-                except ValueError:
+                    d = data["birth_date"]
+                    if isinstance(d, str):
+                        d = datetime.date.fromisoformat(d)
+                    self.birth_date_entry.set_date(d)
+                except (ValueError, TypeError):
                     pass
-            self.gender_var.set(data.get("gender", "M"))
+            self.gender_var.set("м" if data.get("gender") == "M" else "ж" if data.get("gender") == "F" else "м")
+
+        # Поднимаем диалог поверх главного окна сразу, без мигания
+        self._bring_to_front()
+
+    # ---------- валидация ввода ----------
+    def _bring_to_front(self):
+        """Поднимает диалог поверх других окон и даёт фокус."""
+        try:
+            if not self.winfo_exists():
+                return
+            self.lift()
+            self.focus_force()
+        except Exception:
+            pass
+
+    def _only_letters(self, proposed, key):
+        """Только буквы, пробелы и дефис для ФИО."""
+        if not proposed:
+            return True
+        allowed = re.fullmatch(r"[А-Яа-яЁёA-Za-z\s-]*", proposed)
+        return bool(allowed)
+
+    def _capitalize(self, key):
+        """Первая буква заглавная, остальные — строчные."""
+        e = self.entries.get(key)
+        if not e:
+            return
+        text = e.get().strip()
+        if text:
+            e.delete(0, "end")
+            e.insert(0, text[0].upper() + text[1:].lower())
+
+    def _only_date_chars(self, proposed):
+        """Разрешены только цифры и дефисы для даты."""
+        if not proposed:
+            return True
+        return bool(re.fullmatch(r"[0-9-]*", proposed))
+
+    def _only_nonneg_number(self, proposed):
+        """Только неотрицательные числа (целые или дробные)."""
+        if not proposed:
+            return True
+        return bool(re.fullmatch(r"\d*\.?\d*", proposed))
 
     def _on_save(self):
         last = self.entries["last_name"].get().strip()
@@ -95,14 +196,17 @@ class AthleteDialog(ctk.CTkToplevel):
             if not v:
                 return None
             try:
-                return cast(v)
+                val = cast(v)
+                if val <= 0:
+                    return None
+                return val
             except ValueError:
                 return None
 
         self.result = {"last_name": last, "first_name": first,
                        "middle_name": self.entries["middle_name"].get().strip(),
-                       "birth_date": bd.isoformat(),
-                       "gender": self.gender_var.get(),
+                       "birth_date": bd,
+                       "gender": "M" if self.gender_var.get() == "м" else "F",
                        "height_cm": opt_num("height_cm", int),
                        "weight_kg": opt_num("weight_kg", float),
                        "polar_id": self.entries["polar_id"].get().strip()}
@@ -112,15 +216,15 @@ class AthleteDialog(ctk.CTkToplevel):
 class ECGListDialog(ctk.CTkToplevel):
     """Окно со списком ЭКГ за выбранный интервал (ORM-версия)."""
 
-    DISPLAY_COLS = ("Время", "Профиль", "ЧСС", "RMSSD", "SDNN", "ИС", "Статус")
+    DISPLAY_COLS = ("Время", "Профиль", "ЧСС", "RMSSD", "SDNN", "ИС", "TP", "Статус")
 
-    def __init__(self, parent, athlete_id, date_from, date_to, title,
-                 on_change=None):
+    def __init__(self, parent, athlete_id, date_from, date_to, title, on_change=None):
         super().__init__(parent)
         self.title(title)
         self.geometry("720x480")
         self.transient(parent)
-        self.grab_set()
+        self._calendar_open = False
+        self._setup_grab()
 
         self.db_path = parent.db_path
         self.athlete_id = athlete_id
@@ -136,7 +240,12 @@ class ECGListDialog(ctk.CTkToplevel):
         self.tree = ttk.Treeview(frame, columns=self.DISPLAY_COLS, show="headings",
                                  height=14)
         for c in self.DISPLAY_COLS:
-            w = 90 if c == "Время" else 70
+            if c == "Время":
+                w = 110  # Чуть шире для даты и времени
+            elif c == "TP":
+                w = 80   # Ширина для TP
+            else:
+                w = 70
             self.tree.heading(c, text=c)
             self.tree.column(c, width=w, anchor="center")
         self.tree.pack(side="left", fill="both", expand=True)
@@ -148,25 +257,71 @@ class ECGListDialog(ctk.CTkToplevel):
 
         btns = ctk.CTkFrame(self, fg_color="transparent")
         btns.pack(pady=8)
-        self.btn_export = ctk.CTkButton(btns, text="⬇ Экспорт в файл",
+        self.btn_export = ctk.CTkButton(btns, text=" Экспорт в файл",
                                         command=self._export, state="disabled")
         self.btn_export.pack(side="left", padx=4)
         self.btn_delete = ctk.CTkButton(btns, text="🗑 Удалить",
                                         command=self._delete, state="disabled",
-                                        fg_color="#da3633", hover_color="#b12b2b")
+                                        fg_color=COL_CRIT, 
+                                        hover_color=COL_DANGER_HOVER)
         self.btn_delete.pack(side="left", padx=4)
         ctk.CTkButton(btns, text="Закрыть", fg_color="gray",
                       command=self.destroy).pack(side="left", padx=4)
 
         self._load()
+        # Корректное закрытие при уничтожении родителя
+        self.protocol("WM_DELETE_WINDOW", self._safe_close)
+        # Следим за уничтожением родителя
+        self._parent_watch = self.after(200, self._check_parent)        
+
+    def _setup_grab(self):
+        """Grab_set включается только когда календарь закрыт."""
+        if not self.winfo_exists():
+            return
+        try:
+            # Проверяем, открыто ли окно календаря
+            for w in self.master.winfo_children():
+                if hasattr(w, 'calendar') and w.winfo_exists():
+                    self._calendar_open = True
+                    return
+            self._calendar_open = False
+            self.grab_set()
+        except Exception:
+            pass
+
+    def _check_parent(self):
+        """Периодически проверяет, жив ли родитель."""
+        try:
+            if not self.master.winfo_exists():
+                self.destroy()
+                return
+        except Exception:
+            try:
+                self.destroy()
+            except Exception:
+                pass
+            return
+        self._parent_watch = self.after(200, self._check_parent)
+
+    def _safe_close(self):
+        """Безопасное закрытие диалога."""
+        try:
+            if hasattr(self, '_parent_watch'):
+                self.after_cancel(self._parent_watch)
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
 
     def _load(self):
         """Загружает ЭКГ за интервал через ORM."""
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        dt_from = self.date_from.isoformat(sep=" ")
-        dt_to = self.date_to.isoformat(sep=" ")
+        dt_from = self.date_from.strftime("%Y-%m-%d %H:%M:%S")
+        dt_to = self.date_to.strftime("%Y-%m-%d %H:%M:%S")
 
         session = get_session(self.db_path)
         try:
@@ -187,6 +342,7 @@ class ECGListDialog(ctk.CTkToplevel):
                     f"{rec.rmssd:.1f}" if rec.rmssd is not None else "",
                     f"{rec.sdnn:.1f}" if rec.sdnn is not None else "",
                     f"{rec.stress_si:.0f}" if rec.stress_si is not None else "",
+                    f"{rec.tp:.0f}" if rec.tp is not None else "",
                     rec.status or "",
                 ))
         finally:
@@ -203,7 +359,7 @@ class ECGListDialog(ctk.CTkToplevel):
         return int(sel[0]) if sel else None
 
     def _export(self):
-        """Экспорт записи в файл через ORM."""
+        """Экспорт записи в файл через ORM (raw теперь в ECGRaw)."""
         rid = self._selected_id()
         if rid is None:
             return
@@ -211,12 +367,17 @@ class ECGListDialog(ctk.CTkToplevel):
         session = get_session(self.db_path)
         try:
             rec = session.get(ECGRecord, rid)
-            if rec is None or not rec.raw_data:
-                messagebox.showwarning("Экспорт", "Нет raw_data для этой записи.")
+            # raw теперь в связанной таблице ECGRaw через rec.raw
+            if rec is None or rec.raw is None or not rec.raw.raw_data:
+                messagebox.showwarning(
+                    "Экспорт",
+                    "Для этой записи нет сырых данных (raw_data).\n"
+                    "Запись была создана без сохранения raw."
+                )
                 return
 
             rec_at = rec.recorded_at
-            raw = rec.raw_data
+            raw = rec.raw.raw_data
         finally:
             session.close()
 

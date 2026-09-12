@@ -1,0 +1,204 @@
+"""
+heatmap.py — составной виджет: переключатель года сверху,
+годовой heatmap слева, недельный справа.
+"""
+import datetime
+import tkinter as tk
+import customtkinter as ctk
+
+from theme import COL_BG_DARK, COL_TEXT_LIGHT
+from yearmap import YearHeatmap
+from weekmap import WeekHeatmap
+from database import get_db_path
+from models import get_session, ECGRecord
+
+
+class Heatmap(ctk.CTkFrame):
+    def __init__(self, master, db_path=None, on_pick=None):
+        super().__init__(master, fg_color=COL_BG_DARK)
+        self.db_path = db_path or get_db_path()
+
+        # ---------- переключатель года ----------
+        self._ctrl = ctk.CTkFrame(self, fg_color="transparent")
+        self._ctrl.pack(side="top", pady=5)
+        ctk.CTkButton(self._ctrl, text="◀", width=28,
+                      command=lambda: self._change_year(-1)).pack(side="left")
+        self._lbl_year = ctk.CTkLabel(self._ctrl, text="",
+                                      font=ctk.CTkFont(size=12, weight="bold"),
+                                      text_color=COL_TEXT_LIGHT)
+        self._lbl_year.pack(side="left", padx=6)
+        ctk.CTkButton(self._ctrl, text="▶", width=28,
+                      command=lambda: self._change_year(1)).pack(side="left")
+
+        # ---------- heatmap'ы ----------
+        self._maps = tk.Frame(self, bg=COL_BG_DARK)
+        self._maps.pack(side="top")
+        
+        self.year_map = YearHeatmap(self._maps, db_path=db_path)
+        self.year_map.pack(side="left")
+        
+        self.week_map = WeekHeatmap(self._maps, db_path=db_path, on_pick=on_pick)
+        self.week_map.pack(side="left", padx=(20, 0))
+
+        # ПУБЛИЧНЫЕ колбэки для оркестратора
+        self.on_week_pick = None
+        self.on_week_dbl_pick = None
+        self.on_year_zoom = None
+        self.on_month_zoom = None
+        self.on_year_change = None
+        
+        # НОВЫЕ колбэки от weekmap
+        self.on_weekmap_day_dbl = None
+        self.on_weekmap_week_rmb = None
+
+        # Связываем внутренние события year_map
+        self.year_map.on_week_pick = self._sync_week
+        self.year_map.on_year_change = self._on_year_map_year_change
+        self.year_map.on_week_dbl = self._zoom_to_week
+        self.year_map.on_year_zoom = self._handle_year_zoom
+        self.year_map.on_month_zoom = self._handle_month_zoom
+
+        # Связываем события weekmap с посредниками
+        self.week_map.on_day_dbl = self._handle_weekmap_day_dbl
+        self.week_map.on_week_rmb = self._handle_weekmap_week_rmb
+
+        self._pending_t = None
+        self._lbl_year.configure(text=str(self.year))
+
+    @property
+    def athlete(self):
+        return self.year_map.athlete
+
+    @athlete.setter
+    def athlete(self, aid):
+        self.year_map.athlete = aid
+        self.week_map.athlete = aid
+
+    def refresh(self):
+        self.year_map.athlete = self.year_map.athlete
+        self.week_map.athlete = self.week_map.athlete
+        self.year_map._load_data()
+        self.week_map._load_data()
+
+    @property
+    def year(self):
+        return self.year_map.year
+
+    @year.setter
+    def year(self, y):
+        self.year_map.year = y
+        self._lbl_year.configure(text=str(y))
+
+    @property
+    def week(self):
+        return self.year_map.week
+
+    @week.setter
+    def week(self, w):
+        self.year_map.week = w
+        if w is not None:
+            d = self.year_map.week_start_date(w)
+            if d:
+                self.week_map.week_start = d
+
+    def _on_year_map_year_change(self, delta):
+        if self.on_year_change:
+            self.on_year_change(delta)
+
+    def _change_year(self, delta):
+        self.year += delta
+
+    def _sync_week(self, w, d):
+        self.week_map.week_start = d
+        if self.on_week_pick:
+            self.on_week_pick(w, d)
+
+    def _zoom_to_week(self, w, monday):
+        if monday is None:
+            return
+        self.week_map.week_start = monday
+        if self.on_week_dbl_pick:
+            self.on_week_dbl_pick(w, monday)
+
+    def _handle_month_zoom(self, start_date, end_date):
+        if self.on_month_zoom:
+            self.on_month_zoom(start_date, end_date)
+
+    def _handle_year_zoom(self, start_date, end_date):
+        if self.on_year_zoom:
+            self.on_year_zoom(start_date, end_date)
+
+    def set_selection(self, year=None, week=None):
+        if year is not None:
+            self.year = year
+        if week is not None:
+            self.week = week
+            d = self.year_map.week_start_date(week)
+            if d:
+                self.week_map.week_start = d
+
+    def set_year(self, year):
+        self.year = year
+        self.week = 26
+        d = self.year_map.week_start_date(26)
+        if d:
+            self.week_map.week_start = d
+
+    def set_cursor_by_date(self, d):
+        w = self.year_map.set_cursor_by_date(d)
+        self._lbl_year.configure(text=str(self.year_map.year))
+        if w is not None:
+            self.week_map.week_start = self.year_map.week_start_date(w)
+
+    def reset_to_data_last(self):
+        """Сбросить heatmap в сегодня (или на последнюю запись)."""
+        # Если есть данные, перемещаемся на последнюю запись
+        if hasattr(self, '_last_record_date') and self._last_record_date:
+            self.set_cursor_by_date(self._last_record_date)
+            self.year = self._last_record_date.year
+        else:
+            # Fallback: текущий год
+            self.year = datetime.date.today().year
+
+    def _ctrl_req(self):
+        hs = [c.winfo_reqheight() for c in self._ctrl.winfo_children()]
+        return (max(hs) if hs else 1) + 10
+
+    def ghost_shown(self):
+        pass
+
+    def ghost_hidden(self):
+        pass
+
+    def target_size(self, avail_w):
+        t = int(max(7, min((avail_w - 60) // 60, 23)))
+        self._pending_t = t
+        w = 60 * t + 60
+        ctrl_h = self._ctrl_req()
+        maps_h = max(self.year_map.height_for_step(t),
+                     self.week_map.height_for_step(t))
+        return w, ctrl_h + maps_h
+
+    def ghost_rects(self, w, h):
+        t = self._pending_t
+        y0 = self._ctrl_req()
+        yw = 53 * t + 10
+        yh = self.year_map.height_for_step(t)
+        ww = 24 + 7 * t + 6
+        wh = self.week_map.height_for_step(t)
+        return [(1, y0, yw, y0 + yh),
+                (yw + 21, y0, yw + 20 + ww, y0 + wh)]
+
+    def apply_size(self, w, h):
+        if self._pending_t is None:
+            return
+        self.year_map.set_cell(self._pending_t - 1)
+        self.week_map.set_cell(self._pending_t - 1)
+
+    def _handle_weekmap_day_dbl(self, day_start, day_end):
+        if self.on_weekmap_day_dbl:
+            self.on_weekmap_day_dbl(day_start, day_end)
+
+    def _handle_weekmap_week_rmb(self, week_start, week_end):
+        if self.on_weekmap_week_rmb:
+            self.on_weekmap_week_rmb(week_start, week_end)
