@@ -4,7 +4,6 @@ import datetime
 from PIL import Image, ImageTk
 from theme import COL_BG_DARK, COL_TEXT_DIM
 
-# --- 1. КАРТА СООТВЕТСТВИЯ НА 5 ИСХОДОВ С ОБРАБОТКОЙ ЦВЕТА, КАРТИНКИ И ОПИСАНИЯ ---
 RECOMMENDATIONS_MAP = {
     1: {
         "title": "🚨 ИСХОД 1: ОСВОБОДИТЬ ОТ ТРЕНИРОВКИ",
@@ -15,19 +14,19 @@ RECOMMENDATIONS_MAP = {
     2: {
         "title": "🔄 ИСХОД 2: ВОССТАНОВИТЕЛЬНАЯ ТРЕНИРОВКА",
         "title_color": "#FF9955",
-        "text": "ВОССТАНОВИТЕЛЬНАЯ АКТИВНОСТЬ\n\nОрганизм демонстрирует признаки накопленного утомления. Энергетические ресурсы ограничены, но легкое движение ускорит выведение продуктов распада и улучшит тонус.\n\nИнструкция: Исключить развивающую работу. Назначить легкую восстановительную тренировку: 30–40 минут аэробной активности в 1-й пульсовой зоне (легкий бег трусцой, велосипед, плавание), суставная гимнастика или йога. Фокус на расслаблении мышц.",
+        "text": "ВОССТАНОВИТЕЛЬНАЯ АКТИВНОСТЬ\n\nОрганизм демонстрирует признаки накопленного утомления. Энергетические ресурсы ограничены, но легкое движение ускорит выведение продуктов распада и улучшит тонус.\nИнструкция: Исключить развивающую работу. Назначить легкую восстановительную тренировку: 30–40 минут аэробной активности в 1-й пульсовой зоне (легкий бег трусцой, велосипед, плавание), суставная гимнастика или йога. Фокус на расслаблении мышц.",
         "image": "rec_2.png"
     },
     3: {
         "title": "🔵 ИСХОД 3: СРЕДНЯЯ НАГРУЗКА",
         "title_color": "#55FFFF",
-        "text": "ПЛАНОВАЯ СРЕДНЯЯ НАГРУЗКА\n\nТекущее состояние систем регуляции стабильно. Организм находится в стандартном рабочем режиме и успешно адаптируется к текущему микроциклу.\n\nИнструкция: Продолжать тренировочный процесс по намеченному плану. Разрешены стандартные аэробные и силовые нагрузки средней интенсивности (2–3 пульсовые зоны). Избегать предельных отказов и экстремальных объемов.",
+        "text": "ПЛАНОВАЯ СРЕДНЯЯ НАГРУЗКА\n\nТекущее состояние систем регуляции стабильно. Организм находится в стандартном рабочем режиме и успешно адаптируется к текущему микроциклу.\nИнструкция: Продолжать тренировочный процесс по намеченному плану. Разрешены стандартные аэробные и силовые нагрузки средней интенсивности (2–3 пульсовые зоны). Избегать предельных отказов и экстремальных объемов.",
         "image": "rec_3.png"
     },
     4: {
         "title": "🟢 ИСХОД 4: ПОВЫШЕНИЕ НАГРУЗКИ",
         "title_color": "#55FF55",
-        "text": "ПЛИК ФОРМЫ / РАЗВИВАЮЩАЯ НАГРУЗКА\n\nПоказатели ВРС превосходные, индекс стресса минимален. Атлет находится в фазе суперкомпенсации. Организм максимально готов к тяжелому физиологическому стрессу.\n\nИнструкция: Идеальный день для ударной, развивающей или высокоинтенсивной тренировки (HIIT, интервальный бег, максимальные веса в зале, контрольные старты). Можно смело повышать тренировочный объем или интенсивность для стимуляции дальнейшего роста результатов.",
+        "text": "ПИК ФОРМЫ / РАЗВИВАЮЩАЯ НАГРУЗКА\n\nПоказатели ВРС превосходные, индекс стресса минимален. Атлет находится в фазе суперкомпенсации. Организм максимально готов к тяжелому физиологическому стрессу.\nИнструкция: Идеальный день для ударной, развивающей или высокоинтенсивной тренировки (HIIT, интервальный бег, максимальные веса в зале, контрольные старты). Можно смело повышать тренировочный объем или интенсивность для стимуляции дальнейшего роста результатов.",
         "image": "rec_4.png"
     }
 }
@@ -39,8 +38,20 @@ class RecommendationsPanel(tk.Frame):
         
         # --- 2. КЭШИРОВАНИЕ ИЗОБРАЖЕНИЙ ПРИ СТАРТЕ ---
         self.images_cache = {}
+        
+        # Получаем абсолютный путь к папке, где лежит этот файл (recommendations.py)
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        images_dir = os.path.join(os.path.dirname(current_dir), "docs", "images")
+        
+        # Находим саму папку 'src'
+        if os.path.basename(current_dir) == "scripts":
+            # Если файл лежит в src/scripts, поднимаемся на уровень выше в src
+            src_dir = os.path.dirname(current_dir)
+        else:
+            # Если файл лежит непосредственно в src
+            src_dir = current_dir
+
+        # Собираем точный абсолютный путь к src/docs/images
+        images_dir = os.path.join(src_dir, "docs", "images")
         
         for code, data in RECOMMENDATIONS_MAP.items():
             img_path = os.path.join(images_dir, data["image"])
@@ -48,31 +59,53 @@ class RecommendationsPanel(tk.Frame):
                 try:
                     pil_img = Image.open(img_path).resize((100, 100), Image.Resampling.LANCZOS)
                     self.images_cache[code] = ImageTk.PhotoImage(pil_img)
+                    print(f"[Recommendations] Успешно загружена картинка: {data['image']}")
                 except Exception as e:
                     print(f"[Recommendations Error] Ошибка загрузки картинки {img_path}: {e}")
+            else:
+                print(f"[Recommendations Warning] Файл не найден: {img_path}")
+
 
         # --- 3. ВЕРСТКА ВИДЖЕТОВ ПОДВАЛА ---
         # Левый фрейм-контейнер для картинки и статуса-заголовка
-        self.left_frame = tk.Frame(self, bg=COL_BG_DARK)
-        self.left_frame.pack(side="left", padx=15, pady=10, fill="y")
-        
-        self.img_label = tk.Label(self.left_frame, bg=COL_BG_DARK)
-        self.img_label.pack(side="top", pady=(5, 5))
-        
+         # Настраиваем сетку панели: 
+        # Строка 0: Заголовок (на всю ширину)
+        # Строка 1: Картинка (слева) и Текст + Скролл (справа)
+        self.grid_columnconfigure(0, weight=0) # Колонка для картинки (фиксированная ширина)
+        self.grid_columnconfigure(1, weight=1) # Колонка для текста (растягивается)
+        self.grid_rowconfigure(0, weight=0)    # Заголовок не растягивается по высоте
+        self.grid_rowconfigure(1, weight=1)    # Текст и картинка растягиваются
+
+        # 1. Заголовок — теперь он сверху и занимает всю ширину (columnspan=2)
         self.title_label = tk.Label(
-            self.left_frame, text="📋 РЕКОМЕНДАЦИИ", 
+            self, text="📋 РЕКОМЕНДАЦИИ", 
             fg="#FFFFFF", bg=COL_BG_DARK, 
-            font=("Segoe UI", 11, "bold"), anchor="center"
+            font=("Segoe UI", 12, "bold"), anchor="w"
         )
-        self.title_label.pack(side="top", fill="x")
+        self.title_label.grid(row=0, column=0, columnspan=2, sticky="ew", padx=15, pady=(10, 5))
         
-        # Правый текстовый блок для развернутой инструкции
+        # 2. Картинка — аккуратно центрируется слева
+        self.img_label = tk.Label(self, bg=COL_BG_DARK, width=100, height=100)
+        self.img_label.grid(row=1, column=0, sticky="n", padx=(15, 5), pady=5)
+        
+        # 3. Контейнер для текста и скроллбара
+        text_frame = tk.Frame(self, bg="#1E1E1E")
+        text_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 15), pady=(5, 10))
+        text_frame.grid_columnconfigure(0, weight=1)
+        text_frame.grid_rowconfigure(0, weight=1)
+
+        # Правый текстовый блок
         self.text_box = tk.Text(
-            self, bg="#1E1E1E", fg="#E0E0E0", 
+            text_frame, bg="#1E1E1E", fg="#E0E0E0", 
             insertbackground="white", relief="flat",
             font=("Segoe UI", 10), wrap="word"
         )
-        self.text_box.pack(side="right", fill="both", expand=True, padx=(5, 10), pady=10)
+        self.text_box.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+
+        # Тонкий аккуратный скроллбар (появится, только если текст не влезает)
+        scrollbar = tk.Scrollbar(text_frame, orient="vertical", command=self.text_box.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.text_box.config(yscrollcommand=scrollbar.set)
         
         self.refresh()
 
