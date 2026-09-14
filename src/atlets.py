@@ -3,7 +3,7 @@ atlets.py — панель списка спортсменов: отображе
 удаление, редактирование. Данные — в существующей БД (models.Athlete).
 """
 import uuid
-
+import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox
 import customtkinter as ctk
@@ -18,7 +18,7 @@ from theme import COL_BG_WIDGET, COL_TEXT_LIGHT
 
 
 class AthletesPanel(tk.Frame):
-    """Левая панель: список спортсменов + кнопки CRUD + импорт."""
+    """Левая панель: список спортсменов + кнопки CRUD + импорт + список ЭКГ."""
 
     def __init__(self, master, db_path=None, on_select=None, on_change=None):
         super().__init__(master, bg=COL_BG_WIDGET)
@@ -41,6 +41,7 @@ class AthletesPanel(tk.Frame):
         self.tree.column("age", width=50, anchor="center", stretch=False)
         self.tree.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         self._select_timer = None
+        
         # Одинарный клик откладываем, чтобы двойной успел открыть диалог
         self.tree.bind("<<TreeviewSelect>>", self._on_select_scheduled)
         self.tree.bind("<Double-Button-1>", self._on_double_click)
@@ -50,9 +51,19 @@ class AthletesPanel(tk.Frame):
         for text, cmd in (("＋", self.add), ("✎", self.edit), ("🗑", self.delete)):
             ctk.CTkButton(mgmt, text=text, width=40, command=cmd).pack(side="left", padx=3)
 
+        # === НОВАЯ КНОПКА: Список ЭКГ ===
+        self._list_btn = ctk.CTkButton(
+            self, 
+            text="📋 Список ЭКГ", 
+            command=self.open_ecg_list,
+            fg_color="#1f6aa5"  # COL_ACCENT из theme.py
+        )
+        self._list_btn.grid(row=3, column=0, sticky="ew", padx=5, pady=(5, 2))
+        # ==================================
+
         self._imp_btn = ctk.CTkButton(self, text="⬇ Импорт записи ЭКГ",
                                       command=lambda: self.on_import and self.on_import())
-        self._imp_btn.grid(row=3, column=0, sticky="ew", padx=5, pady=(0, 5))
+        self._imp_btn.grid(row=4, column=0, sticky="ew", padx=5, pady=(0, 5))
 
         self.reload()
 
@@ -131,56 +142,13 @@ class AthletesPanel(tk.Frame):
             session.close()
 
     def add(self):
-        dlg = AthleteDialog(self.winfo_toplevel(), "Новый спортсмен")
-        self.wait_window(dlg)
-        if not dlg.result:
-            return
-        d = dlg.result
-        import datetime
-        bd = d["birth_date"]
-        if isinstance(bd, str):
-            bd = datetime.date.fromisoformat(bd)
-        age = _calc_age(bd)
-        gender = d["gender"]
-        height = d["height_cm"] or _estimate_height_cm(age, gender)
-        weight = d["weight_kg"] or _estimate_weight_kg(height, age, gender)
-        resting = _estimate_resting_hr(age, gender)
-
-        athlete = Athlete(
-            id=str(uuid.uuid4()),
-            last_name=d["last_name"], first_name=d["first_name"],
-            middle_name=d["middle_name"], gender=gender,
-            birth_date=d["birth_date"], height_cm=height, weight_kg=weight,
-            resting_hr=resting, max_hr=_estimate_max_hr(age),
-            hrv_rmssd_baseline=_estimate_hrv_rmssd(age),
-            avg_rr_ms=int(60000 / resting),
-            polar_id=d["polar_id"] or _generate_polar_id(),
-        )
-        session = self._session()
-        try:
-            session.add(athlete)
-            session.commit()
-            new_id = athlete.id
-        except Exception as e:
-            session.rollback()
-            messagebox.showerror("Ошибка", f"Не удалось создать спортсмена:\n{e}")
-            return
-        finally:
-            session.close()
-
-        self.reload(select_id=new_id)
-        self._changed()
-
-    def add(self):
-        # ⚡ ВАЖНО: db_path=self.db_path добавлен
         dlg = AthleteDialog(self.winfo_toplevel(), "Новый спортсмен", db_path=self.db_path)
         self.wait_window(dlg)
         
         if not dlg.result:
-            return  # Пользователь нажал "Отмена" или произошла ошибка валидации
+            return
             
         d = dlg.result
-        import datetime
         bd = d["birth_date"]
         if isinstance(bd, str):
             bd = datetime.date.fromisoformat(bd)
@@ -224,7 +192,6 @@ class AthletesPanel(tk.Frame):
         if not full:
             return
 
-        # ⚡ ВАЖНО: db_path=self.db_path добавлен
         dlg = AthleteDialog(self.winfo_toplevel(), "Редактирование спортсмена",
                             data=full, db_path=self.db_path)
         self.wait_window(dlg)
@@ -273,3 +240,17 @@ class AthletesPanel(tk.Frame):
 
         self.reload()
         self._changed()
+
+    # ------------------------------------------------ НОВОЕ: Список ЭКГ
+    def open_ecg_list(self):
+        """Открывает модальное окно со списком ЭКГ записей."""
+        cur = self.selected()
+        athlete_id = cur[0] if cur else None
+        
+        try:
+            from ecg_list_window import ECGListWindow
+            ECGListWindow(self.winfo_toplevel(), db_path=self.db_path, athlete_id=athlete_id)
+        except ImportError as e:
+            print(f"Ошибка загрузки списка ЭКГ: {e}")
+        except Exception as e:
+            print(f"Непредвиденная ошибка: {e}")

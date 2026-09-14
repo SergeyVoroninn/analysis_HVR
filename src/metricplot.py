@@ -44,7 +44,7 @@ class MetricPlot(tk.Frame):
 
     SMALL_SPAN = 365
     TARGET_BAR_PX = 15
-    HOVER_DELAY_MS = 1000
+    HOVER_DELAY_MS = 1000  # 1 секунда до появления подсказки
 
     def __init__(self, master, spec, db_path=None):
         super().__init__(master, bg=COL_BG_DARK)
@@ -73,9 +73,11 @@ class MetricPlot(tk.Frame):
         self._pan_throttle_ms = 33
 
         self.analyzer = MetricAnalyzer(self.db_path) if self.db_path else None
-        self._hover_timer = None
-        self._hover_tooltip = None
-        self._hover_xdata = None
+        
+        # === ПРОСТАЯ ЛОГИКА ПОДСКАЗКИ ===
+        self._hover_timer = None        # Таймер на 1 секунду
+        self._hover_tooltip = None      # Окно подсказки
+        self._hover_record_id = None    # ID бара, над которым сейчас подсказка
         self._mouse_on_axes = False
 
         self.fig = Figure(dpi=100)
@@ -88,9 +90,7 @@ class MetricPlot(tk.Frame):
         self.fig.subplots_adjust(left=0.05, right=0.98, top=0.86, bottom=0.18)
         self._style()
 
-        # Обработка клавиш
-        self.widget.bind("<Escape>", lambda e: self._cancel_hover())
-        self.widget.bind("<Return>", lambda e: self._open_analysis_dialog())
+        self.widget.bind("<Escape>", lambda e: self._hide_tooltip())
 
         self.canvas.mpl_connect("scroll_event", self._on_scroll)
         self.canvas.mpl_connect("button_press_event", self._on_press)
@@ -111,14 +111,14 @@ class MetricPlot(tk.Frame):
         self._athlete = aid
         self._start = self._end = None
         self._current_tf = None
-        self._cancel_hover()
+        self._hide_tooltip()
         self._reload()
 
     def set_range(self, start, end):
         self._start, self._end = start, end
         self.view = None
         self._current_tf = None
-        self._cancel_hover()
+        self._hide_tooltip()
         self._reload()
 
     def set_size(self, w, h):
@@ -266,13 +266,7 @@ class MetricPlot(tk.Frame):
         self._commit_view(new_lo, new_hi)
 
     def _on_press(self, event):
-        # === КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: если подсказка видна — открываем диалог ===
-        if self._hover_tooltip is not None:
-            self._open_analysis_dialog()
-            return
-        # =====================================================================
-        
-        self._cancel_hover()
+        self._hide_tooltip()
         
         if event.button == 3:
             self._current_tf = None
@@ -317,7 +311,7 @@ class MetricPlot(tk.Frame):
                 self.after_cancel(self._single_timer)
                 self._single_timer = None
             
-            self._cancel_hover()
+            self._hide_tooltip()
                 
             x0, lo0, hi0 = self._pan
             width_px = self.ax.get_window_extent().width
@@ -339,9 +333,9 @@ class MetricPlot(tk.Frame):
         
         # Обработка наведения
         if self._mouse_on_axes and event.xdata is not None:
-            self._handle_hover(event.xdata)
+            self._check_hover(event.xdata)
         else:
-            self._cancel_hover()
+            self._hide_tooltip()
 
     def _apply_pending_view(self):
         self._draw_timer = None
@@ -370,37 +364,106 @@ class MetricPlot(tk.Frame):
 
     def _on_axes_leave(self, event):
         self._mouse_on_axes = False
-        self._cancel_hover()
+        self._hide_tooltip()
 
-    def _handle_hover(self, xdata):
-        # Если окно уже открыто, не прерываем его при микро-движениях
-        if self._hover_tooltip is not None:
-            return
-            
-        if self._hover_xdata is not None and abs(self._hover_xdata - xdata) < 0.05:
+    # ============================================================
+    # ПРОСТАЯ ЛОГИКА ПОДСКАЗКИ
+    # ============================================================
+    
+    def _check_hover(self, xdata):
+        """
+        Проверяет, над каким баром находится мышь.
+        Если бар тот же — ничего не делаем (подсказка висит).
+        Если бар другой — закрываем старую подсказку и запускаем таймер для новой.
+        """
+        # Находим ближайший бар
+        record = self._find_closest_record(xdata)
+        
+        if record is None:
+            # Мышь не над баром — прячем подсказку
+            self._hide_tooltip()
             return
         
-        self._cancel_hover() # Сбрасываем старое при значительном сдвиге
+        ordinal, value, recorded_at = record
         
-        self._hover_xdata = xdata
-        self._hover_timer = self.after(self.HOVER_DELAY_MS, lambda: self._show_analysis(xdata))
+        # Если подсказка уже висит над ЭТИМ ЖЕ баром — ничего не делаем
+        if self._hover_record_id == recorded_at:
+            return
+        
+        # Бар другой — закрываем старую подсказку и запускаем таймер для новой
+        self._hide_tooltip()
+        self._hover_record_id = recorded_at
+        self._hover_timer = self.after(self.HOVER_DELAY_MS, lambda: self._show_tooltip(recorded_at))
 
-    def _cancel_hover(self):
-        """Полностью сбрасывает состояние наведения."""
+    def _show_tooltip(self, recorded_at):
+        """Показывает подсказку для заданной записи."""
+        self._hover_timer = None
+        
+        # Защита: если мышь уже ушла с этого бара
+        if self._hover_record_id != recorded_at:
+            return
+        
+        if not self.analyzer or not self._athlete:
+            return
+        
+        analysis = self.analyzer.analyze_by_date(self._athlete, recorded_at)
+        if not analysis:
+            return
+        
+        # Создаем окно подсказки
+        self._hover_tooltip = tw = tk.Toplevel(self)
+        tw.wm_overrideredirect(True)
+        tw.configure(bg="#2d2d2d", borderwidth=1, relief="solid")
+        tw.attributes('-topmost', True)
+        
+        text = (f"📅 {analysis.recorded_at.strftime('%d.%m.%Y %H:%M')}\n"
+                f"{'─' * 40}\n"
+                f"{analysis.tp_color} TP: {analysis.tp:.0f} мс² — {analysis.tp_status}\n"
+                f"{analysis.stress_color} Стресс: {analysis.stress_si:.0f} у.е. — {analysis.stress_status}\n"
+                f"{'─' * 40}\n"
+                f"💡 {analysis.recommendation}")
+        
+        label = tk.Label(
+            tw, text=text, justify="left", bg="#2d2d2d", fg="#ffffff",
+            font=("Segoe UI", 9), padx=12, pady=10, anchor="w"
+        )
+        label.pack()
+        
+        # Позиционируем рядом с курсором
+        x = self.winfo_pointerx() + 15
+        y = self.winfo_pointery() + 15
+        
+        tw.update_idletasks()
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        tw_w = tw.winfo_width()
+        tw_h = tw.winfo_height()
+        
+        if x + tw_w > screen_w:
+            x = self.winfo_pointerx() - tw_w - 15
+        if y + tw_h > screen_h:
+            y = self.winfo_pointery() - tw_h - 15
+        
+        tw.wm_geometry(f"+{x}+{y}")
+
+    def _hide_tooltip(self):
+        """Закрывает подсказку и сбрасывает состояние."""
         if self._hover_timer is not None:
             self.after_cancel(self._hover_timer)
             self._hover_timer = None
         
         if self._hover_tooltip is not None:
             try:
-                self._hover_tooltip.destroy()
+                if self._hover_tooltip.winfo_exists():
+                    self._hover_tooltip.destroy()
             except Exception:
                 pass
             self._hover_tooltip = None
         
-        self._hover_xdata = None
+        self._hover_record_id = None
 
     def _find_closest_record(self, xdata):
+        """Находит ближайший бар к позиции xdata (в пределах 0.5 дня)."""
         if not self._values:
             return None
         
@@ -422,101 +485,9 @@ class MetricPlot(tk.Frame):
         
         return closest
 
-    def _show_analysis(self, xdata):
-        """Показывает всплывающую подсказку с анализом."""
-        self._hover_timer = None
-        
-        # ИСПРАВЛЕНИЕ: Не вызываем _cancel_hover(), чтобы не затереть _hover_xdata!
-        # Вместо этого просто гарантируем, что старое окно закрыто.
-        if self._hover_tooltip is not None:
-            try:
-                self._hover_tooltip.destroy()
-            except Exception:
-                pass
-
-        # Сохраняем текущие данные наведения для возможного последующего клика
-        self._hover_xdata = xdata
-        
-        record = self._find_closest_record(xdata)
-        if record is None:
-            self._cancel_hover()
-            return
-        
-        ordinal, value, recorded_at = record
-        
-        if not self.analyzer or not self._athlete:
-            self._cancel_hover()
-            return
-        
-        analysis = self.analyzer.analyze_by_date(self._athlete, recorded_at)
-        if not analysis:
-            self._cancel_hover()
-            return
-        
-        # Создаем всплывающее окно
-        self._hover_tooltip = tw = tk.Toplevel(self)
-        tw.wm_overrideredirect(True)
-        tw.configure(bg="#2d2d2d", borderwidth=1, relief="solid")
-        tw.attributes('-topmost', True)
-        
-        text = (f"📅 {analysis.recorded_at.strftime('%d.%m.%Y %H:%M')}\n"
-                f"{'─' * 40}\n"
-                f"{analysis.tp_color} TP: {analysis.tp:.0f} мс² — {analysis.tp_status}\n"
-                f"{analysis.stress_color} Стресс: {analysis.stress_si:.0f} у.е. — {analysis.stress_status}\n"
-                f"{'─' * 40}\n"
-                f"💡 {analysis.recommendation}")
-        
-        label = tk.Label(
-            tw, text=text, justify="left", bg="#2d2d2d", fg="#ffffff",
-            font=("Segoe UI", 9), padx=12, pady=10, anchor="w"
-        )
-        label.pack()
-        
-        x = self.winfo_pointerx() + 15
-        y = self.winfo_pointery() + 15
-        
-        tw.update_idletasks()
-        screen_w = self.winfo_screenwidth()
-        screen_h = self.winfo_screenheight()
-        tw_w = tw.winfo_width()
-        tw_h = tw.winfo_height()
-        
-        if x + tw_w > screen_w:
-            x = self.winfo_pointerx() - tw_w - 15
-        if y + tw_h > screen_h:
-            y = self.winfo_pointery() - tw_h - 15
-        
-        tw.wm_geometry(f"+{x}+{y}")
-        tw.bind("<Motion>", lambda e: self._cancel_hover())
-
-    def _open_analysis_dialog(self):
-        """Открывает полноценный диалог анализа для текущей подсказки."""
-        if self._hover_xdata is None:
-            return
-        
-        record = self._find_closest_record(self._hover_xdata)
-        if record is None:
-            return
-        
-        ordinal, value, recorded_at = record
-        
-        if not self.analyzer or not self._athlete:
-            return
-        
-        analysis = self.analyzer.analyze_by_date(self._athlete, recorded_at)
-        if not analysis:
-            return
-        
-        # Закрываем подсказку перед открытием диалога
-        self._cancel_hover()
-        
-        try:
-            from analysis_dialog import AnalysisDialog
-            parent_window = self.winfo_toplevel()
-            AnalysisDialog(parent_window, analysis, self.db_path)
-        except ImportError:
-            # Если файла диалога нет, выводим в консоль
-            print("\n" + analysis.to_text() + "\n")
+    # ============================================================
+    # ОТРИСОВКА
+    # ============================================================
 
     def _style(self):
         self.ax.set_facecolor(COL_BG_DARK)
