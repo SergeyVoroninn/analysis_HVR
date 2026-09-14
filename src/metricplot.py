@@ -1,17 +1,5 @@
 """
 metricplot.py — отрисовка одного графика параметра ЭКГ (ВСР).
-
-Режимы масштаба:
-  span < 7 дней     — фиксация на WEEK (минимальный масштаб)
-  7 <= span <= 30   — HOUR3 (3 часа), зебра DAY
-  30 < span <= 365  — DAY (день), зебра WEEK, подписи месяц
-  span > 365        — пропорциональная цена бара, подписи годы
-
-Управление:
-  колесо       — зум к курсору (внутри стоп на 3часа);
-  зажать и тянуть — панорамирование;
-  ПКМ          — сброс на весь период;
-  двойной клик — зум до года кликнутого столбика.
 """
 import datetime
 import time as _time
@@ -26,11 +14,10 @@ from models import get_session, ECGRecord
 from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
                    COL_SPINE, COL_TP_YEAR)
 from timeframe import TimeFrame, get_chart_config, calc_proportional_bar_size, pick_year_step
+from analyzer import MetricAnalyzer
 
 
 class _FrozenCanvas(FigureCanvasTkAgg):
-    """Канвас, который не перерисовывается, пока заморожен (ресайз окна)."""
-
     def __init__(self, figure, master=None):
         super().__init__(figure, master=master)
         self._frozen = False
@@ -55,8 +42,9 @@ class MetricSpec:
 
 class MetricPlot(tk.Frame):
 
-    SMALL_SPAN = 365            # до года — календарные бары
-    TARGET_BAR_PX = 15          # целевая ширина бара в пропорц. режиме
+    SMALL_SPAN = 365
+    TARGET_BAR_PX = 15
+    HOVER_DELAY_MS = 1000
 
     def __init__(self, master, spec, db_path=None):
         super().__init__(master, bg=COL_BG_DARK)
@@ -68,8 +56,8 @@ class MetricPlot(tk.Frame):
         self._values = []
         self.view = None
         self._pan = None
-        self._load_seq = 0          # порядковый номер загрузки (отсев устаревших)
-        self._loading = False       # идёт фоновая загрузка
+        self._load_seq = 0
+        self._loading = False
         self._single_timer = None
         self._click_t = 0.0
         self._click_x = 0.0
@@ -80,9 +68,15 @@ class MetricPlot(tk.Frame):
         self.on_year_pick = None
         self.on_reset = None
         self.on_single_click = None
-        self._draw_timer = None      # Таймер для debounce-перерисовки
-        self._pending_view = None    # Отложенное состояние вида
-        self._pan_throttle_ms = 33  # Ограничиваем перерисовку до ~30 FPS при драге        
+        self._draw_timer = None
+        self._pending_view = None
+        self._pan_throttle_ms = 33
+
+        self.analyzer = MetricAnalyzer(self.db_path) if self.db_path else None
+        self._hover_timer = None
+        self._hover_tooltip = None
+        self._hover_xdata = None
+        self._mouse_on_axes = False
 
         self.fig = Figure(dpi=100)
         self.fig.patch.set_facecolor(COL_BG_DARK)
@@ -94,15 +88,20 @@ class MetricPlot(tk.Frame):
         self.fig.subplots_adjust(left=0.05, right=0.98, top=0.86, bottom=0.18)
         self._style()
 
+        # Обработка клавиш
+        self.widget.bind("<Escape>", lambda e: self._cancel_hover())
+        self.widget.bind("<Return>", lambda e: self._open_analysis_dialog())
+
         self.canvas.mpl_connect("scroll_event", self._on_scroll)
         self.canvas.mpl_connect("button_press_event", self._on_press)
         self.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self.canvas.mpl_connect("button_release_event", self._on_release)
+        self.canvas.mpl_connect("axes_enter_event", self._on_axes_enter)
+        self.canvas.mpl_connect("axes_leave_event", self._on_axes_leave)
 
     def set_frozen(self, frozen):
         self.canvas.set_frozen(frozen)
 
-    # ---------------- входы ----------------
     @property
     def athlete(self):
         return self._athlete
@@ -112,25 +111,25 @@ class MetricPlot(tk.Frame):
         self._athlete = aid
         self._start = self._end = None
         self._current_tf = None
+        self._cancel_hover()
         self._reload()
 
     def set_range(self, start, end):
         self._start, self._end = start, end
         self.view = None
         self._current_tf = None
+        self._cancel_hover()
         self._reload()
 
     def set_size(self, w, h):
         self.widget.configure(width=w, height=h)
 
     def set_forced_tf(self, tf):
-        """Установить таймфрейм принудительно (из ChartsPanel)."""
         self._forced_tf = tf
 
     def redraw(self):
         self._draw()
 
-    # ---------------- данные ----------------
     def _reload(self, async_load=True):
         self._values = []
         if not self._athlete:
@@ -142,7 +141,6 @@ class MetricPlot(tk.Frame):
         self._load_sync()
 
     def _load_sync(self):
-        """Синхронная загрузка данных из БД."""
         self._values = []
         if not self._athlete:
             return
@@ -150,7 +148,7 @@ class MetricPlot(tk.Frame):
         try:
             q = session.query(ECGRecord).filter(
                 ECGRecord.athlete_id == self._athlete
-            ).order_by(ECGRecord.recorded_at)  # <-- ГАРАНТИРУЕМ СОРТИРОВКУ
+            ).order_by(ECGRecord.recorded_at)
             
             if self._start:
                 q = q.filter(ECGRecord.recorded_at >= self._start.isoformat() + " 00:00:00")
@@ -161,18 +159,15 @@ class MetricPlot(tk.Frame):
                 v = self.spec.value(rec)
                 if v is not None:
                     dt = datetime.datetime.fromisoformat(rec.recorded_at)
-                    # <-- ИСПРАВЛЕНО: сразу сохраняем ординал, как в _fetch_values
-                    self._values.append((self._ord(dt), v))
+                    self._values.append((self._ord(dt), v, rec.recorded_at))
         finally:
             session.close()
 
         if self._start is None and self._values:
-            # <-- ИСПРАВЛЕНО: извлекаем дату из ординала
-            self._start = datetime.date.fromordinal(int(min(d for d, _ in self._values)))
-            self._end = datetime.date.fromordinal(int(max(d for d, _ in self._values)))
+            self._start = datetime.date.fromordinal(int(min(d for d, _, _ in self._values)))
+            self._end = datetime.date.fromordinal(int(max(d for d, _, _ in self._values)))
 
     def _start_background_load(self):
-        """Запускает загрузку данных в фоновом потоке, отсеивая устаревшие."""
         self._load_seq += 1
         seq = self._load_seq
         athlete = self._athlete
@@ -186,20 +181,19 @@ class MetricPlot(tk.Frame):
             try:
                 self.after(0, lambda: self._apply_background_load(seq, athlete, values))
             except RuntimeError:
-                pass  # Tk уже разрушен — результат не нужен
+                pass
 
         import threading
         threading.Thread(target=worker, daemon=True).start()
 
     def _fetch_values(self, athlete):
-        """Тяжёлый SQL-запрос — выполняется в фоновом потоке."""
         if not athlete:
             return []
         session = get_session(self.db_path)
         try:
             q = session.query(ECGRecord).filter(
                 ECGRecord.athlete_id == athlete
-            ).order_by(ECGRecord.recorded_at)  # <-- 1. ГАРАНТИРУЕМ СОРТИРОВКУ
+            ).order_by(ECGRecord.recorded_at)
             
             if self._start:
                 q = q.filter(ECGRecord.recorded_at >= self._start.isoformat() + " 00:00:00")
@@ -211,27 +205,23 @@ class MetricPlot(tk.Frame):
                 v = self.spec.value(rec)
                 if v is not None:
                     dt = datetime.datetime.fromisoformat(rec.recorded_at)
-                    # <-- 2. СРАЗУ ВЫЧИСЛЯЕМ И СОХРАНЯЕМ ОРДИНАЛ
-                    out.append((self._ord(dt), v))
+                    out.append((self._ord(dt), v, rec.recorded_at))
             return out
         finally:
             session.close()
 
     def _apply_background_load(self, seq, athlete, values):
-        """Применяет результат загрузки, если за это время не сменили атлета."""
         if seq != self._load_seq or athlete != self._athlete:
-            return  # устаревший результат — игнорируем
+            return
         
         self._values = values
         if self._start is None and self._values:
-            # <-- ИСПРАВЛЕНО: корректное получение даты из ординала (float)
-            self._start = datetime.date.fromordinal(int(min(d for d, _ in self._values)))
-            self._end = datetime.date.fromordinal(int(max(d for d, _ in self._values)))
+            self._start = datetime.date.fromordinal(int(min(d for d, _, _ in self._values)))
+            self._end = datetime.date.fromordinal(int(max(d for d, _, _ in self._values)))
             
         self._loading = False
         self._draw()
 
-    # ---------------- ординалы и view ----------------
     def _ord(self, x):
         if isinstance(x, datetime.datetime):
             return x.date().toordinal() + x.hour / 24.0 + x.minute / 1440.0
@@ -259,7 +249,6 @@ class MetricPlot(tk.Frame):
         else:
             self._draw()
 
-    # ---------------- зум / панорама ----------------
     def _on_scroll(self, event):
         if event.xdata is None or self._start is None:
             return
@@ -269,7 +258,6 @@ class MetricPlot(tk.Frame):
         lo, hi = v
         factor = 0.85 if event.button == "up" else 1.18
         width_px = max(100, self.ax.get_window_extent().width)
-        # Минимальный span = 1 день
         min_span = 1.0
         new_span = min(365000, max(min_span, (hi - lo) * factor))
         ratio = (event.xdata - lo) / max(1e-9, hi - lo)
@@ -278,6 +266,14 @@ class MetricPlot(tk.Frame):
         self._commit_view(new_lo, new_hi)
 
     def _on_press(self, event):
+        # === КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: если подсказка видна — открываем диалог ===
+        if self._hover_tooltip is not None:
+            self._open_analysis_dialog()
+            return
+        # =====================================================================
+        
+        self._cancel_hover()
+        
         if event.button == 3:
             self._current_tf = None
             if self.on_reset:
@@ -296,7 +292,6 @@ class MetricPlot(tk.Frame):
         self._click_y = event.y
 
         if is_dbl:
-            # двойной клик игнорируется — не эргономично
             return
 
         if self.on_single_click:
@@ -317,37 +312,38 @@ class MetricPlot(tk.Frame):
             self.on_single_click(d)
 
     def _on_motion(self, event):
-        if self._pan is None or event.button != 1:
-            return
-        
-        # Отменяем таймер одиночного клика при начале движения
-        if self._single_timer is not None:
-            self.after_cancel(self._single_timer)
-            self._single_timer = None
+        if self._pan is not None and event.button == 1:
+            if self._single_timer is not None:
+                self.after_cancel(self._single_timer)
+                self._single_timer = None
             
-        x0, lo0, hi0 = self._pan
-        width_px = self.ax.get_window_extent().width
-        if width_px <= 1:
-            return
+            self._cancel_hover()
+                
+            x0, lo0, hi0 = self._pan
+            width_px = self.ax.get_window_extent().width
+            if width_px <= 1:
+                return
+                
+            span = hi0 - lo0
+            shift = (x0 - event.x) * span / width_px
             
-        span = hi0 - lo0
-        shift = (x0 - event.x) * span / width_px
-        
-        # Сразу вычисляем новые границы, но НЕ рисуем их мгновенно
-        new_lo = lo0 + shift
-        new_hi = new_lo + span
-        self._pending_view = (new_lo, new_hi)
+            new_lo = lo0 + shift
+            new_hi = new_lo + span
+            self._pending_view = (new_lo, new_hi)
 
-        # ⚡ ГЛАВНЫЙ СЕКРЕТ ПЛАВНОСТИ (Debounce):
-        # Если уже есть запланированная перерисовка, отменяем её
-        if self._draw_timer is not None:
-            self.after_cancel(self._draw_timer)
+            if self._draw_timer is not None:
+                self.after_cancel(self._draw_timer)
+            
+            self._draw_timer = self.after(16, self._apply_pending_view)
+            return
         
-        # Планируем новую перерисовку через 16 мс (~60 FPS)
-        self._draw_timer = self.after(16, self._apply_pending_view)
+        # Обработка наведения
+        if self._mouse_on_axes and event.xdata is not None:
+            self._handle_hover(event.xdata)
+        else:
+            self._cancel_hover()
 
     def _apply_pending_view(self):
-        """Применяет отложенное изменение вида и запускает перерисовку."""
         self._draw_timer = None
         if self._pending_view is not None:
             lo, hi = self._pending_view
@@ -355,11 +351,9 @@ class MetricPlot(tk.Frame):
             self._commit_view(lo, hi)        
 
     def _on_release(self, event):
-        # Если есть отложенная перерисовка, применяем её прямо сейчас
         if self._draw_timer is not None:
             self.after_cancel(self._draw_timer)
             self._apply_pending_view()
-            
         self._pan = None
 
     def center_on_week(self, week_start_date):
@@ -371,16 +365,164 @@ class MetricPlot(tk.Frame):
         center = self._ord(week_start_date + datetime.timedelta(days=3))
         self._commit_view(center - span / 2, center + span / 2)
 
-    # ---------------- отрисовка ----------------
+    def _on_axes_enter(self, event):
+        self._mouse_on_axes = True
+
+    def _on_axes_leave(self, event):
+        self._mouse_on_axes = False
+        self._cancel_hover()
+
+    def _handle_hover(self, xdata):
+        # Если окно уже открыто, не прерываем его при микро-движениях
+        if self._hover_tooltip is not None:
+            return
+            
+        if self._hover_xdata is not None and abs(self._hover_xdata - xdata) < 0.05:
+            return
+        
+        self._cancel_hover() # Сбрасываем старое при значительном сдвиге
+        
+        self._hover_xdata = xdata
+        self._hover_timer = self.after(self.HOVER_DELAY_MS, lambda: self._show_analysis(xdata))
+
+    def _cancel_hover(self):
+        """Полностью сбрасывает состояние наведения."""
+        if self._hover_timer is not None:
+            self.after_cancel(self._hover_timer)
+            self._hover_timer = None
+        
+        if self._hover_tooltip is not None:
+            try:
+                self._hover_tooltip.destroy()
+            except Exception:
+                pass
+            self._hover_tooltip = None
+        
+        self._hover_xdata = None
+
+    def _find_closest_record(self, xdata):
+        if not self._values:
+            return None
+        
+        idx = bisect.bisect_left(self._values, (xdata,))
+        
+        candidates = []
+        if idx > 0:
+            candidates.append(self._values[idx - 1])
+        if idx < len(self._values):
+            candidates.append(self._values[idx])
+        
+        if not candidates:
+            return None
+        
+        closest = min(candidates, key=lambda item: abs(item[0] - xdata))
+        
+        if abs(closest[0] - xdata) > 0.5:
+            return None
+        
+        return closest
+
+    def _show_analysis(self, xdata):
+        """Показывает всплывающую подсказку с анализом."""
+        self._hover_timer = None
+        
+        # ИСПРАВЛЕНИЕ: Не вызываем _cancel_hover(), чтобы не затереть _hover_xdata!
+        # Вместо этого просто гарантируем, что старое окно закрыто.
+        if self._hover_tooltip is not None:
+            try:
+                self._hover_tooltip.destroy()
+            except Exception:
+                pass
+
+        # Сохраняем текущие данные наведения для возможного последующего клика
+        self._hover_xdata = xdata
+        
+        record = self._find_closest_record(xdata)
+        if record is None:
+            self._cancel_hover()
+            return
+        
+        ordinal, value, recorded_at = record
+        
+        if not self.analyzer or not self._athlete:
+            self._cancel_hover()
+            return
+        
+        analysis = self.analyzer.analyze_by_date(self._athlete, recorded_at)
+        if not analysis:
+            self._cancel_hover()
+            return
+        
+        # Создаем всплывающее окно
+        self._hover_tooltip = tw = tk.Toplevel(self)
+        tw.wm_overrideredirect(True)
+        tw.configure(bg="#2d2d2d", borderwidth=1, relief="solid")
+        tw.attributes('-topmost', True)
+        
+        text = (f"📅 {analysis.recorded_at.strftime('%d.%m.%Y %H:%M')}\n"
+                f"{'─' * 40}\n"
+                f"{analysis.tp_color} TP: {analysis.tp:.0f} мс² — {analysis.tp_status}\n"
+                f"{analysis.stress_color} Стресс: {analysis.stress_si:.0f} у.е. — {analysis.stress_status}\n"
+                f"{'─' * 40}\n"
+                f"💡 {analysis.recommendation}")
+        
+        label = tk.Label(
+            tw, text=text, justify="left", bg="#2d2d2d", fg="#ffffff",
+            font=("Segoe UI", 9), padx=12, pady=10, anchor="w"
+        )
+        label.pack()
+        
+        x = self.winfo_pointerx() + 15
+        y = self.winfo_pointery() + 15
+        
+        tw.update_idletasks()
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        tw_w = tw.winfo_width()
+        tw_h = tw.winfo_height()
+        
+        if x + tw_w > screen_w:
+            x = self.winfo_pointerx() - tw_w - 15
+        if y + tw_h > screen_h:
+            y = self.winfo_pointery() - tw_h - 15
+        
+        tw.wm_geometry(f"+{x}+{y}")
+        tw.bind("<Motion>", lambda e: self._cancel_hover())
+
+    def _open_analysis_dialog(self):
+        """Открывает полноценный диалог анализа для текущей подсказки."""
+        if self._hover_xdata is None:
+            return
+        
+        record = self._find_closest_record(self._hover_xdata)
+        if record is None:
+            return
+        
+        ordinal, value, recorded_at = record
+        
+        if not self.analyzer or not self._athlete:
+            return
+        
+        analysis = self.analyzer.analyze_by_date(self._athlete, recorded_at)
+        if not analysis:
+            return
+        
+        # Закрываем подсказку перед открытием диалога
+        self._cancel_hover()
+        
+        try:
+            from analysis_dialog import AnalysisDialog
+            parent_window = self.winfo_toplevel()
+            AnalysisDialog(parent_window, analysis, self.db_path)
+        except ImportError:
+            # Если файла диалога нет, выводим в консоль
+            print("\n" + analysis.to_text() + "\n")
+
     def _style(self):
         self.ax.set_facecolor(COL_BG_DARK)
         self.ax.tick_params(colors=COL_TEXT_LIGHT, labelsize=8)
         for s in self.ax.spines.values():
             s.set_color(COL_SPINE)
-        
-        # ⚡ ОПТИМИЗАЦИЯ: Отключаем авто-масштабирование осей.
-        # Мы задаем xlim/ylim вручную в _draw, а авто-масштаб 
-        # заставляет Matplotlib пересчитывать границы для каждого бара.
         self.ax.set_autoscale_on(False)
 
     def _draw(self):
@@ -389,8 +531,7 @@ class MetricPlot(tk.Frame):
         self._style()
 
         if not self._values or not self._start:
-            ax.set_title(f"{self.spec.name}: нет данных",
-                         color=COL_TEXT_DIM, fontsize=9)
+            ax.set_title(f"{self.spec.name}: нет данных", color=COL_TEXT_DIM, fontsize=9)
             self.canvas.draw_idle()
             return
 
@@ -401,11 +542,9 @@ class MetricPlot(tk.Frame):
         vspan = max(1, hi - lo)
         width_px = max(100, self.ax.get_window_extent().width)
 
-        # Получаем конфигурацию отрисовки из timeframe.py
         config = get_chart_config(vspan)
         
         if config.is_proportional:
-            # Пропорциональный режим (span > 365)
             bar_size = calc_proportional_bar_size(vspan, width_px, self.TARGET_BAR_PX)
             bw = bar_size * 0.95
             def key(x): return int(x / bar_size) * bar_size
@@ -413,7 +552,6 @@ class MetricPlot(tk.Frame):
             self._set_year_ticks(ax, lo, hi)
             tf_label = f"{bar_size / 365:.1f}г" if bar_size >= 365 else f"{bar_size:.0f}д"
         else:
-            # Календарный режим
             tf = config.bar_tf
             self._current_tf = tf
             bw = tf.bar_size * 0.95
@@ -422,36 +560,22 @@ class MetricPlot(tk.Frame):
             self._set_x_ticks_small(ax, lo, hi, vspan, config)
             tf_label = tf.label
 
-        # Фильтруем данные для текущего view
-        # --- БЫЛО (МЕДЛЕННО, O(N) при каждом движении мыши): ---
-        # view_values = [(dt, vv) for dt, vv in self._values if lo <= self._ord(dt) < hi]
-
-        # --- СТАЛО (МОЛНИЕНОСНО, O(log N) благодаря бинарному поиску): ---
-        # self._values теперь содержит кортежи (ordinal, value) и отсортирован по ordinal
-        start_idx = bisect.bisect_left(self._values, (lo, -float('inf')))
-        end_idx = bisect.bisect_right(self._values, (hi, float('inf')))
+        start_idx = bisect.bisect_left(self._values, (lo, -float('inf'), ""))
+        end_idx = bisect.bisect_right(self._values, (hi, float('inf'), "zzz"))
         view_values = self._values[start_idx:end_idx]
-        # -----------------------------------------------------------
 
-        # Агрегируем данные
         agg = {}
-        for x, vv in view_values:  # x здесь уже является ординалом (float)
+        for x, vv, _ in view_values:
             agg.setdefault(key(x), []).append(vv)
         
         xs = sorted(agg)
         ys = [sum(agg[x]) / len(agg[x]) for x in xs] if xs else []
 
-        # Рисуем бары
         if xs and ys:
             c = self.spec.color
             colors = [c(vv) for vv in ys] if callable(c) else (c or COL_TP_YEAR)
-            
-            # ⚡ ОПТИМИЗАЦИЯ: rasterized=True превращает тысячи векторных баров 
-            # в одно растровое изображение. Это дает прирост скорости в 5-10 раз.
             ax.bar(xs, ys, width=bw, color=colors, align="edge", zorder=2, rasterized=True)
 
-        # ⚡ ОПТИМИЗАЦИЯ: Убеждаемся, что пределы осей заданы жестко 
-        # ПОСЛЕ отрисовки, чтобы избежать лишних пересчетов.
         ax.set_xlim(lo, hi)
         if ys:
             ax.set_ylim(0, (max(ys) or 1) * 1.1)
@@ -462,23 +586,18 @@ class MetricPlot(tk.Frame):
         d0 = datetime.date.fromordinal(max(1, int(lo)))
         d1 = datetime.date.fromordinal(max(1, int(hi)))
         range_str = f"{d0:%d.%m.%y}–{d1:%d.%m.%y}"
-        ax.set_title(f"{self.spec.name} | {tf_label} ({range_str})",
-                     color=COL_TEXT_LIGHT, fontsize=9)
+        ax.set_title(f"{self.spec.name} | {tf_label} ({range_str})", color=COL_TEXT_LIGHT, fontsize=9)
         self.canvas.draw_idle()
 
-    # ---------------- ось X ----------------
     def _set_x_ticks_small(self, ax, lo, hi, vspan, config):
-        """Установка подписей оси X на основе конфигурации."""
         ticks, names = [], []
         months_ru = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
         weekdays_ru = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
         
-        # ⚡ ОПТИМИЗАЦИЯ: Кэшируем вычисление начальной даты и используем её везде
         start_ord = max(1, int(lo))
         d0 = datetime.date.fromordinal(start_ord)
         d1 = datetime.date.fromordinal(max(1, int(hi)))
                 
-        # Недельный диапазон (1.5 < vspan <= 7)
         if 1.5 < vspan <= 7:
             current = d0
             while current <= d1:
@@ -488,8 +607,6 @@ class MetricPlot(tk.Frame):
                 else:
                     names.append(weekdays_ru[current.weekday()])
                 current += datetime.timedelta(days=1)
-        
-        # Суточный диапазон (<= 1.5 дня)
         elif vspan <= 1.5:
             current = datetime.datetime(d0.year, d0.month, d0.day, 0, 0, 0)
             while self._ord(current) <= hi + 0.5:
@@ -497,7 +614,6 @@ class MetricPlot(tk.Frame):
                 ticks.append(self._ord(current))
                 names.append(label)
                 current += datetime.timedelta(hours=3)
-        
         elif config.tick_format == "3hour" and config.tick_step_hours > 0:
             current = datetime.datetime(d0.year, d0.month, d0.day, 0, 0, 0)
             step = datetime.timedelta(hours=config.tick_step_hours)
@@ -510,38 +626,29 @@ class MetricPlot(tk.Frame):
                 ticks.append(self._ord(current))
                 names.append(label)
                 current += step
-        
         elif config.bar_tf is TimeFrame.DAY and vspan > 31:
             current = d0.replace(day=1)
             if current < d0:
                 current = current.replace(year=current.year + 1, month=1) if current.month == 12 else current.replace(month=current.month + 1)
-            
             while current <= d1:
                 ticks.append(current.toordinal())
                 names.append(months_ru[current.month - 1])
                 current = current.replace(year=current.year + 1, month=1) if current.month == 12 else current.replace(month=current.month + 1)
-        
         elif config.bar_tf is TimeFrame.HOUR3:
-            # Для 3-часового масштаба: только дата в понедельник, иначе день недели
             current = datetime.datetime(d0.year, d0.month, d0.day, 0, 0, 0)
             step = datetime.timedelta(days=1)
-            
             while self._ord(current) <= hi + 0.5:
                 if current.hour == 0:
                     weekday_num = current.weekday()
-                    if weekday_num == 0:  # Понедельник - только дата
-                        label = current.strftime('%d.%m')  # "29.07"
+                    if weekday_num == 0:
+                        label = current.strftime('%d.%m')
                     else:
-                        # Остальные дни - только день недели
-                        label = weekdays_ru[weekday_num]  # "вт", "ср" и т.д.
+                        label = weekdays_ru[weekday_num]
                 else:
-                    # В течение дня - только время
                     label = current.strftime("%H:%M")
-                
                 ticks.append(self._ord(current))
                 names.append(label)
                 current += step
-        
         else:
             bounds = list(self._sibling_bounds(config.zebra_tf, lo, hi))
             last_tick_ord = -999
@@ -557,7 +664,6 @@ class MetricPlot(tk.Frame):
         ax.set_xticklabels(names, fontsize=7)
 
     def _set_year_ticks(self, ax, lo, hi):
-        """Установка годовых подписей оси X для пропорционального режима."""
         n = pick_year_step(max(1, hi - lo))
         d0 = datetime.date.fromordinal(max(1, int(lo)))
         d1 = datetime.date.fromordinal(max(1, int(hi)))
@@ -573,9 +679,7 @@ class MetricPlot(tk.Frame):
         ax.set_xticklabels(names, fontsize=7)
 
     def _sibling_bounds(self, sib, lo, hi):
-        """Генератор границ для зебры и подписей оси X."""
         d0 = datetime.date.fromordinal(max(1, int(lo)))
-        
         if sib in (TimeFrame.HOUR1, TimeFrame.HOUR3):
             d0 = datetime.datetime.combine(d0, datetime.time())
             if sib is TimeFrame.HOUR1:
@@ -596,8 +700,7 @@ class MetricPlot(tk.Frame):
 
     @staticmethod
     def _next_bound(sib, d):
-        """Следующая граница для данного таймфрейма."""
-        if sib is TimeFrame.HOUR1:  # НОВОЕ
+        if sib is TimeFrame.HOUR1:
             return d + datetime.timedelta(hours=1)
         if sib is TimeFrame.HOUR3:
             return d + datetime.timedelta(hours=3)
@@ -607,56 +710,39 @@ class MetricPlot(tk.Frame):
             return d + datetime.timedelta(days=7)
         return d + datetime.timedelta(days=1)
 
-    # ---------------- зебра ----------------
     def _shade_tf(self, ax, lo, hi, sib):
         step = sib.bar_size
         if step <= 0:
             return
-        
-        # ⚡ ОПТИМИЗАЦИЯ: Начинаем цикл строго с ближайшей границы, 
-        # которая находится слева от видимой области (lo), чтобы не делать лишних итераций.
         start_x = sib.bin_key(lo) - step
         x = start_x
-        
         while x <= hi:
             x0, x1 = x, x + step
-            
-            # Рисуем только если интервал пересекается с видимой областью [lo, hi]
             if x1 > lo and x0 < hi:
                 if int(round(x0 / step)) % 2:
-                    ax.axvspan(max(x0, lo), min(x1, hi),
-                               color=COL_TEXT_LIGHT, alpha=0.06, zorder=0)
+                    ax.axvspan(max(x0, lo), min(x1, hi), color=COL_TEXT_LIGHT, alpha=0.06, zorder=0)
                 if lo < x0 < hi:
-                    ax.axvline(x0, color=COL_TEXT_DIM,
-                               linewidth=0.6, alpha=0.35, zorder=0)
+                    ax.axvline(x0, color=COL_TEXT_DIM, linewidth=0.6, alpha=0.35, zorder=0)
             x = x1
 
     def _shade_years(self, ax, lo, hi, n):
-        # ⚡ ОПТИМИЗАЦИЯ: Вычисляем стартовый год ближе к lo, а не от начала времен.
         start_year = max(1, datetime.date.fromordinal(int(lo)).year)
-        y = (start_year // n) * n - n  # Берем с запасом в один период назад
-        
+        y = (start_year // n) * n - n
         while y <= 9999:
             x0 = datetime.date(max(1, y), 1, 1).toordinal()
             if x0 > hi:
-                break  # Как только вышли за правую границу, прерываем цикл
-            
+                break
             x1 = datetime.date(min(9999, y + n), 1, 1).toordinal()
-            
-            # Рисуем только если интервал пересекается с [lo, hi]
             if x1 > lo and x0 < hi:
                 if (y // n) % 2:
-                    ax.axvspan(max(x0, lo), min(x1, hi),
-                               color=COL_TEXT_LIGHT, alpha=0.06, zorder=0)
+                    ax.axvspan(max(x0, lo), min(x1, hi), color=COL_TEXT_LIGHT, alpha=0.06, zorder=0)
                 if lo < x0 < hi:
-                    ax.axvline(x0, color=COL_TEXT_DIM,
-                               linewidth=0.6, alpha=0.35, zorder=0)
+                    ax.axvline(x0, color=COL_TEXT_DIM, linewidth=0.6, alpha=0.35, zorder=0)
             y += n
 
     @staticmethod
     def _tick_label(sib, d, vspan):
-        """Формат подписи для оси X."""
-        if sib is TimeFrame.HOUR1:  # НОВОЕ
+        if sib is TimeFrame.HOUR1:
             return d.strftime("%H:%M") if vspan <= 2 else d.strftime("%d.%m %H:%M")
         if sib is TimeFrame.HOUR3:
             return d.strftime("%H:%M") if vspan <= 7 else d.strftime("%d.%m %H:%M")
