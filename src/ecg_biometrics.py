@@ -9,16 +9,15 @@ from scipy import signal
 from scipy.fft import fft, fftfreq
 from dtaidistance import dtw
 
-from models import get_session, ECGRecord, ECGRaw, BiometricTemplate
+from models import get_session, ECGRecord, ECGRaw, BiometricTemplate, Athlete
 
-MIN_RECORDS_FOR_TEMPLATE = 7      # Минимум для создания
-OPTIMAL_RECORDS_FOR_TEMPLATE = 20 # Цель для максимальной точности
-MAX_RECORDS_FOR_TEMPLATE = 50     # Предел (дальше — вытеснение старых)
-BIOMETRIC_THRESHOLD = 0.30  # Порог срабатывания предупреждения
+MIN_RECORDS_FOR_TEMPLATE = 7      
+OPTIMAL_RECORDS_FOR_TEMPLATE = 20 
+MAX_RECORDS_FOR_TEMPLATE = 50     
+BIOMETRIC_THRESHOLD = 0.30  
 
 
 def _parse_and_clean_ecg(raw_data, fs=130.0):
-    """Парсинг и очистка ЭКГ специально для биометрии (без медианного фильтра)."""
     lines = raw_data.split('\n')
     in_ecg, samples = False, []
     for line in lines:
@@ -41,7 +40,6 @@ def _parse_and_clean_ecg(raw_data, fs=130.0):
 
 
 def _extract_features(ecg_clean, fs=130):
-    """Извлекает форму и спектральные признаки."""
     min_r_height = np.mean(ecg_clean) + 1.5 * np.std(ecg_clean)
     rough_peaks, _ = find_peaks(ecg_clean, distance=int(0.3 * fs), height=min_r_height)
     window_samples, half_win = int(0.2 * fs), int(0.1 * fs)
@@ -76,12 +74,9 @@ def _extract_features(ecg_clean, fs=130):
 
 
 def create_and_save_template(db_path, athlete_id, progress_cb=None):
-    """Анализирует записи, отбирает лучшие (до OPTIMAL_RECORDS_FOR_TEMPLATE шт.) и сохраняет шаблон в БД."""
     session = get_session(db_path)
     try:
         if progress_cb: progress_cb("Загрузка данных из БД...")
-        
-        # Берем ВСЕ доступные записи атлета
         raw_records = [row[0] for row in session.query(ECGRaw.raw_data)
                        .join(ECGRecord, ECGRaw.record_id == ECGRecord.id)
                        .filter(ECGRecord.athlete_id == athlete_id).all() if row[0]]
@@ -90,7 +85,6 @@ def create_and_save_template(db_path, athlete_id, progress_cb=None):
             return False, f"Недостаточно записей. Нужно минимум {MIN_RECORDS_FOR_TEMPLATE}, найдено {len(raw_records)}."
 
         if progress_cb: progress_cb(f"Анализ {len(raw_records)} записей...")
-        
         valid_shapes, valid_specs = [], []
         for raw in raw_records:
             try:
@@ -104,36 +98,25 @@ def create_and_save_template(db_path, athlete_id, progress_cb=None):
         if len(valid_shapes) < MIN_RECORDS_FOR_TEMPLATE:
             return False, f"Слишком много записей с артефактами. Успешно обработано только {len(valid_shapes)}."
 
-        # ⚡ Если записей больше MAX, берем только последние MAX (по порядку в БД = по дате)
-        # Это защищает от устаревания шаблона и ускоряет расчет
         if len(valid_shapes) > MAX_RECORDS_FOR_TEMPLATE:
             valid_shapes = valid_shapes[-MAX_RECORDS_FOR_TEMPLATE:]
             valid_specs = valid_specs[-MAX_RECORDS_FOR_TEMPLATE:]
-            if progress_cb: progress_cb(f"Используем последние {MAX_RECORDS_FOR_TEMPLATE} записей (всего валидных: {len(valid_shapes) + (len(raw_records) - len(valid_shapes))})...")
 
-        # 1. Создаем черновой шаблон из ВСЕХ валидных записей (медиана устойчива к выбросам)
         draft_shape = np.median(valid_shapes, axis=0)
-        
-        # 2. Считаем расстояние каждой записи до чернового шаблона
         distances = [(i, dtw.distance_fast(shape.astype(np.double), draft_shape.astype(np.double))) 
                      for i, shape in enumerate(valid_shapes)]
-        
-        # Сортируем: сначала идут записи с наименьшим расстоянием (самые "чистые" и похожие)
         distances.sort(key=lambda x: x[1])
         
-        # ⚡ Берем не строго MIN, а до OPTIMAL (но не больше, чем есть)
         num_to_use = min(OPTIMAL_RECORDS_FOR_TEMPLATE, len(valid_shapes))
         best_indices = [x[0] for x in distances[:num_to_use]]
         
         best_shapes = [valid_shapes[i] for i in best_indices]
         best_specs = [valid_specs[i] for i in best_indices]
         
-        # 3. Финальный шаблон строится на основе этих лучших записей
         final_shape = np.median(best_shapes, axis=0)
         final_spec = np.median(best_specs, axis=0)
         
         if progress_cb: progress_cb("Сохранение в БД...")
-        
         session.query(BiometricTemplate).filter_by(athlete_id=athlete_id).delete()
         new_template = BiometricTemplate(
             athlete_id=athlete_id,
@@ -144,10 +127,8 @@ def create_and_save_template(db_path, athlete_id, progress_cb=None):
         session.add(new_template)
         session.commit()
         
-        # Считаем среднее отклонение только для использованных записей
         avg_dist = sum(x[1] for x in distances[:num_to_use]) / num_to_use
         return True, f"Шаблон успешно создан из {len(best_shapes)} лучших записей (среднее отклонение: {avg_dist:.3f})"
-        
     except Exception as e:
         session.rollback()
         return False, f"Ошибка: {str(e)}"
@@ -156,7 +137,6 @@ def create_and_save_template(db_path, athlete_id, progress_cb=None):
 
 
 def get_saved_template(db_path, athlete_id):
-    """Возвращает (shape, spec) или (None, None), если шаблона нет."""
     session = get_session(db_path)
     try:
         tpl = session.query(BiometricTemplate).filter_by(athlete_id=athlete_id).first()
@@ -168,7 +148,6 @@ def get_saved_template(db_path, athlete_id):
 
 
 def check_ownership_with_saved_template(db_path, athlete_id, new_file_path):
-    """Проверяет файл против СОХРАНЕННОГО шаблона."""
     ref_shape, ref_spec = get_saved_template(db_path, athlete_id)
     if ref_shape is None:
         return "NO_TEMPLATE", 9999, 0.0
@@ -195,3 +174,61 @@ def check_ownership_with_saved_template(db_path, athlete_id, new_file_path):
         return "LOW_CONFIDENCE", distance, probability
     else:
         return "MATCH", distance, probability
+
+
+# ==============================================================================
+# НОВАЯ ФУНКЦИЯ: Поиск лучшего совпадения по всей базе
+# ==============================================================================
+def find_best_match(db_path, new_file_path, exclude_athlete_id=None):
+    """
+    Ищет атлета с наилучшим биометрическим совпадением для нового файла.
+    Возвращает: (best_athlete_object, best_distance, best_probability, all_matches_list)
+    """
+    try:
+        with open(new_file_path, 'r', encoding='utf-8') as f:
+            new_raw = f.read()
+        q_shape, q_spec = _extract_features(_parse_and_clean_ecg(new_raw))
+    except Exception:
+        return None, 9999, 0.0, []
+
+    if q_shape is None or q_spec is None:
+        return None, 9999, 0.0, []
+
+    session = get_session(db_path)
+    try:
+        results = session.query(BiometricTemplate, Athlete).join(
+            Athlete, BiometricTemplate.athlete_id == Athlete.id
+        ).all()
+
+        matches = []
+        for tpl, athlete in results:
+            if exclude_athlete_id and athlete.id == exclude_athlete_id:
+                continue
+            
+            try:
+                ref_shape = np.array(json.loads(tpl.shape_template))
+                ref_spec = np.array(json.loads(tpl.spectrum_template))
+                
+                shape_dist = dtw.distance_fast(q_shape.astype(np.double), ref_shape.astype(np.double))
+                spec_dist = np.sqrt(np.sum((q_spec - ref_spec) ** 2))
+                
+                distance = 0.6 * (shape_dist / 2.0) + 0.4 * (spec_dist / 0.5)
+                probability = float(np.exp(-2.5 * distance))
+                
+                matches.append({
+                    'athlete': athlete,
+                    'distance': distance,
+                    'probability': probability
+                })
+            except Exception:
+                continue # Пропускаем поврежденные шаблоны
+        
+        # Сортируем по вероятности (по убыванию)
+        matches.sort(key=lambda x: x['probability'], reverse=True)
+        
+        if matches:
+            best = matches[0]
+            return best['athlete'], best['distance'], best['probability'], matches
+        return None, 9999, 0.0, []
+    finally:
+        session.close()
