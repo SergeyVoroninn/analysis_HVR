@@ -232,3 +232,23 @@ def find_best_match(db_path, new_file_path, exclude_athlete_id=None):
         return None, 9999, 0.0, []
     finally:
         session.close()
+
+def auto_update_template_if_needed(db_path, athlete_id):
+    """
+    Тихо проверяет количество записей атлета и обновляет шаблон, 
+    если их стало достаточно (>= MIN_RECORDS_FOR_TEMPLATE).
+    Работает в фоновом режиме, не блокируя интерфейс.
+    """
+    session = get_session(db_path)
+    try:
+        # Считаем количество записей
+        count = session.query(ECGRecord).filter(ECGRecord.athlete_id == athlete_id).count()
+        
+        if count >= MIN_RECORDS_FOR_TEMPLATE:
+            # Запускаем создание/обновление шаблона без колбэков прогресса (тихо)
+            create_and_save_template(db_path, athlete_id, progress_cb=None)
+    except Exception:
+        # Тихо игнорируем ошибки фонового обновления, чтобы не ломать импорт
+        pass
+    finally:
+        session.close()

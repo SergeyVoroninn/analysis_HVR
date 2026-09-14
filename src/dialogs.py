@@ -117,15 +117,6 @@ class AthleteDialog(ctk.CTkToplevel):
                           ).grid(row=row, column=1, padx=12, pady=4, sticky="ew")
         row += 1
 
-        # ⚡ ТЕПЕРЬ ЭТО УСЛОВИЕ СРАБОТАЕТ КОРРЕКТНО
-        if self.athlete_id and self.db_path:
-            self.btn_bio = ctk.CTkButton(self, text="🧬 Биометрический шаблон", 
-                                         command=self._open_biometrics,
-                                         fg_color=COL_ACCENT,
-                                         hover_color=COL_SELECTION)
-            self.btn_bio.grid(row=row, column=0, columnspan=2, pady=(15, 5), sticky="ew")
-            row += 1
-
         btns = ctk.CTkFrame(self, fg_color="transparent")
         btns.grid(row=row, column=0, columnspan=2, pady=12)
         ctk.CTkButton(btns, text="Сохранить", command=self._on_save).pack(side="left", padx=6)

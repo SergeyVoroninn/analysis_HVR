@@ -146,29 +146,42 @@ class AthletesPanel(tk.Frame):
         self.wait_window(dlg)
         
         if not dlg.result:
-            return
+            return  # Пользователь нажал "Отмена"
             
         d = dlg.result
+        import datetime
         bd = d["birth_date"]
         if isinstance(bd, str):
             bd = datetime.date.fromisoformat(bd)
             
         age = _calc_age(bd)
         gender = d["gender"]
-        height = d["height_cm"] or _estimate_height_cm(age, gender)
-        weight = d["weight_kg"] or _estimate_weight_kg(height, age, gender)
-        resting = _estimate_resting_hr(age, gender)
+
+        # ✅ ИСПРАВЛЕНИЕ: Берем значения напрямую. Если поле пустое, там останется None.
+        # Мы убрали "or _estimate_...", чтобы не подставлять значения насильно.
+        height = d["height_cm"]
+        weight = d["weight_kg"]
+        resting = None  # Оставляем пустым, если пользователь не ввел
+
+        # Polar ID генерируем только если пользователь действительно оставил поле пустым
+        polar_id = d["polar_id"] or _generate_polar_id()
 
         athlete = Athlete(
             id=str(uuid.uuid4()),
-            last_name=d["last_name"], first_name=d["first_name"],
-            middle_name=d["middle_name"], gender=gender,
-            birth_date=bd, height_cm=height, weight_kg=weight,
-            resting_hr=resting, max_hr=_estimate_max_hr(age),
-            hrv_rmssd_baseline=_estimate_hrv_rmssd(age),
-            avg_rr_ms=int(60000 / resting) if resting > 0 else 60,
-            polar_id=d["polar_id"] or _generate_polar_id(),
+            last_name=d["last_name"], 
+            first_name=d["first_name"],
+            middle_name=d["middle_name"], 
+            gender=gender,
+            birth_date=bd, 
+            height_cm=height, 
+            weight_kg=weight,
+            resting_hr=resting, 
+            max_hr=None,               # Было: _estimate_max_hr(age)
+            hrv_rmssd_baseline=None,   # Было: _estimate_hrv_rmssd(age)
+            avg_rr_ms=None,            # Было: int(60000 / resting) if resting > 0 else 60
+            polar_id=polar_id,
         )
+        
         session = self._session()
         try:
             session.add(athlete)

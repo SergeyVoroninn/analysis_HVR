@@ -26,6 +26,7 @@ def handle_app_close(panel, orchestrator, root):
     cur = panel.selected()
     orchestrator.save_state(current_athlete_id=cur[0] if cur else None)
     root.destroy()
+    sys.exit(0)    
 
 if __name__ == "__main__":
     settings = AppSettings().load()
@@ -173,3 +174,4 @@ if __name__ == "__main__":
 
     root.protocol("WM_DELETE_WINDOW", lambda: handle_app_close(panel, orchestrator, root))
     root.mainloop()
+    sys.exit(0)    
