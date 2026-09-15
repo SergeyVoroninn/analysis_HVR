@@ -186,16 +186,6 @@ class AthleteDialog(ctk.CTkToplevel):
             return True
         return bool(re.fullmatch(r"\d*\.?\d*", proposed))
 
-    def _open_biometrics(self):
-        # Импортируем здесь, чтобы избежать циклических зависимостей, если dialogs импортирует что-то еще
-        from dialogs import BiometricDialog 
-        
-        last = self.entries["last_name"].get().strip()
-        first = self.entries["first_name"].get().strip()
-        athlete_name = f"{last} {first}" if last and first else "Атлет"
-        
-        BiometricDialog(self, self.db_path, self.athlete_id, athlete_name)    
-
     def _on_save(self):
         try:
             last = self.entries["last_name"].get().strip()

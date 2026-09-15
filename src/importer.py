@@ -24,10 +24,11 @@ from ecg_biometrics import (
 # ДИАЛОГ ВЫБОРА АТЛЕТА ПРИ БИОМЕТРИЧЕСКОМ НЕСОВПАДЕНИИ
 # ==============================================================================
 class BiometricChoiceDialog(tk.Toplevel):
-    def __init__(self, parent, current_name, current_prob, best_name, best_prob):
+    def __init__(self, parent, current_name, current_prob, best_name, best_prob, 
+                 is_relative=False, best_records=0): # ⚡ Добавлен best_records
         super().__init__(parent)
         self.title("🔍 Биометрическая верификация")
-        self.geometry("550x480")
+        self.geometry("550x500") # Чуть выше для нового текста
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -41,18 +42,38 @@ class BiometricChoiceDialog(tk.Toplevel):
         tk.Label(self, text="Если ни один из вариантов не подходит, выберите отмену импорта.", 
                  font=("Segoe UI", 9), bg="#2b2b2b", fg="#ffb74d").pack(pady=(0, 10))
 
+        # Текущий атлет
         cur_frame = tk.Frame(self, bg="#1e3a5f", padx=15, pady=10)
         cur_frame.pack(fill="x", padx=20, pady=5)
         tk.Label(cur_frame, text=f"👤 Текущий выбор:", font=("Segoe UI", 10), bg="#1e3a5f", fg="#90caf9").pack(anchor="w")
         tk.Label(cur_frame, text=current_name, font=("Segoe UI", 11, "bold"), bg="#1e3a5f", fg="#ffffff").pack(anchor="w")
-        tk.Label(cur_frame, text=f"Совпадение с шаблоном: {current_prob:.1f}%", font=("Segoe UI", 10), bg="#1e3a5f", fg="#ffb74d").pack(anchor="w")
+        tk.Label(cur_frame, text=f"Совпадение: {current_prob:.1f}%", font=("Segoe UI", 10), bg="#1e3a5f", fg="#ffb74d").pack(anchor="w")
 
+        # Лучший кандидат
         best_frame = tk.Frame(self, bg="#1b5e20", padx=15, pady=10)
         best_frame.pack(fill="x", padx=20, pady=5)
-        tk.Label(best_frame, text=f"🎯 Найдено лучшее совпадение в базе:", font=("Segoe UI", 10), bg="#1b5e20", fg="#a5d6a7").pack(anchor="w")
+        
+        relative_marker = " 👥 (возможно, родственник)" if is_relative else ""
+        tk.Label(best_frame, text=f"🎯 Найдено лучшее совпадение{relative_marker}:", 
+                 font=("Segoe UI", 10), bg="#1b5e20", fg="#a5d6a7").pack(anchor="w")
         tk.Label(best_frame, text=best_name, font=("Segoe UI", 11, "bold"), bg="#1b5e20", fg="#ffffff").pack(anchor="w")
-        tk.Label(best_frame, text=f"Совпадение с шаблоном: {best_prob:.1f}%", font=("Segoe UI", 10, "bold"), bg="#1b5e20", fg="#ffffff").pack(anchor="w")
+        
+        # ⚡ НОВОЕ: Показываем надежность шаблона
+        reliability_text = ""
+        if best_records < 10:
+            reliability_text = f" ⚠️ (Шаблон ненадежен: всего {best_records} записей)"
+            prob_color = "#ffab91" # Оранжевый для предупреждения
+        elif best_records < 20:
+            reliability_text = f" (Шаблон формируется: {best_records} записей)"
+            prob_color = "#ffffff"
+        else:
+            reliability_text = f" (Надежный шаблон: {best_records} записей)"
+            prob_color = "#ffffff"
 
+        tk.Label(best_frame, text=f"Совпадение: {best_prob:.1f}%{reliability_text}", 
+                 font=("Segoe UI", 10, "bold"), bg="#1b5e20", fg=prob_color).pack(anchor="w")
+
+        # Кнопки (без изменений)
         btn_frame = tk.Frame(self, bg="#2b2b2b")
         btn_frame.pack(fill="x", padx=20, pady=15)
 
@@ -75,6 +96,23 @@ class BiometricChoiceDialog(tk.Toplevel):
         self.result = result
         self.destroy()
 
+def _are_relatives_by_name(db_path, athlete_id_1, athlete_id_2):
+    """Проверяет, являются ли атлеты родственниками по фамилии."""
+    if not athlete_id_1 or not athlete_id_2:
+        return False
+    
+    session = get_session(db_path)
+    try:
+        a1 = session.query(Athlete).filter_by(id=athlete_id_1).first()
+        a2 = session.query(Athlete).filter_by(id=athlete_id_2).first()
+        
+        if not a1 or not a2:
+            return False
+        
+        # Сравниваем фамилии (без учета регистра)
+        return a1.last_name.lower() == a2.last_name.lower()
+    finally:
+        session.close()
 
 # ==============================================================================
 # ЛОГИКА ИМПОРТА
@@ -136,7 +174,7 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         aid = athlete[0]
         current_athlete_name = f"{athlete[1]} {athlete[2]}"
         
-        # ⚡ БИОМЕТРИЧЕСКАЯ ПРОВЕРКА (только для интерактивного режима, чтобы не тормозить пакетный импорт)
+        # ⚡ БИОМЕТРИЧЕСКАЯ ПРОВЕРКА (только для интерактивного режима)
         if interactive and parent_window:
             status, distance, prob = check_ownership_with_saved_template(db_path, aid, path)
             
@@ -147,11 +185,53 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                     return "cancelled", None
                     
             elif status in ("SUSPICIOUS", "LOW_CONFIDENCE"):
-                best_athlete, best_dist, best_prob, _ = find_best_match(db_path, path, exclude_athlete_id=aid)
+                # Ищем лучшее совпадение по всей базе (исключая текущего)
+                best_athlete, best_dist, best_prob, all_matches = find_best_match(db_path, path, exclude_athlete_id=aid)
                 
-                if best_athlete and best_prob > prob:
+                # ⚡ НОВОЕ: Абсолютный порог для предотвращения ложных совпадений
+                ABSOLUTE_THRESHOLD = 0.20  # 20% - минимальная вероятность для предложения
+                
+                # Проверяем родственников
+                has_relatives = False
+                relative_candidates = []
+                for m in all_matches:
+                    if _are_relatives_by_name(db_path, aid, m['athlete'].id):
+                        has_relatives = True
+                        relative_candidates.append(m)
+                
+                # ⚡ НОВОЕ: Проверяем, есть ли родственники с высокой вероятностью
+                best_relative = None
+                best_relative_prob = 0
+                for m in relative_candidates:
+                    if m['probability'] > best_relative_prob:
+                        best_relative = m
+                        best_relative_prob = m['probability']
+                
+                # Логика принятия решения
+                should_show_dialog = False
+                
+                if best_relative and best_relative_prob >= 0.25:  # Для родственников порог чуть выше (25%)
+                    # Нашли родственника с достаточной вероятностью
+                    should_show_dialog = True
+                    best_athlete = best_relative['athlete']
+                    best_prob = best_relative_prob
+                elif best_athlete and best_prob >= ABSOLUTE_THRESHOLD:
+                    # Нашли неродственного кандидата с достаточной вероятностью
+                    should_show_dialog = True
+                
+                if should_show_dialog:
                     best_athlete_name = f"{best_athlete.last_name} {best_athlete.first_name}"
-                    dialog = BiometricChoiceDialog(parent_window, current_athlete_name, prob * 100, best_athlete_name, best_prob * 100)
+                    is_best_relative = best_relative is not None
+                    best_records = next((m['records_used'] for m in all_matches if m['athlete'].id == best_athlete.id), 0)
+                    
+                    dialog = BiometricChoiceDialog(
+                        parent_window, 
+                        current_athlete_name, prob * 100, 
+                        best_athlete_name, best_prob * 100,
+                        is_relative=is_best_relative,
+                        best_records=best_records
+                    )
+                    
                     parent_window.wait_window(dialog)
                     
                     if dialog.result == "best":
@@ -159,12 +239,14 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                     elif dialog.result == "cancel":
                         return "cancelled", None
                 else:
-                    if status == "SUSPICIOUS":
-                        msg = (f"🚨 Низкое биометрическое сходство!\n\n"
-                               f"Различие: {distance:.3f} | Совпадение: {prob*100:.1f}%\n\n"
-                               f"Импортировать этому атлету?")
-                        if not messagebox.askyesno("Проверка", msg, parent=parent_window, icon='warning'):
-                            return "cancelled", None
+                    # ⚡ НОВОЕ: Все совпадения ниже порога - это новый человек
+                    msg = (f"⚠️ Биометрическое сходство низкое!\n\n"
+                           f"Вероятность совпадения с текущим атлетом: {prob*100:.1f}%\n\n"
+                           f"В базе не найдено подходящих совпадений (все ниже 20%).\n"
+                           f"Скорее всего, это НОВЫЙ человек.\n\n"
+                           f"Продолжить импорт текущему атлету?")
+                    if not messagebox.askyesno("Новый человек?", msg, parent=parent_window, icon='warning'):
+                        return "cancelled", None
 
         # --- МГНОВЕННОЕ СОХРАНЕНИЕ В БД ---
         rr = parse_rr(raw)
@@ -192,7 +274,6 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         rec.raw = ECGRaw(record_id=rec.id, raw_data=raw)
         session.commit()
         
-        # Возвращаем "added" и ID атлета, чтобы вызывающая функция знала, чей шаблон обновлять
         return "added", aid
 
     except Exception as e:
@@ -202,7 +283,6 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         return "err", None
     finally:
         session.close()
-
 
 def _bg_update_template(db_path, aid):
     """Обёртка для безопасного фонового обновления."""

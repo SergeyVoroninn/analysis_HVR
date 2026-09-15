@@ -181,8 +181,8 @@ def check_ownership_with_saved_template(db_path, athlete_id, new_file_path):
 # ==============================================================================
 def find_best_match(db_path, new_file_path, exclude_athlete_id=None):
     """
-    Ищет атлета с наилучшим биометрическим совпадением для нового файла.
-    Возвращает: (best_athlete_object, best_distance, best_probability, all_matches_list)
+    Ищет атлета с наилучшим биометрическим совпадением.
+    Для родственников использует более строгий порог.
     """
     try:
         with open(new_file_path, 'r', encoding='utf-8') as f:
@@ -212,18 +212,43 @@ def find_best_match(db_path, new_file_path, exclude_athlete_id=None):
                 shape_dist = dtw.distance_fast(q_shape.astype(np.double), ref_shape.astype(np.double))
                 spec_dist = np.sqrt(np.sum((q_spec - ref_spec) ** 2))
                 
-                distance = 0.6 * (shape_dist / 2.0) + 0.4 * (spec_dist / 0.5)
-                probability = float(np.exp(-2.5 * distance))
+                # 1. Проверка на родственника
+                is_relative = _are_relatives_by_name(db_path, exclude_athlete_id, athlete.id)
+                
+                if is_relative:
+                    # Для родственников форма QRS важнее, порог строже
+                    distance = 0.7 * (shape_dist / 2.0) + 0.3 * (spec_dist / 0.5)
+                    base_prob = float(np.exp(-3.5 * distance))
+                else:
+                    distance = 0.6 * (shape_dist / 2.0) + 0.4 * (spec_dist / 0.5)
+                    base_prob = float(np.exp(-2.5 * distance))
+                
+                # ⚡ 2. НОВОЕ: Штраф за ненадежный шаблон (мало записей)
+                # OPTIMAL_RECORDS_FOR_TEMPLATE = 20 (импортируйте это значение или задайте 20.0)
+                optimal_records = 20.0
+                records_used = max(1, tpl.records_used) # Защита от деления на 0
+                
+                # Коэффициент от 0.0 до 1.0. Если записей 20 и больше = 1.0. Если 7 = 0.35
+                reliability_factor = min(1.0, records_used / optimal_records)
+                
+                # Дополнительный жесткий штраф, если записей критически мало (< 10)
+                if records_used < 10:
+                    reliability_factor *= 0.5 
+                
+                # Итоговая вероятность с учетом надежности шаблона
+                final_prob = base_prob * reliability_factor
                 
                 matches.append({
                     'athlete': athlete,
                     'distance': distance,
-                    'probability': probability
+                    'probability': final_prob,
+                    'base_probability': base_prob, # Сохраняем для отладки/отображения
+                    'records_used': records_used,
+                    'is_relative': is_relative
                 })
             except Exception:
-                continue # Пропускаем поврежденные шаблоны
+                continue
         
-        # Сортируем по вероятности (по убыванию)
         matches.sort(key=lambda x: x['probability'], reverse=True)
         
         if matches:
@@ -250,5 +275,20 @@ def auto_update_template_if_needed(db_path, athlete_id):
     except Exception:
         # Тихо игнорируем ошибки фонового обновления, чтобы не ломать импорт
         pass
+    finally:
+        session.close()
+
+def _are_relatives_by_name(db_path, athlete_id_1, athlete_id_2):
+    """Проверяет, являются ли атлеты родственниками по фамилии."""
+    session = get_session(db_path)
+    try:
+        a1 = session.query(Athlete).filter_by(id=athlete_id_1).first()
+        a2 = session.query(Athlete).filter_by(id=athlete_id_2).first()
+        
+        if not a1 or not a2:
+            return False
+        
+        # Сравниваем фамилии (без учета регистра)
+        return a1.last_name.lower() == a2.last_name.lower()
     finally:
         session.close()
