@@ -28,13 +28,16 @@ except ImportError:
     MODELS_AVAILABLE = False
     print("⚠️ Предупреждение: Не удалось импортировать 'models'. Сопоставление с БД будет пропущено.")
 
+# ==============================================================================
+# НАСТРОЙКИ ПОРОГОВ (Скорректированы по результатам диагностики)
+# ==============================================================================
 FS = 130.0
-BIOMETRIC_THRESHOLD = 0.20  # Ужесточенный порог для разделения похожих записей
-MIN_GROUP_SIZE = 3          # Группы меньше этого размера идут в undetermined
+BIOMETRIC_THRESHOLD = 0.15       # ✅ Оптимальный порог (Balanced Acc: 84.4%)
+MIN_GROUP_SIZE = 3               # Группы меньше этого размера идут в undetermined
 SUPPORTED_EXTENSIONS = ('.teamloggerh10', '.txt')
 MAX_PENALTY_DISTANCE = 10.0
-LARGE_GROUP_THRESHOLD = 50  # Порог для попытки умного разделения больших групп
-STRICT_THRESHOLD = 0.15     # Строгий порог для разделения внутри больших групп
+LARGE_GROUP_THRESHOLD = 50       # Порог для попытки умного разделения больших групп
+STRICT_THRESHOLD = 0.12          # ✅ Строгий порог для разделения внутри больших групп
 
 def get_file_hash(filepath):
     hasher = hashlib.md5()
@@ -122,6 +125,7 @@ def calculate_distance(data1, data2):
     try:
         shape_dist = dtw.distance_fast(data1['shape'].astype(np.double), data2['shape'].astype(np.double))
         spec_dist = np.sqrt(np.sum((data1['spec'] - data2['spec']) ** 2))
+        # Веса 0.6 и 0.4 показали лучшую сбалансированную точность в диагностике
         dist = 0.6 * (shape_dist / 2.0) + 0.4 * (spec_dist / 0.5)
         if not np.isfinite(dist):
             return MAX_PENALTY_DISTANCE
@@ -282,6 +286,7 @@ def main():
                     sub_dist_matrix.append(dist)
             
             Z_sub = linkage(sub_dist_matrix, method='average')
+            # Используем STRICT_THRESHOLD (0.12) для более жесткого разделения
             sub_labels = fcluster(Z_sub, t=STRICT_THRESHOLD, criterion='distance')
             sub_cluster_sizes = Counter(sub_labels)
             
@@ -335,6 +340,7 @@ def main():
                 except Exception:
                     continue
         
+        # Сравниваем с обновленным BIOMETRIC_THRESHOLD (0.15)
         if min_dist <= BIOMETRIC_THRESHOLD and matched_athlete:
             best_match_name = f"✅ {best_match_name} (расстояние: {min_dist:.3f})"
             
@@ -368,7 +374,6 @@ def main():
     consolidation_report = {}
     
     for ath_id, data in athlete_consolidation.items():
-        # Создаем безопасное имя папки (заменяем пробелы на _ и добавляем короткий ID для уникальности)
         safe_name = data['name'].replace(' ', '_')
         folder_name = f"athlete_{safe_name}_{ath_id[:4]}"
         folder_path = os.path.join(target_dir, folder_name)

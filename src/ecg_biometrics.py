@@ -11,7 +11,7 @@ from dtaidistance import dtw
 
 from models import get_session, ECGRecord, ECGRaw, BiometricTemplate, Athlete
 
-MIN_RECORDS_FOR_TEMPLATE = 10      
+MIN_RECORDS_FOR_TEMPLATE = 9      
 OPTIMAL_RECORDS_FOR_TEMPLATE = 20 
 MAX_RECORDS_FOR_TEMPLATE = 50     
 BIOMETRIC_THRESHOLD = 0.15  
@@ -213,40 +213,41 @@ def find_best_match(db_path, new_file_path, exclude_athlete_id=None):
                 is_relative = _are_relatives_by_name(db_path, exclude_athlete_id, athlete.id)
                 
                 if is_relative:
-                    # Для родственников форма QRS важнее, порог строже
+                    # Для родственников форма QRS важнее
                     distance = 0.7 * (shape_dist / 2.0) + 0.3 * (spec_dist / 0.5)
                     base_prob = float(np.exp(-3.5 * distance))
                 else:
                     distance = 0.6 * (shape_dist / 2.0) + 0.4 * (spec_dist / 0.5)
                     base_prob = float(np.exp(-2.5 * distance))
                 
-                # ⚡ 2. НОВОЕ: Штраф за ненадежный шаблон (мало записей)
-                # OPTIMAL_RECORDS_FOR_TEMPLATE = 20 (импортируйте это значение или задайте 20.0)
-                optimal_records = 20.0
-                records_used = max(1, tpl.records_used) # Защита от деления на 0
+                # ⚡ ИСПРАВЛЕНИЕ: Надежность шаблона — ВТОРИЧНЫЙ фактор
+                # Считаем количество записей для информации, но НЕ умножаем вероятность
+                records_used = max(1, tpl.records_used)
                 
-                # Коэффициент от 0.0 до 1.0. Если записей 20 и больше = 1.0. Если 7 = 0.35
-                reliability_factor = min(1.0, records_used / optimal_records)
+                # Добавляем небольшой бонус за надежность (максимум +10% к вероятности)
+                # Это влияет только при ОЧЕНЬ близких расстояниях
+                reliability_bonus = 0.0
+                if records_used >= 20:
+                    reliability_bonus = 0.10  # +10% для надежных шаблонов
+                elif records_used >= 10:
+                    reliability_bonus = 0.05  # +5% для средних
                 
-                # Дополнительный жесткий штраф, если записей критически мало (< 10)
-                if records_used < 10:
-                    reliability_factor *= 0.5 
-                
-                # Итоговая вероятность с учетом надежности шаблона
-                final_prob = base_prob * reliability_factor
+                final_prob = min(1.0, base_prob * (1.0 + reliability_bonus))
                 
                 matches.append({
                     'athlete': athlete,
-                    'distance': distance,
+                    'distance': distance,  # 🔥 ГЛАВНЫЙ критерий — расстояние!
                     'probability': final_prob,
-                    'base_probability': base_prob, # Сохраняем для отладки/отображения
+                    'base_probability': base_prob,
                     'records_used': records_used,
                     'is_relative': is_relative
                 })
             except Exception:
                 continue
         
-        matches.sort(key=lambda x: x['probability'], reverse=True)
+        # 🔥 СОРТИРУЕМ ПО РАССТОЯНИЮ (а не по вероятности!)
+        # Меньше расстояние = лучше совпадение
+        matches.sort(key=lambda x: x['distance'])
         
         if matches:
             best = matches[0]
