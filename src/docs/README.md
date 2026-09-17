@@ -1,5 +1,5 @@
 # analysis_HVR
-## Стартап: датчики контроля состояния спортсмена
+## Стартап: Подручный ВРС
 
 Приложение для анализа вариабельности сердечного ритма (ВРС/HRV): расчёт метрик
 SDNN, RMSSD, индекса стресса, тепловые карты и графики.
@@ -26,7 +26,7 @@ SDNN, RMSSD, индекса стресса, тепловые карты и гр�
 
 ## Зависимости
 
-Для запуска нужны **6 внешних библиотек**. Остальное (`os`, `sys`, `sqlite3`,
+Для запуска нужны **8 внешних библиотек**. Остальное (`os`, `sys`, `sqlite3`,
 `datetime`, `uuid`, `random`, `math`) входит в стандартную библиотеку Python.
 
 ### Основные
@@ -39,6 +39,8 @@ SDNN, RMSSD, индекса стресса, тепловые карты и гр�
 | `sqlalchemy` | ORM для работы с БД (`models.py`) |
 | `pyyaml` | Чтение `config.yaml` и `ecg_profiles.yaml` |
 | `numpy` | Анализ сигнала ЭКГ и RR-интервалов |
+| `scipy` | Фильтрация сигнала и FFT в биометрическом модуле (`ecg_biometrics.py`) |
+| `dtaidistance` | DTW-сравнение формы ЭКГ-комплексов (`ecg_biometrics.py`) |
 
 ### Для разработки (опционально)
 
@@ -57,7 +59,7 @@ SDNN, RMSSD, индекса стресса, тепловые карты и гр�
 Одной командой:
 
 ```bash
-pip install customtkinter matplotlib tkcalendar sqlalchemy pyyaml numpy
+pip install customtkinter matplotlib tkcalendar sqlalchemy pyyaml numpy scipy dtaidistance
 ```
 
 Или через `requirements.txt` (создайте файл в корне проекта):
@@ -69,6 +71,8 @@ tkcalendar>=1.6.1
 sqlalchemy>=2.0.0
 pyyaml>=6.0
 numpy>=1.24.0
+scipy>=1.10.0
+dtaidistance>=2.3.0
 ```
 
 ```bash
@@ -78,7 +82,7 @@ pip install -r requirements.txt
 ### Проверка установки
 
 ```bash
-python -c "import customtkinter, matplotlib, tkcalendar, sqlalchemy, yaml, numpy; print('Все библиотеки установлены')"
+python -c "import customtkinter, matplotlib, tkcalendar, sqlalchemy, yaml, numpy, scipy, dtaidistance; print('Все библиотеки установлены')"
 ```
 
 ---
@@ -100,10 +104,10 @@ python app.py
 
 ## Скриншоты
 
-![Подготовка тестовых данных](images/prepare_database.png)
+![Подготовка тестовых данных](images/prepare_database.png)<br>
 *Рисунок 1. Командная строка. Подготовка тестовых данных с помощью скрипта.*
 
-![Главное окно приложения](images/app_main.png)
+![Главное окно приложения](images/app_main.png)<br>
 *Рисунок 2. Главное окно приложения анализа ВРС.*
 
 ### Годовой heatmap
@@ -120,14 +124,20 @@ python app.py
 
 …и просмотреть ЭКГ-записи.
 
-![Список записей](images/ecg_list.png)
+![Список записей](images/ecg_list_in_cell.png)<br>
 *Рисунок 3. Список записей в трёхчасовой ячейке.*
 
-![Редактирование атлета](images/athlet_edit.png)
+![Редактирование атлета](images/athlet_edit.png)<br>
 *Рисунок 4. Окно редактирования / добавления атлета.*
 
-![Импорт записи](images/app_import.png)
+![Импорт записи](images/app_import.png)<br>
 *Рисунок 5. Импорт файла записи с датчика.*
+
+![Биометрия не совпадает](images/app_biometria.png)<br>
+*Рисунок 6. Импортируемый файл записи не совпадает с указанным спортсменом.*
+
+![Всплывающая подсказка](images/app_interpreter.png)<br>
+*Рисунок 7. Всплывающая подсказка при наведении указателя мыши на столбец.*
 
 ---
 
@@ -142,6 +152,7 @@ python app.py
 | Одинарный клик | Курсор yearmap на неделю кликнутой даты (с задержкой ~500 мс) |
 | Двойной клик | Игнорируется (намеренно отключено как неэргономичное) |
 | ПКМ | Сброс: весь период данных атлета + курсор и год heatmap на последнюю запись, heatmap перерисовывается |
+| Указатель мыши на столбце более 1 сек | Всплывающая подсказка с интерпретацией значений |
 
 ### Годовой heatmap (yearmap)
 
@@ -175,6 +186,8 @@ python app.py
 ```txt
 analysis_HVR\src\
 |   analysis.py                    Парсинг RR-интервалов, расчёт ВРС-метрик (SDNN, RMSSD) и индекса стресса
+|   analysis_dialog.py             Модальное окно детального анализа метрик ВРС (MetricAnalysis)
+|   analyzer.py                    MetricAnalyzer: классификация метрик по статусам/категориям, рекомендации
 |   app.py                         Главное окно приложения: оркестратор, сплэш, восстановление состояния
 |   appsettings.py                 Сохранение/восстановление состояния (атлет, год, неделя, зум) в JSON
 |   atlets.py                      Панель списка спортсменов: отображение, CRUD, импорт записей
@@ -182,12 +195,14 @@ analysis_HVR\src\
 |   charts.py                      Контейнер графиков TP/Стресс, синхронизация масштаба, колбэки кликов
 |   database.py                    Менеджер пути к БД с учётом режима запуска (exe/исходники/тесты)
 |   dialogs.py                     Диалоги AthleteDialog (создание/редактирование), ECGListDialog (список ЭКГ); DateEntry поверх окна
+|   ecg_biometrics.py              Биометрическая проверка принадлежности ЭКГ (DTW, FFT, шаблоны BiometricTemplate)
+|   ecg_list_window.py             Окно быстрого просмотра последних 100 записей (ttk.Treeview, двойной клик → анализ)
 |   ghost.py                       ResizeController — адаптивный ресайз виджетов
 |   heatmap.py                     Составной виджет: годовой heatmap + недельный + переключатель года
 |   importer.py                    Импорт записей Polar H10 в БД (привязка по polar_id)
 |   logo21.png                     Логотип 512×512 для заставки при запуске приложения
 |   metricplot.py                  Отрисовка одного графика ВРС: зум, панорама, клики, ПКМ
-|   models.py                      ORM-модели SQLAlchemy: Athlete, ECGRecord, ECGRaw, GenderType и get_session
+|   models.py                      ORM-модели SQLAlchemy: Athlete, ECGRecord, ECGRaw, BiometricTemplate, GenderType и get_session
 |   orchestrator.py                Централизованный менеджер состояния: координация виджетов и жестов
 |   requirements-test.txt          Доп. зависимости для тестов (pytest и пр.)
 |   splash.py                      SplashScreen — полноэкранная заставка с прогрессом загрузки модулей
@@ -197,23 +212,27 @@ analysis_HVR\src\
 |   yearmap.py                     Годовой heatmap: 53 недели × 7 дней, подписи месяцев, курсор
 |
 +---data
-|       ecg.db                     SQLite-база данных: таблицы athletes, ecg_records и ecg_raw
+|       ecg.db                     SQLite-база данных: таблицы athletes, ecg_records, ecg_raw и biometric_templates
 |       app_settings.json          Сохранённое состояние приложения (атлет, год, неделя, зум)
 |
 +---docs
-|   |   QUICKSTART.md              Руководство по быстрому старту: установка, генерация БД, запуск
+|   |   README.md                  Руководство по быстрому старту: установка, генерация БД, запуск
 |   |
 |   \---images
+|           app_biometria.png      Скриншот: несовпадение биометрии спортсмена
 |           app_import.png         Скриншот диалога импорта записи ЭКГ из файла
+|           app_interpreter.png    Скриншот всплывающей подсказки
 |           app_main.png           Скриншот главного окна приложения с тепловой картой года
 |           athlet_edit.png        Скриншот формы редактирования карточки спортсмена
 |           ecg_list.png           Скриншот списка записей ЭКГ за выбранный интервал
+|           ecg_list_in_cell.png   Скриншот списка записей в трёхчасовой ячейке
 |           prepare_database.png   Скриншот вывода скрипта prepare_database.py
 |           week_heatmap.png       Скриншот недельной тепловой карты (7 дней × 8 блоков)
 |           year_heatmap.png       Скриншот годовой тепловой карты (53 недели × 7 дней)
 |
 +---scripts
 |   |   athlete_generator.py       Генерация тестовых спортсменов: ФИО, антропометрия, оценки ВРС по возрасту
+|   |   biometric_poc.py           Proof-of-concept биометрической проверки ЭКГ (standalone, DTW/FFT)
 |   |   calibrate_ecg.py           Автокалибровка профилей ЭКГ по целевым метрикам качества (SNR, дрейф)
 |   |   config.yaml                Настройки генерации БД: длительность, сид, список спортсменов, расписание
 |   |   config_big.yaml            Альтернативный конфиг с увеличенными объёмами данных
@@ -221,6 +240,7 @@ analysis_HVR\src\
 |   |   db_schema.py               Вывод полной схемы БД: таблицы, колонки, индексы, внешние ключи
 |   |   ecg_generator.py           Генерация синтетических ЭКГ в формате TeamLoggerH10 по профилю
 |   |   ecg_profiles.yaml          Профили формы сигнала ЭКГ: default, high_quality, fast, real_c8208e2e
+|   |   ecg_viewer.py              Интерактивный просмотрщик ЭКГ: raw/фильтрованный сигнал, тахограмма, статистика
 |   |   fit_profile_from_real.py   Извлечение профиля ЭКГ из реальной записи Polar H10
 |   |   migrate_split_raw.py       Миграция: вынос raw_data из ecg_records в отдельную таблицу ecg_raw
 |   |   prepare_database.py        Главный скрипт: очистка БД, генерация спортсменов, построение расписания, генерация ЭКГ с прогресс-баром. Поддерживает --config
@@ -228,10 +248,12 @@ analysis_HVR\src\
 |   |
 \---tests
         etalons.json               Эталонные метрики (RMSSD, ИС, Мо, TP) из Омега.Диагностика для сверки
+        test_appsettings.py        handle_app_close сохраняет состояние (атлет, год, зум) на диск
         test_athlete_zoom_persistence.py  Сохранение масштаба при смене атлета
         test_calendar.py           Тесты календаря (DateEntry) в диалоге атлета
         test_chart_right_click.py  Интеграция: ПКМ по графику → сброс масштаба
         test_ghost_resize.py       Адаптивный ресайз виджетов (ResizeController)
+        test_importer.py           Импорт: валидный файл, дубликаты, битый файл
         test_metricplot.py         Клик, ПКМ, колесо, панорамирование на графиках
         test_orchestrator.py       Сохранение/восстановление масштаба, смена атлета, полный цикл save/restore
         test_reference_ecg.py      Импорт эталонной ЭКГ в базу и сверка метрик с etalons.json
@@ -302,6 +324,24 @@ analysis_HVR\src\
 │  Foreign Keys:
 │    record_id → ecg_records.id  ON DELETE CASCADE
 └──────────────────────────────────────────────────────────────────────
+
+┌─ biometric_templates
+│
+│  Колонки:
+│    id                        INTEGER          [PK, NOT NULL]
+│    athlete_id                VARCHAR          [NOT NULL]
+│    shape_template            TEXT             [NOT NULL]
+│    spectrum_template         TEXT             [NOT NULL]
+│    records_used              INTEGER
+│    created_at                DATETIME
+│
+│  Foreign Keys:
+│    athlete_id → athletes.id  ON DELETE CASCADE
+│
+│  Индексы:
+│    UNIQUE sqlite_autoindex_biometric_templates_1   (athlete_id)
+│    ix_biometric_templates_athlete_id               (athlete_id)
+└──────────────────────────────────────────────────────────────────────
 ```
 
 ### Связи (ER-диаграмма)
@@ -309,6 +349,7 @@ analysis_HVR\src\
 ```txt
 ecg_records.athlete_id  ──→  athletes.id
 ecg_raw.record_id       ──→  ecg_records.id
+biometric_templates.athlete_id  ──→  athletes.id
 ```
 
 ---
@@ -902,10 +943,12 @@ my_profile:
 src/
 └── tests/
     ├── etalons.json                  # эталонные метрики Омега.Диагностика
+    ├── test_appsettings.py           # handle_app_close сохраняет состояние на диск
     ├── test_athlete_zoom_persistence.py  # сохранение масштаба после ПКМ при смене атлета (3 атлета × все переходы)
     ├── test_calendar.py              # календарь DateEntry: базовые операции + устойчивость GUI при смене месяца/года
     ├── test_chart_right_click.py     # ПКМ по графику → on_reset → сброс масштаба ровно на диапазон данных
     ├── test_ghost_resize.py          # ResizeController: защита от зацикливания ресайза
+    ├── test_importer.py              # импорт: валидный файл, дубликаты, битый файл
     ├── test_metricplot.py            # жесты MetricPlot: клик, ПКМ, колесо, панорамирование (двойной клик игнорируется)
     ├── test_orchestrator.py          # оркестратор: сохранение/восстановление масштаба, смена атлета, save/restore
     ├── test_reference_ecg.py         # сверка метрик с эталонной записью Polar H10 (Омега.Диагностика)
@@ -930,7 +973,7 @@ pip install pytest
 ```bash
 cd C:\s21\projects\analysis_HVR\src
 
-python -m pytest tests -v                              # все тесты (12 файлов)
+python -m pytest tests -v                              # все тесты (14 файлов)
 python -m pytest tests/test_metricplot.py -v           # жесты на графиках
 python -m pytest tests/test_weekmap.py -v              # жесты weekmap
 python -m pytest tests/test_yearmap.py -v              # жесты yearmap
@@ -943,23 +986,27 @@ python -m pytest tests/test_yearmap_right_click.py -v  # ПКМ по yearmap
 python -m pytest tests/test_ghost_resize.py -v         # адаптивный ресайз
 python -m pytest tests/test_athlete_zoom_persistence.py -v  # масштаб после ПКМ при смене атлета
 python -m pytest tests/test_timeframe.py -v            # таймфреймы
+python -m pytest tests/test_importer.py -v             # импорт: валидный/дубликат/битый
+python -m pytest tests/test_appsettings.py -v          # сохранение состояния при закрытии
 ```
 
 ### Что покрывают тесты
 
 | Файл | Тестов | Проверяет |
 | --- | --- | --- |
+| `test_appsettings.py` | 1 | `handle_app_close` сохраняет athlete_id, year и zoom на диск |
 | `test_athlete_zoom_persistence.py` | 1 | Сохранение масштаба после ПКМ при переключении между 3 атлетами (10 лет / 1 год / 1 месяц), все комбинации переходов |
 | `test_calendar.py` | 2 | DateEntry: начальная/программная дата, открытие/закрытие dropdown, календарь не исчезает при клике на заголовок месяца |
 | `test_chart_right_click.py` | 1 | ПКМ по графику → оркестратор вызывает `on_reset`, график сбрасывает масштаб ровно на диапазон данных |
 | `test_ghost_resize.py` | 4 | `ResizeController`: защита от зацикливания ресайза (settle/poll, перерисовка не чаще нужного) |
-| `test_metricplot.py` | 18 | Клик/ПКМ/колесо/панорамирование на графике: вызовы `on_single_click`, `on_reset`, `_commit_view` (двойной клик намеренно игнорируется) |
+| `test_importer.py` | 3 | Импорт: валидный .teamloggerh10 (SDNN>0), дубликат (skip), битый файл (graceful failure) |
+| `test_metricplot.py` | 19 | Клик/ПКМ/колесо/панорамирование на графике: вызовы `on_single_click`, `on_reset`, `_commit_view` (двойной клик намеренно игнорируется) |
 | `test_orchestrator.py` | 13 | Сохранение/восстановление масштаба, `zoom`, `sync_athlete`, полный цикл save/restore, колбэки heatmap |
 | `test_reference_ecg.py` | 1 | Импорт эталонной Polar H10 и сверка RMSSD, индекса стресса, TP с `etalons.json` (Омега.Диагностика) |
 | `test_timeframe.py` | 10 | Подбор таймфрейма баров по span (MIN5/HOUR1/…), зебра, границы лет |
-| `test_weekmap.py` | 9 | Одинарный/двойной клик по weekmap: зелёная и пустая ячейки, `on_pick`/`on_day_dbl` |
+| `test_weekmap.py` | 12 | Одинарный/двойной клик по weekmap: зелёная и пустая ячейки, `on_pick`/`on_day_dbl`, вне сетки, `week_start=None` |
 | `test_weekmap_right_click.py` | 1 | ПКМ по weekmap → зум на 7 дней + курсор yearmap + персистентность при смене атлета |
-| `test_yearmap.py` | 10 | Клик/двойной/ПКМ/колесо по yearmap: заполненные/пустые недели, вне сетки, `on_year_zoom` |
+| `test_yearmap.py` | 13 | Клик/двойной/ПКМ/колесо по yearmap: заполненные/пустые недели, вне сетки, `on_year_zoom`, интеграционный тест колеса |
 | `test_yearmap_right_click.py` | 1 | ПКМ по yearmap → зум на год + синхронизация yearmap/weekmap/charts + персистентность |
 
 ### Тесты сверки с эталонами (`test_reference_ecg.py`)
