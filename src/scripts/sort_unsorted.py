@@ -1,6 +1,6 @@
 """
 sort_unsorted.py — скрипт для кластеризации неизвестных ЭКГ-записей, 
-поиска дубликатов и сопоставления с БД.
+поиска дубликатов, сопоставления с БД и финального объединения по атлетам.
 
 Важно: Исходная папка (unsorted) НЕ изменяется. Все файлы копируются в sorted.
 Папка sorted полностью очищается перед каждым запуском.
@@ -29,10 +29,12 @@ except ImportError:
     print("⚠️ Предупреждение: Не удалось импортировать 'models'. Сопоставление с БД будет пропущено.")
 
 FS = 130.0
-BIOMETRIC_THRESHOLD = 0.20
-MIN_GROUP_SIZE = 3
+BIOMETRIC_THRESHOLD = 0.20  # Ужесточенный порог для разделения похожих записей
+MIN_GROUP_SIZE = 3          # Группы меньше этого размера идут в undetermined
 SUPPORTED_EXTENSIONS = ('.teamloggerh10', '.txt')
 MAX_PENALTY_DISTANCE = 10.0
+LARGE_GROUP_THRESHOLD = 50  # Порог для попытки умного разделения больших групп
+STRICT_THRESHOLD = 0.15     # Строгий порог для разделения внутри больших групп
 
 def get_file_hash(filepath):
     hasher = hashlib.md5()
@@ -140,17 +142,19 @@ def main():
 
     target_dir = os.path.join(os.path.dirname(source_dir), "sorted")
     
-    # 🛡️ ОЧИСТКА ТОЛЬКО ПАПКИ РЕЗУЛЬТАТОВ (sorted)
     if os.path.exists(target_dir):
-        print(f" Очистка предыдущих результатов в: {target_dir}")
+        print(f"🧹 Очистка предыдущих результатов в: {target_dir}")
         shutil.rmtree(target_dir)
     os.makedirs(target_dir, exist_ok=True)
     print(f"📁 Результаты будут сохранены в: {target_dir}")
-    print(f" Исходная папка '{source_dir}' остается неизменной.\n")
+    print(f"🔒 Исходная папка '{source_dir}' остается неизменной.\n")
 
     all_files = [f for f in os.listdir(source_dir) if f.lower().endswith(SUPPORTED_EXTENSIONS)]
     print(f"Найдено файлов для обработки: {len(all_files)}")
 
+    # ==========================================================================
+    # ЭТАП 0: Поиск дубликатов
+    # ==========================================================================
     print("Этап 0: Поиск точных дубликатов файлов...")
     hash_map = {}
     unique_files = []
@@ -172,7 +176,6 @@ def main():
         dup_dir = os.path.join(target_dir, "duplicates")
         os.makedirs(dup_dir, exist_ok=True)
         for dup_path in duplicate_files:
-            # ✅ КОПИРУЕМ вместо перемещения
             shutil.copy2(dup_path, os.path.join(dup_dir, os.path.basename(dup_path)))
         print(f"  📂 Дубликаты скопированы в: {dup_dir}")
 
@@ -180,6 +183,9 @@ def main():
     undetermined_files = []
     valid_files_data = []
 
+    # ==========================================================================
+    # ЭТАП 1: Извлечение признаков
+    # ==========================================================================
     print("Этап 1: Извлечение признаков из файлов...")
     for idx, filename in enumerate(all_files, 1):
         if idx % 100 == 0:
@@ -208,9 +214,12 @@ def main():
     if len(valid_files_data) < 2:
         print("Недостаточно файлов для кластеризации.")
         copy_to_undetermined(source_dir, target_dir, undetermined_files + [f['filepath'] for f in valid_files_data])
-        generate_report(target_dir, {}, len(undetermined_files) + len(valid_files_data), len(duplicate_files))
+        generate_report(target_dir, {}, len(undetermined_files) + len(valid_files_data), len(duplicate_files), {})
         return
 
+    # ==========================================================================
+    # ЭТАП 2: Матрица расстояний
+    # ==========================================================================
     print("Этап 2: Построение матрицы расстояний...")
     n = len(valid_files_data)
     condensed_dist_matrix = []
@@ -227,7 +236,6 @@ def main():
     print("Этап 3: Группировка файлов...")
     Z = linkage(condensed_dist_matrix, method='average')
     labels = fcluster(Z, t=BIOMETRIC_THRESHOLD, criterion='distance')
-    cluster_sizes = Counter(labels)
 
     groups = {}
     for i, file_info in enumerate(valid_files_data):
@@ -241,6 +249,7 @@ def main():
     # ==========================================================================
     print("Этап 4: Копирование файлов и сопоставление с БД...")
     db_matches_report = {}
+    athlete_consolidation = {} # Для Этапа 5: athlete_id -> {'name': str, 'files': list, 'groups': list}
     
     if MODELS_AVAILABLE and args.db_path and os.path.exists(args.db_path):
         print(f"  🔍 Загрузка шаблонов из БД: {args.db_path}")
@@ -254,24 +263,17 @@ def main():
 
     copied_count = 0
     small_group_files = []
-    LARGE_GROUP_THRESHOLD = 50  # Если файлов в группе больше этого числа, пробуем разделить
-    STRICT_THRESHOLD = 0.15     # Строгий порог для разделения родственников внутри большой группы
-
-    # Создаем новый словарь для финальных групп (возможно, некоторые большие группы разделятся)
     final_groups = {}
-    group_counter = 1000 # Начинаем новые ID с 1000, чтобы не конфликтовать с исходными
+    group_counter = 1000
 
     for cid, group_files in groups.items():
-        # 1. Отсекаем маленькие группы сразу
         if len(group_files) < MIN_GROUP_SIZE:
             small_group_files.extend(group_files)
             continue
 
-        # 2. Умное разделение больших групп (попытка разделить родственников)
+        # Умное разделение больших групп
         if len(group_files) >= LARGE_GROUP_THRESHOLD and db_templates:
             print(f"  🔎 Группа {cid} большая ({len(group_files)} файлов). Пробую разделить на подгруппы...")
-            
-            # Строим матрицу расстояний ТОЛЬКО для этой группы
             n_sub = len(group_files)
             sub_dist_matrix = []
             for i in range(n_sub):
@@ -279,12 +281,10 @@ def main():
                     dist = calculate_distance(group_files[i], group_files[j])
                     sub_dist_matrix.append(dist)
             
-            # Кластеризуем с более строгим порогом
             Z_sub = linkage(sub_dist_matrix, method='average')
             sub_labels = fcluster(Z_sub, t=STRICT_THRESHOLD, criterion='distance')
             sub_cluster_sizes = Counter(sub_labels)
             
-            # Если получилось разделить на 2 и более значимых подгруппы (каждая >= MIN_GROUP_SIZE)
             valid_sub_groups = [sub_id for sub_id, count in sub_cluster_sizes.items() if count >= MIN_GROUP_SIZE]
             
             if len(valid_sub_groups) >= 2:
@@ -293,14 +293,13 @@ def main():
                     new_cid = group_counter
                     group_counter += 1
                     final_groups[new_cid] = [group_files[i] for i in range(n_sub) if sub_labels[i] == sub_id]
-                continue # Переходим к следующей исходной группе, эта уже разделена
+                continue
             else:
                 print(f"     ⚠️ Не удалось разделить строже. Оставляю как одну группу.")
 
-        # 3. Если группа не была разделена, добавляем её как есть
         final_groups[cid] = group_files
 
-    # Теперь обрабатываем final_groups (они уже отфильтрованы от мелких)
+    # Обработка финальных групп
     for cid, group_files in final_groups.items():
         group_folder_name = f"group_{cid}"
         group_folder_path = os.path.join(target_dir, group_folder_name)
@@ -312,9 +311,9 @@ def main():
                 shutil.copy2(file_info['filepath'], dest)
                 copied_count += 1
 
-        # Сопоставление с БД для каждой (возможно, разделенной) группы
         best_match_name = "Неизвестно"
         min_dist = float('inf')
+        matched_athlete = None
         
         if db_templates:
             group_shapes = np.array([f['shape'] for f in group_files])
@@ -332,30 +331,71 @@ def main():
                     if dist < min_dist:
                         min_dist = dist
                         best_match_name = f"{athlete.last_name} {athlete.first_name} (ID: {athlete.id})"
+                        matched_athlete = athlete
                 except Exception:
                     continue
         
-        if min_dist > BIOMETRIC_THRESHOLD:
-            best_match_name = f"Неизвестно (мин. расстояние: {min_dist:.3f} > порога {BIOMETRIC_THRESHOLD})"
-        else:
+        if min_dist <= BIOMETRIC_THRESHOLD and matched_athlete:
             best_match_name = f"✅ {best_match_name} (расстояние: {min_dist:.3f})"
+            
+            # Добавляем в словарь для консолидации (Этап 5)
+            ath_id = matched_athlete.id
+            if ath_id not in athlete_consolidation:
+                athlete_consolidation[ath_id] = {
+                    'name': f"{matched_athlete.last_name}_{matched_athlete.first_name}",
+                    'files': [],
+                    'groups': []
+                }
+            athlete_consolidation[ath_id]['files'].extend([f['filepath'] for f in group_files])
+            athlete_consolidation[ath_id]['groups'].append(cid)
+        else:
+            best_match_name = f"Неизвестно (мин. расстояние: {min_dist:.3f} > порога {BIOMETRIC_THRESHOLD})"
 
         db_matches_report[cid] = {'count': len(group_files), 'match': best_match_name}
 
-    # Файлы из маленьких групп отправляем в undetermined
     if small_group_files:
         print(f"  ⚠️ Группы с < {MIN_GROUP_SIZE} файлами ({len(small_group_files)} файлов) отправлены в undetermined")
         for file_info in small_group_files:
             undetermined_files.append(file_info['filepath'])
 
     copy_to_undetermined(source_dir, target_dir, undetermined_files)
-    generate_report(target_dir, db_matches_report, len(undetermined_files), len(duplicate_files))
+
+    # ==========================================================================
+    # ЭТАП 5: Финальное объединение по атлетам
+    # ==========================================================================
+    print("Этап 5: Финальное объединение файлов по атлетам...")
+    consolidated_count = 0
+    consolidation_report = {}
+    
+    for ath_id, data in athlete_consolidation.items():
+        # Создаем безопасное имя папки (заменяем пробелы на _ и добавляем короткий ID для уникальности)
+        safe_name = data['name'].replace(' ', '_')
+        folder_name = f"athlete_{safe_name}_{ath_id[:4]}"
+        folder_path = os.path.join(target_dir, folder_name)
+        os.makedirs(folder_path, exist_ok=True)
+        
+        for filepath in data['files']:
+            filename = os.path.basename(filepath)
+            dest = os.path.join(folder_path, filename)
+            if not os.path.exists(dest):
+                shutil.copy2(filepath, dest)
+                consolidated_count += 1
+                
+        consolidation_report[folder_name] = {
+            'count': len(data['files']),
+            'groups': data['groups']
+        }
+        print(f"  📂 Создана: {folder_name} ({len(data['files'])} файлов из групп {data['groups']})")
+
+    generate_report(target_dir, db_matches_report, len(undetermined_files), len(duplicate_files), consolidation_report)
 
     print("\n✅ Сортировка и анализ завершены!")
     print(f"   🗑️ Скопировано дубликатов: {len(duplicate_files)}")
-    print(f"   📂 Скопировано в группы: {copied_count}")
+    print(f"   📂 Скопировано в детальные группы: {copied_count}")
+    print(f"   📁 Создано итоговых папок атлетов: {len(consolidation_report)} (всего {consolidated_count} файлов)")
     print(f"   ❓ Отправлено в undetermined: {len(undetermined_files)}")
     print(f"   🔒 Исходная папка не изменена.")
+    print(f"   📝 Отчет сохранен в: {os.path.join(target_dir, 'report.txt')}")
 
 
 def copy_to_undetermined(source_dir, target_dir, filepaths):
@@ -367,10 +407,9 @@ def copy_to_undetermined(source_dir, target_dir, filepaths):
         filename = os.path.basename(filepath)
         dest = os.path.join(undetermined_dir, filename)
         if os.path.exists(filepath) and not os.path.exists(dest):
-            # ✅ КОПИРУЕМ вместо перемещения
             shutil.copy2(filepath, dest)
 
-def generate_report(target_dir, db_matches_report, undetermined_count, duplicate_count):
+def generate_report(target_dir, db_matches_report, undetermined_count, duplicate_count, consolidation_report):
     report_path = os.path.join(target_dir, "report.txt")
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("ОТЧЕТ О СООТВЕТСТВИИ СГРУППИРОВАННЫХ ЭКГ ШАБЛОНАМ БД\n")
@@ -380,11 +419,23 @@ def generate_report(target_dir, db_matches_report, undetermined_count, duplicate
         f.write(f"   - Неопределенные/ошибочные файлы: {undetermined_count}\n")
         f.write("-" * 70 + "\n\n")
         
+        f.write("📋 ДЕТАЛЬНАЯ КЛАСТЕРИЗАЦИЯ:\n")
         sorted_groups = sorted(db_matches_report.items(), key=lambda x: x[1]['count'], reverse=True)
         for cid, info in sorted_groups:
             f.write(f" Группа {cid} ({info['count']} файлов)\n")
             f.write(f"   👤 Совпадение: {info['match']}\n")
             f.write("-" * 70 + "\n")
+            
+        f.write("\n" + "=" * 70 + "\n")
+        f.write("📁 ИТОГОВЫЕ ПАПКИ АТЛЕТОВ (Объединенные):\n")
+        f.write("=" * 70 + "\n")
+        if consolidation_report:
+            for folder_name, info in sorted(consolidation_report.items(), key=lambda x: x[1]['count'], reverse=True):
+                f.write(f"📂 {folder_name} ({info['count']} файлов)\n")
+                f.write(f"   📌 Включает детальные группы: {', '.join(map(str, info['groups']))}\n")
+                f.write("-" * 70 + "\n")
+        else:
+            f.write("   (Не найдено надежных совпадений для объединения)\n")
 
 if __name__ == "__main__":
     main()

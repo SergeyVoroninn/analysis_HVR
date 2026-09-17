@@ -14,7 +14,7 @@ from models import get_session, ECGRecord, ECGRaw, BiometricTemplate, Athlete
 MIN_RECORDS_FOR_TEMPLATE = 7      
 OPTIMAL_RECORDS_FOR_TEMPLATE = 20 
 MAX_RECORDS_FOR_TEMPLATE = 50     
-BIOMETRIC_THRESHOLD = 0.30  
+BIOMETRIC_THRESHOLD = 0.20  
 
 
 def _parse_and_clean_ecg(raw_data, fs=130.0):
