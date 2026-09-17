@@ -11,10 +11,10 @@ from dtaidistance import dtw
 
 from models import get_session, ECGRecord, ECGRaw, BiometricTemplate, Athlete
 
-MIN_RECORDS_FOR_TEMPLATE = 7      
+MIN_RECORDS_FOR_TEMPLATE = 10      
 OPTIMAL_RECORDS_FOR_TEMPLATE = 20 
 MAX_RECORDS_FOR_TEMPLATE = 50     
-BIOMETRIC_THRESHOLD = 0.20  
+BIOMETRIC_THRESHOLD = 0.15  
 
 
 def _parse_and_clean_ecg(raw_data, fs=130.0):
@@ -170,11 +170,8 @@ def check_ownership_with_saved_template(db_path, athlete_id, new_file_path):
 
     if distance > BIOMETRIC_THRESHOLD:
         return "SUSPICIOUS", distance, probability
-    elif distance > 0.15:
-        return "LOW_CONFIDENCE", distance, probability
     else:
         return "MATCH", distance, probability
-
 
 # ==============================================================================
 # НОВАЯ ФУНКЦИЯ: Поиск лучшего совпадения по всей базе
