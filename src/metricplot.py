@@ -14,6 +14,7 @@ from models import get_session, ECGRecord
 from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
                    COL_SPINE, COL_TP_YEAR)
 from timeframe import TimeFrame, get_chart_config, calc_proportional_bar_size, pick_year_step
+from timeframe import WEEKDAYS_RU, MONTHS_RU  # Импортируем константы локализации
 from analyzer import MetricAnalyzer
 
 
@@ -41,10 +42,9 @@ class MetricSpec:
 
 
 class MetricPlot(tk.Frame):
-
     SMALL_SPAN = 365
     TARGET_BAR_PX = 15
-    HOVER_DELAY_MS = 1000  # 1 секунда до появления подсказки
+    HOVER_DELAY_MS = 1000
 
     def __init__(self, master, spec, db_path=None):
         super().__init__(master, bg=COL_BG_DARK)
@@ -74,10 +74,9 @@ class MetricPlot(tk.Frame):
 
         self.analyzer = MetricAnalyzer(self.db_path) if self.db_path else None
         
-        # === ПРОСТАЯ ЛОГИКА ПОДСКАЗКИ ===
-        self._hover_timer = None        # Таймер на 1 секунду
-        self._hover_tooltip = None      # Окно подсказки
-        self._hover_record_id = None    # ID бара, над которым сейчас подсказка
+        self._hover_timer = None
+        self._hover_tooltip = None
+        self._hover_record_id = None
         self._mouse_on_axes = False
 
         self.fig = Figure(dpi=100)
@@ -250,6 +249,8 @@ class MetricPlot(tk.Frame):
             self._draw()
 
     def _on_scroll(self, event):
+        self._hide_tooltip()  # <-- ДОБАВЛЕНО: скрываем тултип при начале зума
+        
         if event.xdata is None or self._start is None:
             return
         v = self._view_ordinals()
@@ -331,7 +332,6 @@ class MetricPlot(tk.Frame):
             self._draw_timer = self.after(16, self._apply_pending_view)
             return
         
-        # Обработка наведения
         if self._mouse_on_axes and event.xdata is not None:
             self._check_hover(event.xdata)
         else:
@@ -366,43 +366,24 @@ class MetricPlot(tk.Frame):
         self._mouse_on_axes = False
         self._hide_tooltip()
 
-    # ============================================================
-    # ПРОСТАЯ ЛОГИКА ПОДСКАЗКИ
-    # ============================================================
-    
     def _check_hover(self, xdata):
-        """
-        Проверяет, над каким баром находится мышь.
-        Если бар тот же — ничего не делаем (подсказка висит).
-        Если бар другой — закрываем старую подсказку и запускаем таймер для новой.
-        """
-        # Находим ближайший бар
         record = self._find_closest_record(xdata)
-        
         if record is None:
-            # Мышь не над баром — прячем подсказку
             self._hide_tooltip()
             return
         
         ordinal, value, recorded_at = record
-        
-        # Если подсказка уже висит над ЭТИМ ЖЕ баром — ничего не делаем
         if self._hover_record_id == recorded_at:
             return
         
-        # Бар другой — закрываем старую подсказку и запускаем таймер для новой
         self._hide_tooltip()
         self._hover_record_id = recorded_at
         self._hover_timer = self.after(self.HOVER_DELAY_MS, lambda: self._show_tooltip(recorded_at))
 
     def _show_tooltip(self, recorded_at):
-        """Показывает подсказку для заданной записи."""
         self._hover_timer = None
-        
-        # Защита: если мышь уже ушла с этого бара
         if self._hover_record_id != recorded_at:
             return
-        
         if not self.analyzer or not self._athlete:
             return
         
@@ -410,7 +391,6 @@ class MetricPlot(tk.Frame):
         if not analysis:
             return
         
-        # Создаем окно подсказки
         self._hover_tooltip = tw = tk.Toplevel(self)
         tw.wm_overrideredirect(True)
         tw.configure(bg="#2d2d2d", borderwidth=1, relief="solid")
@@ -429,7 +409,6 @@ class MetricPlot(tk.Frame):
         )
         label.pack()
         
-        # Позиционируем рядом с курсором
         x = self.winfo_pointerx() + 15
         y = self.winfo_pointery() + 15
         
@@ -447,7 +426,6 @@ class MetricPlot(tk.Frame):
         tw.wm_geometry(f"+{x}+{y}")
 
     def _hide_tooltip(self):
-        """Закрывает подсказку и сбрасывает состояние."""
         if self._hover_timer is not None:
             self.after_cancel(self._hover_timer)
             self._hover_timer = None
@@ -463,12 +441,10 @@ class MetricPlot(tk.Frame):
         self._hover_record_id = None
 
     def _find_closest_record(self, xdata):
-        """Находит ближайший бар к позиции xdata (в пределах 0.5 дня)."""
         if not self._values:
             return None
         
         idx = bisect.bisect_left(self._values, (xdata,))
-        
         candidates = []
         if idx > 0:
             candidates.append(self._values[idx - 1])
@@ -479,15 +455,9 @@ class MetricPlot(tk.Frame):
             return None
         
         closest = min(candidates, key=lambda item: abs(item[0] - xdata))
-        
         if abs(closest[0] - xdata) > 0.5:
             return None
-        
         return closest
-
-    # ============================================================
-    # ОТРИСОВКА
-    # ============================================================
 
     def _style(self):
         self.ax.set_facecolor(COL_BG_DARK)
@@ -497,6 +467,8 @@ class MetricPlot(tk.Frame):
         self.ax.set_autoscale_on(False)
 
     def _draw(self):
+        self._hide_tooltip()  # <-- ДОБАВЛЕНО: гарантированно скрываем тултип при любой перерисовке
+        
         ax = self.ax
         ax.clear()
         self._style()
@@ -512,7 +484,7 @@ class MetricPlot(tk.Frame):
         lo, hi = v
         vspan = max(1, hi - lo)
         width_px = max(100, self.ax.get_window_extent().width)
-
+        
         config = get_chart_config(vspan)
         
         if config.is_proportional:
@@ -561,76 +533,116 @@ class MetricPlot(tk.Frame):
         self.canvas.draw_idle()
 
     def _set_x_ticks_small(self, ax, lo, hi, vspan, config):
+        """
+        УНИВЕРСАЛЬНАЯ отрисовка. Работает исключительно на основе параметров из ChartConfig.
+        """
         ticks, names = [], []
-        months_ru = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
-        weekdays_ru = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
-        
-        start_ord = max(1, int(lo))
-        d0 = datetime.date.fromordinal(start_ord)
-        d1 = datetime.date.fromordinal(max(1, int(hi)))
-                
-        if 1.5 < vspan <= 7:
-            current = d0
-            while current <= d1:
-                ticks.append(current.toordinal())
-                if current.weekday() == 0:
-                    names.append(current.strftime("%d.%m"))
-                else:
-                    names.append(weekdays_ru[current.weekday()])
-                current += datetime.timedelta(days=1)
-        elif vspan <= 1.5:
-            current = datetime.datetime(d0.year, d0.month, d0.day, 0, 0, 0)
-            while self._ord(current) <= hi + 0.5:
-                label = current.strftime("%d.%m") if current.hour == 0 else current.strftime("%H:%M")
-                ticks.append(self._ord(current))
-                names.append(label)
-                current += datetime.timedelta(hours=3)
-        elif config.tick_format == "3hour" and config.tick_step_hours > 0:
-            current = datetime.datetime(d0.year, d0.month, d0.day, 0, 0, 0)
+        raw_ticks = []
+
+        # 1. Определяем шаг и тип данных на основе конфига
+        if config.tick_step_hours > 0:
             step = datetime.timedelta(hours=config.tick_step_hours)
-            while self._ord(current) <= hi + 0.5:
-                if current.hour == 0:
-                    wd = weekdays_ru[current.weekday()]
-                    label = f"{wd} {current.strftime('%d.%m')}"
-                else:
-                    label = current.strftime("%H:%M")
-                ticks.append(self._ord(current))
-                names.append(label)
-                current += step
-        elif config.bar_tf is TimeFrame.DAY and vspan > 31:
-            current = d0.replace(day=1)
-            if current < d0:
-                current = current.replace(year=current.year + 1, month=1) if current.month == 12 else current.replace(month=current.month + 1)
-            while current <= d1:
-                ticks.append(current.toordinal())
-                names.append(months_ru[current.month - 1])
-                current = current.replace(year=current.year + 1, month=1) if current.month == 12 else current.replace(month=current.month + 1)
-        elif config.bar_tf is TimeFrame.HOUR3:
-            current = datetime.datetime(d0.year, d0.month, d0.day, 0, 0, 0)
-            step = datetime.timedelta(days=1)
-            while self._ord(current) <= hi + 0.5:
-                if current.hour == 0:
-                    weekday_num = current.weekday()
-                    if weekday_num == 0:
-                        label = current.strftime('%d.%m')
-                    else:
-                        label = weekdays_ru[weekday_num]
-                else:
-                    label = current.strftime("%H:%M")
-                ticks.append(self._ord(current))
-                names.append(label)
-                current += step
+            current = datetime.datetime.fromordinal(max(1, int(lo))).replace(hour=0, minute=0, second=0)
+            is_datetime = True
         else:
-            bounds = list(self._sibling_bounds(config.zebra_tf, lo, hi))
-            last_tick_ord = -999
-            for d in bounds:
-                d_ord = self._ord(d)
-                if d_ord - last_tick_ord < config.tick_step_days:
-                    continue
-                ticks.append(d_ord)
-                names.append(d.strftime(config.tick_format))
-                last_tick_ord = d_ord
-        
+            step = datetime.timedelta(days=max(1, config.tick_step_days))
+            start_date = datetime.date.fromordinal(max(1, int(lo)))
+            
+            # Сдвигаем к ближайшему понедельнику, который >= начала диапазона
+            if step.days >= 7:
+                days_since_monday = start_date.weekday()  # 0=пн, 1=вт, ..., 6=вс
+                if days_since_monday == 0:
+                    current = start_date
+                else:
+                    current = start_date + datetime.timedelta(days=(7 - days_since_monday))
+            else:
+                current = start_date
+                
+            is_datetime = False
+
+        # 2. Генерируем все возможные точки (тики по понедельникам)
+        while True:
+            tick_val = self._ord(current)
+                
+            if tick_val > hi + 0.5:
+                break
+                
+            raw_ticks.append((tick_val, current))
+            
+            if not is_datetime and current > datetime.date.fromordinal(max(1, int(hi))):
+                break
+                
+            current += step
+
+        # 3. 🔧 ДОБАВЛЯЕМ 1-Е ЧИСЛО КАЖДОГО МЕСЯЦА (если show_month_label=True)
+        if getattr(config, 'show_month_label', False) and not is_datetime:
+            d_start = datetime.date.fromordinal(max(1, int(lo)))
+            d_end = datetime.date.fromordinal(max(1, int(hi)))
+            
+            # Находим первое 1-е число в диапазоне
+            first_first = d_start.replace(day=1)
+            if first_first < d_start:
+                if first_first.month == 12:
+                    first_first = first_first.replace(year=first_first.year + 1, month=1)
+                else:
+                    first_first = first_first.replace(month=first_first.month + 1)
+            
+            # Добавляем все 1-е числа месяца
+            current_first = first_first
+            while current_first <= d_end:
+                tick_val = current_first.toordinal()
+                # Добавляем только если еще нет такого тика
+                if not any(abs(tv - tick_val) < 0.1 for tv, _ in raw_ticks):
+                    raw_ticks.append((tick_val, current_first))
+                
+                # Переходим к следующему месяцу
+                if current_first.month == 12:
+                    current_first = current_first.replace(year=current_first.year + 1, month=1)
+                else:
+                    current_first = current_first.replace(month=current_first.month + 1)
+
+        # 4. Сортируем все тики по дате
+        raw_ticks.sort(key=lambda x: x[0])
+
+        # 5. Фильтруем только те точки, которые попадают в видимый диапазон
+        valid_ticks = [(tv, dt) for tv, dt in raw_ticks if lo - 0.1 <= tv <= hi + 0.1]
+
+        # 6. Форматируем
+        for i, (tick_val, dt_obj) in enumerate(valid_ticks):
+            ticks.append(tick_val)
+
+            is_first = (i == 0)
+            is_last = (i == len(valid_ticks) - 1)
+            is_edge = is_first or is_last
+
+            # Выбираем формат по приоритету
+            if is_edge and config.force_edge_format and config.tick_edge_format:
+                fmt = config.tick_edge_format
+            elif config.tick_inner_format:
+                fmt = config.tick_inner_format
+            else:
+                fmt = config.tick_format
+
+            # === 🔧 УПРОЩЕННАЯ ЛОГИКА ФОРМАТИРОВАНИЯ ===
+            if fmt == "weekday":
+                if getattr(config, 'weekday_date_on_monday', False) and dt_obj.weekday() == 0:
+                    names.append(dt_obj.strftime("%d"))
+                else:
+                    names.append(WEEKDAYS_RU[dt_obj.weekday()])
+                    
+            elif fmt == "month_short":
+                d = dt_obj.date() if isinstance(dt_obj, datetime.datetime) else dt_obj
+                if d.day == 1:
+                    names.append(MONTHS_RU[d.month - 1])
+                    
+            else:
+                # Показываем месяц 1-го числа (любой день недели)
+                if getattr(config, 'show_month_label', False) and dt_obj.day == 1:
+                    names.append(MONTHS_RU[dt_obj.month - 1])
+                else:
+                    # Все остальные случаи — показываем число
+                    names.append(dt_obj.strftime(fmt))
+
         ax.set_xticks(ticks)
         ax.set_xticklabels(names, fontsize=7)
 

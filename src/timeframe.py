@@ -1,11 +1,7 @@
 """
 timeframe.py — таймфреймы баров и конфигурация отрисовки графиков.
 
-Логика:
-  span <= 7 дней    — HOUR1 (1 час), зебра DAY, подписи дни недели
-  7 < span <= 31    — HOUR3 (3 часа), зебра DAY, подписи понедельники
-  31 < span <= 366  — DAY (день), зебра WEEK, подписи месяцы
-  span > 366        — пропорциональный расчет (без календарной привязки)
+Централизованное управление всеми параметрами отрисовки и локализацией.
 """
 from __future__ import annotations
 
@@ -14,10 +10,15 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Optional
 
+# ==============================================================================
+# ЛОКАЛИЗАЦИЯ (Единый источник для всех графических компонентов)
+# ==============================================================================
+WEEKDAYS_RU = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
+MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
+
 
 class TimeFrame(Enum):
     """Таймфреймы для календарных баров."""
-
     MIN5  = ("5мин",   300)
     HOUR1 = ("1час",   3600)
     HOUR3 = ("3часа",  10800)
@@ -30,14 +31,9 @@ class TimeFrame(Enum):
     
     @property
     def bar_size(self) -> float:
-        """Размер бара в днях (float)."""
         return self._seconds / 86400.0
     
     def bin_key(self, x: float) -> float:
-        """
-        x — ordinal (float-день). 
-        Возвращает ordinal левого края календарного бара.
-        """
         if self is TimeFrame.HOUR1:
             return int(x * 24) / 24
         if self is TimeFrame.HOUR3:
@@ -45,22 +41,11 @@ class TimeFrame(Enum):
         if self is TimeFrame.DAY:
             return int(x)
         if self is TimeFrame.WEEK:
-            return (int(x) // 7) * 7
+            #  Сдвигаем к ближайшему понедельнику
+            d = datetime.date.fromordinal(int(x))
+            monday = d - datetime.timedelta(days=d.weekday())
+            return monday.toordinal()
         return x
-    
-    @property
-    def zebra(self) -> 'TimeFrame':
-        """Таймфрейм для отрисовки зебры."""
-        return _ZEBRA_MAP[self]
-
-
-# Карта зебры: какой таймфрейм использовать для следующего уровня
-_ZEBRA_MAP = {
-    TimeFrame.HOUR1: TimeFrame.DAY,
-    TimeFrame.HOUR3: TimeFrame.DAY,
-    TimeFrame.DAY:   TimeFrame.WEEK,
-    TimeFrame.WEEK:  TimeFrame.WEEK,
-}
 
 
 @dataclass
@@ -70,51 +55,77 @@ class ChartConfig:
     zebra_tf: TimeFrame
     tick_step_days: int
     tick_format: str
-    tick_step_hours: int = 0           # <-- ДОБАВЛЕНО: шаг подписей в часах (0 = не используется)
+    tick_step_hours: int = 0                    
     is_proportional: bool = False
     proportional_bar_size: Optional[float] = None
+    tick_edge_format: Optional[str] = None      
+    tick_inner_format: Optional[str] = None
+    weekday_date_on_monday: bool = False
+    force_edge_format: bool = True              
+    show_month_label: bool = False              # 🔧 ДОБАВЛЕНО: показывать месяц над датой
 
 
 def get_chart_config(span_days: float) -> ChartConfig:
     """Возвращает конфигурацию отрисовки для заданного диапазона."""
-    # Суточный диапазон (<= 1 день): бар 5 минут, зебра час, подписи каждые 3 часа
+    
+    # === Суточный диапазон (<= 1 день) ===
     if span_days <= 1:
         return ChartConfig(
             bar_tf=TimeFrame.MIN5,
             zebra_tf=TimeFrame.HOUR1,
             tick_step_days=1,
             tick_format="3hour",
-            tick_step_hours=3
+            tick_step_hours=3,
+            tick_edge_format="%d.%m",        
+            tick_inner_format="%H:%M",
+            force_edge_format=True           
         )
     
-    # Недельный диапазон (<= 7 дней)
+    # === Недельный диапазон (1-7 дней) ===
     if span_days <= 7:
         return ChartConfig(
             bar_tf=TimeFrame.HOUR1,
             zebra_tf=TimeFrame.DAY,
             tick_step_days=1,
-            tick_format="weekday"
+            tick_format="weekday",
+            tick_edge_format="%d.%m",        
+            tick_inner_format="weekday",
+            force_edge_format=True           
         )
     
-    # До месяца (<= 31 день)
+    # === Месячный диапазон (7-31 день) ===
     if span_days <= 31:
         return ChartConfig(
             bar_tf=TimeFrame.HOUR3,
             zebra_tf=TimeFrame.DAY,
-            tick_step_days=7,
-            tick_format="%d.%m"
+            tick_step_days=1,
+            tick_format="weekday",
+            tick_edge_format=None,           
+            tick_inner_format="weekday",
+            weekday_date_on_monday=True,     
+            force_edge_format=False          
         )
     
-    # До года (включая високосный 366 дней)
+    # === Диапазон 1-3 месяца (31-90 дней) ===
+    if span_days <= 90:
+        return ChartConfig(
+            bar_tf=TimeFrame.DAY,
+            zebra_tf=TimeFrame.WEEK,
+            tick_step_days=7,
+            tick_format="%d",
+            show_month_label=True            # 🔧 Включаем отображение месяца
+        )
+    
+    # === Диапазон 3-12 месяцев (90-366 дней) ===
     if span_days <= 366:
         return ChartConfig(
             bar_tf=TimeFrame.DAY,
             zebra_tf=TimeFrame.WEEK,
-            tick_step_days=30,
-            tick_format="%d.%m.%y"
+            tick_step_days=14,               
+            tick_format="%d.%m"              
         )
     
-    # Больше года: пропорциональный режим
+    # === Больше года: пропорциональный режим ===
     return ChartConfig(
         bar_tf=TimeFrame.DAY,
         zebra_tf=TimeFrame.WEEK,
@@ -124,17 +135,13 @@ def get_chart_config(span_days: float) -> ChartConfig:
     )
 
 
-def calc_proportional_bar_size(span_days: float, width_px: float, 
-                                target_bar_px: int = 15) -> float:
-    """Вычисляет пропорциональный размер бара для span > 366 дней."""
-    if width_px < 1:
-        width_px = 1
+def calc_proportional_bar_size(span_days: float, width_px: float, target_bar_px: int = 15) -> float:
+    if width_px < 1: width_px = 1
     bars_count = max(10, int(width_px / target_bar_px))
     return span_days / bars_count
 
 
 def pick_year_step(vspan: float) -> int:
-    """Выбирает шаг лет для отрисовки подписей."""
     for n in (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000):
         if vspan / (365 * n) <= 12:
             return n
