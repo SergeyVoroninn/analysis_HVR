@@ -15,7 +15,7 @@ MIN_RECORDS_FOR_TEMPLATE = 9
 OPTIMAL_RECORDS_FOR_TEMPLATE = 20 
 MAX_RECORDS_FOR_TEMPLATE = 50     
 BIOMETRIC_THRESHOLD = 0.15  
-
+MATCH_WARNING_THRESHOLD = 0.10
 
 def _parse_and_clean_ecg(raw_data, fs=130.0):
     lines = raw_data.split('\n')

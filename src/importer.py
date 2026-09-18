@@ -12,11 +12,13 @@ from database import get_db_path
 from models import get_session, Athlete, ECGRecord, ECGRaw
 from analysis import parse_rr, calc_metrics, calc_stress, filter_rr, compute_psd
 
-# ИМПОРТ ФУНКЦИЙ БИОМЕТРИИ
+# ИМПОРТ ФУНКЦИЙ И КОНСТАНТ БИОМЕТРИИ
 from ecg_biometrics import (
     check_ownership_with_saved_template, 
     find_best_match,
-    auto_update_template_if_needed
+    auto_update_template_if_needed,
+    BIOMETRIC_THRESHOLD,
+    MATCH_WARNING_THRESHOLD
 )
 
 
@@ -25,15 +27,14 @@ from ecg_biometrics import (
 # ==============================================================================
 class BiometricChoiceDialog(tk.Toplevel):
     def __init__(self, parent, current_name, current_prob, best_name, best_prob, 
-                 is_relative=False, best_records=0): # ⚡ Добавлен best_records
+                 is_relative=False, best_records=0):
         super().__init__(parent)
         self.title("🔍 Биометрическая верификация")
-        self.geometry("550x500") # Чуть выше для нового текста
+        self.geometry("550x500")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
         self.result = None
-
         self.configure(bg="#2b2b2b")
 
         tk.Label(self, text="Обнаружено расхождение биометрических данных", 
@@ -58,11 +59,10 @@ class BiometricChoiceDialog(tk.Toplevel):
                  font=("Segoe UI", 10), bg="#1b5e20", fg="#a5d6a7").pack(anchor="w")
         tk.Label(best_frame, text=best_name, font=("Segoe UI", 11, "bold"), bg="#1b5e20", fg="#ffffff").pack(anchor="w")
         
-        # ⚡ НОВОЕ: Показываем надежность шаблона
         reliability_text = ""
         if best_records < 10:
             reliability_text = f" ⚠️ (Шаблон ненадежен: всего {best_records} записей)"
-            prob_color = "#ffab91" # Оранжевый для предупреждения
+            prob_color = "#ffab91"
         elif best_records < 20:
             reliability_text = f" (Шаблон формируется: {best_records} записей)"
             prob_color = "#ffffff"
@@ -73,7 +73,7 @@ class BiometricChoiceDialog(tk.Toplevel):
         tk.Label(best_frame, text=f"Совпадение: {best_prob:.1f}%{reliability_text}", 
                  font=("Segoe UI", 10, "bold"), bg="#1b5e20", fg=prob_color).pack(anchor="w")
 
-        # Кнопки (без изменений)
+        # Кнопки
         btn_frame = tk.Frame(self, bg="#2b2b2b")
         btn_frame.pack(fill="x", padx=20, pady=15)
 
@@ -96,6 +96,7 @@ class BiometricChoiceDialog(tk.Toplevel):
         self.result = result
         self.destroy()
 
+
 def _are_relatives_by_name(db_path, athlete_id_1, athlete_id_2):
     """Проверяет, являются ли атлеты родственниками по фамилии."""
     if not athlete_id_1 or not athlete_id_2:
@@ -109,10 +110,10 @@ def _are_relatives_by_name(db_path, athlete_id_1, athlete_id_2):
         if not a1 or not a2:
             return False
         
-        # Сравниваем фамилии (без учета регистра)
         return a1.last_name.lower() == a2.last_name.lower()
     finally:
         session.close()
+
 
 # ==============================================================================
 # ЛОГИКА ИМПОРТА
@@ -142,7 +143,7 @@ def _show_import_result(parent_window, status, path):
 
 def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactive=True, parent_window=None):
     """
-    Выполняет ТОЛЬКО чтение и сохранение в БД. Максимально быстро.
+    Выполняет чтение, биометрическую проверку и сохранение в БД.
     """
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -174,7 +175,9 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         aid = athlete[0]
         current_athlete_name = f"{athlete[1]} {athlete[2]}"
         
-        # ⚡ БИОМЕТРИЧЕСКАЯ ПРОВЕРКА (только для интерактивного режима)
+        # ==========================================================================
+        # БИОМЕТРИЧЕСКАЯ ПРОВЕРКА (только для интерактивного режима)
+        # ==========================================================================
         if interactive and parent_window:
             status, distance, prob = check_ownership_with_saved_template(db_path, aid, path)
             
@@ -185,13 +188,8 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                     return "cancelled", None
                     
             elif status in ("SUSPICIOUS", "LOW_CONFIDENCE"):
-                # Ищем лучшее совпадение по всей базе (исключая текущего)
                 best_athlete, best_dist, best_prob, all_matches = find_best_match(db_path, path, exclude_athlete_id=aid)
                 
-                # ⚡ НОВОЕ: Абсолютный порог для предотвращения ложных совпадений
-                ABSOLUTE_THRESHOLD = 0.20  # 20% - минимальная вероятность для предложения
-                
-                # Проверяем родственников
                 has_relatives = False
                 relative_candidates = []
                 for m in all_matches:
@@ -199,7 +197,6 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                         has_relatives = True
                         relative_candidates.append(m)
                 
-                # ⚡ НОВОЕ: Проверяем, есть ли родственники с высокой вероятностью
                 best_relative = None
                 best_relative_prob = 0
                 for m in relative_candidates:
@@ -207,16 +204,13 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                         best_relative = m
                         best_relative_prob = m['probability']
                 
-                # Логика принятия решения
                 should_show_dialog = False
                 
-                if best_relative and best_relative_prob >= 0.25:  # Для родственников порог чуть выше (25%)
-                    # Нашли родственника с достаточной вероятностью
+                if best_relative and best_relative_prob >= 0.25:
                     should_show_dialog = True
                     best_athlete = best_relative['athlete']
                     best_prob = best_relative_prob
-                elif best_athlete and best_prob >= ABSOLUTE_THRESHOLD:
-                    # Нашли неродственного кандидата с достаточной вероятностью
+                elif best_athlete and best_prob >= 0.20:
                     should_show_dialog = True
                 
                 if should_show_dialog:
@@ -239,16 +233,28 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                     elif dialog.result == "cancel":
                         return "cancelled", None
                 else:
-                    # ⚡ НОВОЕ: Все совпадения ниже порога - это новый человек
                     msg = (f"⚠️ Биометрическое сходство низкое!\n\n"
-                           f"Вероятность совпадения с текущим атлетом: {prob*100:.1f}%\n\n"
+                           f"Вероятность совпадения с текущим атлетом: {prob*100:.1f}%\n"
+                           f"Расстояние до шаблона: {distance:.3f}\n\n"
                            f"В базе не найдено подходящих совпадений (все ниже 20%).\n"
                            f"Скорее всего, это НОВЫЙ человек.\n\n"
                            f"Продолжить импорт текущему атлету?")
                     if not messagebox.askyesno("Новый человек?", msg, parent=parent_window, icon='warning'):
                         return "cancelled", None
+            
+            # ⚡ ПРОВЕРКА ПОГРАНИЧНОГО MATCH (используем константу, без хардкода)
+            elif status == "MATCH" and distance > MATCH_WARNING_THRESHOLD:
+                msg = (f"ℹ️ Запись импортирована, но сходство пограничное.\n\n"
+                       f"Атлет: {current_athlete_name}\n"
+                       f"Расстояние до шаблона: {distance:.3f}\n"
+                       f"Вероятность совпадения: {prob*100:.1f}%\n\n"
+                       f"Рекомендуется проверить запись вручную.")
+                messagebox.showinfo("Пограничное совпадение", msg, parent=parent_window)
 
-        # --- МГНОВЕННОЕ СОХРАНЕНИЕ В БД ---
+        # ==========================================================================
+        # МГНОВЕННОЕ СОХРАНЕНИЕ В БД
+        # (Вынесено за пределы if interactive, чтобы работало и при пакетном импорте)
+        # ==========================================================================
         rr = parse_rr(raw)
         seq = filter_rr(rr) if rr else [] 
         m = calc_metrics(seq) if seq else None
@@ -284,12 +290,13 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
     finally:
         session.close()
 
+
 def _bg_update_template(db_path, aid):
     """Обёртка для безопасного фонового обновления."""
     try:
         auto_update_template_if_needed(db_path, aid)
     except Exception:
-        pass # Тихо игнорируем, чтобы не засорять консоль
+        pass
 
 
 def import_ecg(parent, db_path, athletes, selected_athlete, status_cb):
@@ -300,8 +307,6 @@ def import_ecg(parent, db_path, athletes, selected_athlete, status_cb):
         return None
     paths = list(paths)
     changed_aid = None
-
-    # Множество для хранения уникальных ID атлетов, которым добавились записи
     updated_athletes = set()
 
     if len(paths) == 1:
@@ -312,21 +317,20 @@ def import_ecg(parent, db_path, athletes, selected_athlete, status_cb):
             updated_athletes.add(changed_aid)
         return changed_aid
 
-    # Пакетный импорт (без диалогов, максимально быстро)
+    # Пакетный импорт
     stats = {"added": 0, "dup": 0, "skip": 0, "err": 0, "cancelled": 0}
     for p in paths:
         s, aid = _import_one(db_path, p, athletes, selected_athlete, None, interactive=False, parent_window=None)
         stats[s] = stats.get(s, 0) + 1
         if s == "added" and aid:
             changed_aid = aid
-            updated_athletes.add(aid) # Запоминаем, что у этого атлета появились новые данные
+            updated_athletes.add(aid)
             
         total = sum(stats.values())
         if total % 10 == 0 or total == len(paths):
             status_cb(f"Импорт... {total}/{len(paths)}")
 
-    # ⚡ ГЛАВНОЕ ИЗМЕНЕНИЕ: Запускаем расчёт шаблонов В ФОНЕ, ПОСЛЕ того как всё сохранено в БД
-    # И делаем это ровно один раз для каждого уникального атлета
+    # Фоновый расчёт шаблонов
     for aid in updated_athletes:
         threading.Thread(target=_bg_update_template, args=(db_path, aid), daemon=True).start()
 
