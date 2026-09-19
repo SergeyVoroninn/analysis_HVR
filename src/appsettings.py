@@ -14,11 +14,12 @@ import json
 import os
 
 from database import get_db_path
+from app_constants import APP_SETTINGS_FILENAME
 
 
 def settings_path():
     db = get_db_path()
-    return os.path.join(os.path.dirname(db), "app_settings.json")
+    return os.path.join(os.path.dirname(db), APP_SETTINGS_FILENAME)
 
 
 class AppSettings:

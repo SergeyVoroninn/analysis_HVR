@@ -12,7 +12,7 @@ from analysis import cfg
 from app_constants import ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROFILES_PATH = os.path.join(BASE_DIR, "ecg_profiles.yaml")
+PROFILES_PATH = os.path.join(BASE_DIR, ECG_PROFILES_YAML_PATH)
 
 
 def _rolling_median(x, w):

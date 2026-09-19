@@ -25,7 +25,7 @@ except ImportError as e:
 # ==============================================================================
 # КОНФИГУРАЦИЯ РОДСТВЕННИКОВ (Бизнес-логика, оставлена как есть)
 # ==============================================================================
-from app_constants import HARDCODED_RELATIVE_PAIRS as RELATIVE_PAIRS
+from app_constants import HARDCODED_RELATIVE_PAIRS as RELATIVE_PAIRS, ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION
 
 def are_relatives(name1, name2):
     name1_lower, name2_lower = name1.lower(), name2.lower()
@@ -38,7 +38,7 @@ def are_relatives(name1, name2):
 # ==============================================================================
 # 1. ЗАГРУЗКА ДАННЫХ
 # ==============================================================================
-def load_and_mutate_profiles(yaml_path="ecg_profiles.yaml"):
+def load_and_mutate_profiles(yaml_path=ECG_PROFILES_YAML_PATH):
     with open(yaml_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
     
@@ -69,7 +69,7 @@ def load_real_dataset(base_dir="real_ecg_data"):
     for person_name in os.listdir(base_dir):
         person_dir = os.path.join(base_dir, person_name)
         if os.path.isdir(person_dir):
-            files = [os.path.join(person_dir, f) for f in os.listdir(person_dir) if f.endswith('.teamloggerh10')]
+            files = [os.path.join(person_dir, f) for f in os.listdir(person_dir) if f.endswith(ECG_FILE_EXTENSION)]
             if files:
                 dataset[person_name] = sorted(files)
     return dataset

@@ -8,6 +8,7 @@ import random
 import yaml
 
 from athlete_generator import create_athlete
+from app_constants import CONFIG_YAML_PATH
 
 WEEKDAY_MAP = {"mon": 0, "tue": 1, "wed": 2, "thu": 3,
                "fri": 4, "sat": 5, "sun": 6}
@@ -167,12 +168,12 @@ def generate_schedule(profile_cfg, ref):
 # ============================================================
 # ЗАГРУЗКА КОНФИГА И СБОРКА РАСПИСАНИЙ
 # ============================================================
-def load_config(path="config.yaml"):
+def load_config(path=CONFIG_YAML_PATH):
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-def build_schedules(config_path="config.yaml"):
+def build_schedules(config_path=CONFIG_YAML_PATH):
     """Собирает команду из конфига и строит расписание для каждого."""
     cfg = load_config(config_path)
     ref = datetime.date.fromisoformat(cfg["reference_date"])
@@ -196,7 +197,7 @@ def build_schedules(config_path="config.yaml"):
     return result
 
 
-def summarize(config_path="config.yaml"):
+def summarize(config_path=CONFIG_YAML_PATH):
     for athlete, pname, times in build_schedules(config_path):
         fio = f"{athlete['last_name']} {athlete['first_name']}"
         print(f"{fio:22} | {athlete['gender']},{athlete['birth_year']} | "

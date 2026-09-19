@@ -9,8 +9,7 @@ from theme import COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_CRIT
 from models import get_session, ECGRecord, Athlete
 from analyzer import MetricAnalyzer
 from analysis_dialog import AnalysisDialog
-
-ECGLIST_DEFAULT_LIMIT = 100
+from app_constants import ECGLIST_DEFAULT_LIMIT
 
 
 class ECGListWindow(tk.Toplevel):

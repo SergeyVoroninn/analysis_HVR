@@ -30,7 +30,8 @@ from theme import (
 # ИМПОРТ КОНСТАНТ БИЗНЕС-ЛОГИКИ (Устранение хардкода порогов)
 from app_constants import (
     IMPORT_RELATIVE_PROB_THRESHOLD,
-    IMPORT_UNKNOWN_PROB_THRESHOLD
+    IMPORT_UNKNOWN_PROB_THRESHOLD,
+    ECG_FILE_EXTENSION
 )
 
 # ==============================================================================
@@ -295,7 +296,7 @@ def _bg_update_template(db_path, aid):
 def import_ecg(parent, db_path, athletes, selected_athlete, status_cb):
     paths = filedialog.askopenfilenames(
         title="Выберите файлы записей ЭКГ",
-        filetypes=[("Polar H10", "*.teamloggerh10"), ("Все файлы", "*.*")])
+        filetypes=[("Polar H10", f"*{ECG_FILE_EXTENSION}"), ("Все файлы", "*.*")])
     if not paths:
         return None
     paths = list(paths)

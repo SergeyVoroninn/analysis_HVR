@@ -6,6 +6,7 @@ app_constants.py — централизованные строковые кон�
 ECG_FILE_EXTENSION = ".teamloggerh10"
 CONFIG_YAML_PATH = "config.yaml"
 ECG_PROFILES_YAML_PATH = "ecg_profiles.yaml"
+APP_SETTINGS_FILENAME = "app_settings.json"
 
 # --- Биометрические сентинелы (замена магического 9999) ---
 BIOMETRIC_ERROR_DISTANCE = 9999.0
@@ -15,6 +16,7 @@ DOUBLE_CLICK_THRESHOLD_SEC = 0.45
 HOVER_TOLERANCE_ORDINAL = 0.5
 MAX_ZOOM_ORDINALS = 365000
 ECGLIST_DEFAULT_LIMIT = 100
+MAX_YEAR = 9999                # Верхняя граница года (datetime.date)
 
 # --- Пороги бизнес-логики (Импорт и Сортировка) ---
 IMPORT_RELATIVE_PROB_THRESHOLD = 0.25

@@ -10,9 +10,10 @@ import shutil
 import datetime 
 
 from sqlalchemy import insert, func
+from app_constants import CONFIG_YAML_PATH
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
+CONFIG_PATH = os.path.join(BASE_DIR, CONFIG_YAML_PATH)
 
 SRC_DIR = os.path.dirname(BASE_DIR)
 sys.path.insert(0, SRC_DIR)
@@ -22,7 +23,6 @@ from ecg_generator import create_record
 from analysis import parse_rr, calc_metrics, calc_stress, compute_psd
 from database import get_db_path
 from models import get_session, Athlete, ECGRecord, ECGRaw
-
 
 # ============================================================
 # ПРОГРЕСС-БАР
@@ -67,8 +67,8 @@ def _get_settings(cfg):
 # ============================================================
 # ОСНОВНАЯ ФУНКЦИЯ
 # ============================================================
-def prepare_database(config_path="config.yaml"):
-    cfg = load_config(config_path)
+def prepare_database(config_path=None):
+    cfg = load_config(config_path if config_path is not None else CONFIG_YAML_PATH)
     settings = _get_settings(cfg)
 
     if settings["seed"] is not None:

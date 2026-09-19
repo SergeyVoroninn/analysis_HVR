@@ -16,7 +16,7 @@ from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
 from timeframe import TimeFrame, get_chart_config, calc_proportional_bar_size, pick_year_step
 from timeframe import WEEKDAYS_RU, MONTHS_RU  # Импортируем константы локализации
 from analyzer import MetricAnalyzer
-from app_constants import HOVER_TOLERANCE_ORDINAL, DOUBLE_CLICK_THRESHOLD_SEC, MAX_ZOOM_ORDINALS  # <-- ДОБАВЛЕНО
+from app_constants import HOVER_TOLERANCE_ORDINAL, DOUBLE_CLICK_THRESHOLD_SEC, MAX_ZOOM_ORDINALS, MAX_YEAR  # <-- ДОБАВЛЕНО
 
 class _FrozenCanvas(FigureCanvasTkAgg):
     def __init__(self, figure, master=None):
@@ -715,7 +715,7 @@ class MetricPlot(tk.Frame):
             x0 = datetime.date(max(1, y), 1, 1).toordinal()
             if x0 > hi:
                 break
-            x1 = datetime.date(min(9999, y + n), 1, 1).toordinal()
+            x1 = datetime.date(min(MAX_YEAR, y + n), 1, 1).toordinal()
             if x1 > lo and x0 < hi:
                 if (y // n) % 2:
                     ax.axvspan(max(x0, lo), min(x1, hi), color=COL_TEXT_LIGHT, alpha=0.06, zorder=0)

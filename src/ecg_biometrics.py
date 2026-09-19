@@ -21,6 +21,7 @@ class ECGConfig:
     BANDPASS_LOW = 0.5          # Нижняя граница фильтрации (Гц)
     BANDPASS_HIGH = 50.0        # Верхняя граница фильтрации (Гц)
     NOTCH_Q = 30.0              # Добротность режекторного фильтра
+    BUTTERWORTH_ORDER = 4       # Порядок фильтра Баттерворта
 
     # --- Параметры извлечения признаков (в секундах, масштабируются под FS) ---
     R_PEAK_STD_MULT = 1.5       # Множитель стандартного отклонения для порога R-зубца
@@ -87,7 +88,7 @@ def _parse_and_clean_ecg(raw_data, fs=None):
         
     # Полосовой фильтр
     if 0 < cfg.BANDPASS_LOW < cfg.BANDPASS_HIGH < nyq:
-        b, a = signal.butter(4, [cfg.BANDPASS_LOW / nyq, cfg.BANDPASS_HIGH / nyq], btype='band')
+        b, a = signal.butter(cfg.BUTTERWORTH_ORDER, [cfg.BANDPASS_LOW / nyq, cfg.BANDPASS_HIGH / nyq], btype='band')
         sig = signal.filtfilt(b, a, sig)
         
     return sig

@@ -23,12 +23,13 @@ sys.path.insert(0, BASE_DIR)
 
 from ecg_generator import create_record
 from analysis import parse_rr, calc_metrics
+from app_constants import ECG_PROFILES_YAML_PATH
 
 
 # ============================================================
 # ЗАГРУЗКА И СОХРАНЕНИЕ ПРОФИЛЕЙ
 # ============================================================
-def load_profiles(config_path: str = "ecg_profiles.yaml") -> Dict:
+def load_profiles(config_path: str = ECG_PROFILES_YAML_PATH) -> Dict:
     if not os.path.exists(config_path):
         print(f"❌ Файл профилей не найден: {config_path}")
         sys.exit(1)
@@ -36,7 +37,7 @@ def load_profiles(config_path: str = "ecg_profiles.yaml") -> Dict:
         return yaml.safe_load(f)
 
 
-def save_profiles(profiles: Dict, config_path: str = "ecg_profiles.yaml"):
+def save_profiles(profiles: Dict, config_path: str = ECG_PROFILES_YAML_PATH):
     with open(config_path, 'w', encoding='utf-8') as f:
         yaml.dump(profiles, f, allow_unicode=True, sort_keys=False, indent=2)
     print(f"✅ Профили сохранены в {config_path}")

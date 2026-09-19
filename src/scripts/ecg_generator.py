@@ -111,6 +111,8 @@ def create_ecg(duration_seconds, profile_params=None, rr_intervals=None):
     if profile_params is None:
         profile_params = _load_active_profile()
 
+    defaults = _default_profile()
+
     polar_epoch = time.mktime((2000, 1, 1, 0, 0, 0, 0, 0, 0))
     start_timestamp = int((time.time() - polar_epoch) * 1e9)
 
@@ -118,22 +120,22 @@ def create_ecg(duration_seconds, profile_params=None, rr_intervals=None):
     total_samples = int(duration_seconds * cfg.DEFAULT_FS)
     ns_per_row = int((SAMPLES_PER_ROW / cfg.DEFAULT_FS) * 1e9)
 
-    transient_duration = profile_params.get('transient_duration', 146)
-    transient_start = profile_params.get('transient_start_value', 13148)
-    transient_end = profile_params.get('transient_end_value', -150)
+    transient_duration = profile_params.get('transient_duration', defaults['transient_duration'])
+    transient_start = profile_params.get('transient_start_value', defaults['transient_start_value'])
+    transient_end = profile_params.get('transient_end_value', defaults['transient_end_value'])
 
-    baseline_mean = profile_params.get('baseline_mean', -200)
-    baseline_resp_amp = profile_params.get('baseline_respiratory_amplitude', 80)
-    baseline_resp_freq = profile_params.get('baseline_respiratory_frequency', 0.05)
-    noise_range = profile_params.get('baseline_noise_range', [-15, 15])
+    baseline_mean = profile_params.get('baseline_mean', defaults['baseline_mean'])
+    baseline_resp_amp = profile_params.get('baseline_respiratory_amplitude', defaults['baseline_respiratory_amplitude'])
+    baseline_resp_freq = profile_params.get('baseline_respiratory_frequency', defaults['baseline_respiratory_frequency'])
+    noise_range = profile_params.get('baseline_noise_range', defaults['baseline_noise_range'])
 
-    heart_rate_period = profile_params.get('heart_rate_period', 115)
+    heart_rate_period = profile_params.get('heart_rate_period', defaults['heart_rate_period'])
 
-    p_wave = profile_params.get('p_wave', {'start': 0, 'end': 8, 'amplitude': 150})
-    q_wave = profile_params.get('q_wave', {'start': 10, 'end': 14, 'amplitude': -150})
-    r_wave = profile_params.get('r_wave', {'start': 14, 'end': 19, 'amplitude': 1300})
-    s_wave = profile_params.get('s_wave', {'start': 19, 'end': 25, 'amplitude': -1400})
-    t_wave = profile_params.get('t_wave', {'start': 35, 'end': 55, 'amplitude': 350})
+    p_wave = profile_params.get('p_wave', defaults['p_wave'])
+    q_wave = profile_params.get('q_wave', defaults['q_wave'])
+    r_wave = profile_params.get('r_wave', defaults['r_wave'])
+    s_wave = profile_params.get('s_wave', defaults['s_wave'])
+    t_wave = profile_params.get('t_wave', defaults['t_wave'])
 
     # --- 1. Базовая линия для всех отсчётов ---
     signal = [0.0] * total_samples

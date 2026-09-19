@@ -10,6 +10,8 @@ from models import get_session, Athlete, ECGRecord, ECGRaw
 from theme import (COL_BG_DARK, COL_TEXT_LIGHT, COL_WEEKEND,
                    COL_ACCENT, COL_SELECTION, COL_CRIT, COL_DANGER_HOVER)
 
+from app_constants import ECG_FILE_EXTENSION
+
 
 class _ForegroundDateEntry(DateEntry):
     """DateEntry, который не пропадает при смене месяца/года."""
@@ -408,11 +410,11 @@ class ECGListDialog(ctk.CTkToplevel):
         finally:
             session.close()
 
-        default_name = rec_at.replace(":", "-").replace(" ", "_") + ".teamloggerh10"
+        default_name = rec_at.replace(":", "-").replace(" ", "_") + ECG_FILE_EXTENSION
         path = filedialog.asksaveasfilename(
             title="Сохранить запись ЭКГ",
             initialfile=default_name,
-            filetypes=[("Polar H10", "*.teamloggerh10"), ("Все файлы", "*.*")])
+            filetypes=[("Polar H10", f"*{ECG_FILE_EXTENSION}"), ("Все файлы", "*.*")])
         if not path:
             return
         try:

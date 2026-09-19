@@ -10,6 +10,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from analysis import cfg
+from app_constants import ECG_FILE_EXTENSION
 
 # Добавляем корневую папку проекта в путь (поднимаемся на 1 уровень выше scripts)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -120,7 +121,7 @@ class ECGViewer:
             title="Выберите файл ЭКГ",
             initialdir=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tests", "reference")),
             filetypes=[
-                ("Файлы ЭКГ", "*.teamloggerh10 *.ecg *.txt"),
+                ("Файлы ЭКГ", f"*{ECG_FILE_EXTENSION} *.ecg *.txt"),
                 ("Все файлы", "*.*")
             ]
         )
