@@ -230,7 +230,7 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                     msg = (f"⚠️ Биометрическое сходство низкое!\n\n"
                            f"Вероятность совпадения с текущим атлетом: {prob*100:.1f}%\n"
                            f"Расстояние до шаблона: {distance:.3f}\n\n"
-                           f"В базе не найдено подходящих совпадений (все ниже 20%).\n"
+                           f"В базе не найдено подходящих совпадений (все ниже {IMPORT_UNKNOWN_PROB_THRESHOLD*100:.0f}%).\n"
                            f"Скорее всего, это НОВЫЙ человек.\n\n"
                            f"Продолжить импорт текущему атлету?")
                     if not messagebox.askyesno("Новый человек?", msg, parent=parent_window, icon='warning'):

@@ -8,7 +8,7 @@ import tkinter as tk
 
 from database import get_db_path
 from models import get_session, ECGRecord
-from app_constants import DOUBLE_CLICK_THRESHOLD_SEC
+from app_constants import DOUBLE_CLICK_THRESHOLD_SEC, SINGLE_CLICK_DELAY_WEEKMAP_MS
 from theme import (COL_BG_DARK, COL_TEXT_DIM, COL_WEEKDAY, COL_WEEKEND,
                    COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN, COL_CRIT)
 
@@ -218,7 +218,7 @@ class WeekHeatmap(tk.Frame):
             if self._single_timer is not None:
                 self.after_cancel(self._single_timer)
             self._single_timer = self.after(
-                350, lambda dd=day, bb=block: self._fire_single(dd, bb))
+                SINGLE_CLICK_DELAY_WEEKMAP_MS, lambda dd=day, bb=block: self._fire_single(dd, bb))
 
     def _fire_single(self, day, block):
         self._single_timer = None

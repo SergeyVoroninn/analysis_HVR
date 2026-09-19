@@ -25,7 +25,7 @@ except ImportError as e:
 # ==============================================================================
 # КОНФИГУРАЦИЯ РОДСТВЕННИКОВ (Бизнес-логика, оставлена как есть)
 # ==============================================================================
-from app_constants import HARDCODED_RELATIVE_PAIRS as RELATIVE_PAIRS, ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION
+from app_constants import HARDCODED_RELATIVE_PAIRS as RELATIVE_PAIRS, ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION, BIOMETRIC_ERROR_DISTANCE
 
 def are_relatives(name1, name2):
     name1_lower, name2_lower = name1.lower(), name2.lower()
@@ -190,13 +190,14 @@ def run_poc():
     
     for person_name, files in dataset.items():
         shapes, spectrums = [], []
-        for i in range(min(7, len(files))):
+        max_use = min(cfg.OPTIMAL_RECORDS, len(files))
+        for i in range(max_use):
             shape, spectrum = _extract_features(_parse_and_clean_ecg(open(files[i], 'r', encoding='utf-8').read()))
             if shape is not None and spectrum is not None:
                 shapes.append(shape)
                 spectrums.append(spectrum)
         
-        if len(shapes) >= 3:
+        if len(shapes) >= cfg.MIN_RECORDS:
             ref_data.append((np.median(shapes, axis=0), np.median(spectrums, axis=0)))
             ref_labels.append(person_name)
             print(f"   ✅ {person_name}: шаблон создан ({len(shapes)} записей)")

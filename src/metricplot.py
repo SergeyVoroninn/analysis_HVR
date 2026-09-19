@@ -12,11 +12,11 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from database import get_db_path
 from models import get_session, ECGRecord
 from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
-                   COL_SPINE, COL_TP_YEAR)
+                   COL_SPINE, COL_TP_YEAR, COL_TOOLTIP_BG, COL_SELECTION)
 from timeframe import TimeFrame, get_chart_config, calc_proportional_bar_size, pick_year_step
 from timeframe import WEEKDAYS_RU, MONTHS_RU  # Импортируем константы локализации
 from analyzer import MetricAnalyzer
-from app_constants import HOVER_TOLERANCE_ORDINAL, DOUBLE_CLICK_THRESHOLD_SEC, MAX_ZOOM_ORDINALS, MAX_YEAR  # <-- ДОБАВЛЕНО
+from app_constants import HOVER_TOLERANCE_ORDINAL, DOUBLE_CLICK_THRESHOLD_SEC, MAX_ZOOM_ORDINALS, MAX_YEAR, SINGLE_CLICK_DELAY_METRICPLOT_MS  # <-- ДОБАВЛЕНО
 
 class _FrozenCanvas(FigureCanvasTkAgg):
     def __init__(self, figure, master=None):
@@ -294,7 +294,7 @@ class MetricPlot(tk.Frame):
                 self.after_cancel(self._single_timer)
             d = datetime.date.fromordinal(int(event.xdata))
             self._single_timer = self.after(
-                500, lambda dd=d: self._fire_single(dd))
+                SINGLE_CLICK_DELAY_METRICPLOT_MS, lambda dd=d: self._fire_single(dd))
 
         v = self._view_ordinals()
         if v is None:
@@ -393,7 +393,7 @@ class MetricPlot(tk.Frame):
         
         self._hover_tooltip = tw = tk.Toplevel(self)
         tw.wm_overrideredirect(True)
-        tw.configure(bg="#2d2d2d", borderwidth=1, relief="solid")
+        tw.configure(bg=COL_TOOLTIP_BG, borderwidth=1, relief="solid")
         tw.attributes('-topmost', True)
         
         text = (f"📅 {analysis.recorded_at.strftime('%d.%m.%Y %H:%M')}\n"
@@ -404,7 +404,7 @@ class MetricPlot(tk.Frame):
                 f"💡 {analysis.recommendation}")
         
         label = tk.Label(
-            tw, text=text, justify="left", bg="#2d2d2d", fg="#ffffff",
+            tw, text=text, justify="left", bg=COL_TOOLTIP_BG, fg=COL_SELECTION,
             font=("Segoe UI", 9), padx=12, pady=10, anchor="w"
         )
         label.pack()

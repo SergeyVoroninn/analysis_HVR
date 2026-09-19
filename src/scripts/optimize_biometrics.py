@@ -18,6 +18,7 @@ try:
     from models import get_session, ECGRecord, ECGRaw, BiometricTemplate, Athlete
     # ИМПОРТИРУЕМ функции и конфиг напрямую, чтобы не дублировать код!
     from ecg_biometrics import _parse_and_clean_ecg, _extract_features, cfg
+    from app_constants import BIOMETRIC_ERROR_DISTANCE
 except ImportError as e:
     print(f"❌ Ошибка импорта: {e}")
     print("Убедитесь, что запускаете скрипт из папки scripts или настроили PYTHONPATH.")
@@ -81,7 +82,7 @@ def main():
                 sp_dist = np.sqrt(np.sum((rec['spec'] - tpl_data['spec']) ** 2))
                 rec_dists[tpl_ath_id] = (s_dist, sp_dist)
             except Exception:
-                rec_dists[tpl_ath_id] = (10.0, 10.0)
+                rec_dists[tpl_ath_id] = (BIOMETRIC_ERROR_DISTANCE, BIOMETRIC_ERROR_DISTANCE)
         precalculated_dists.append((rec['athlete_id'], rec_dists))
 
     # 4. GRID SEARCH

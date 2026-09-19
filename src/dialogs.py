@@ -478,7 +478,7 @@ class BiometricDialog(ctk.CTkToplevel):
         self._update_status()
 
     def _update_status(self):
-        from ecg_biometrics import get_saved_template
+        from ecg_biometrics import get_saved_template, cfg
         shape, spec = get_saved_template(self.db_path, self.athlete_id)
         if shape is not None:
             self.status_lbl.configure(text="✅ Шаблон активен", text_color="green")
@@ -486,7 +486,7 @@ class BiometricDialog(ctk.CTkToplevel):
             self.btn_create.configure(text="🔄 Обновить шаблон")
         else:
             self.status_lbl.configure(text="⚠️ Шаблон отсутствует", text_color="orange")
-            self.info_lbl.configure(text=f"Для создания требуется минимум 7 записей ЭКГ.")
+            self.info_lbl.configure(text=f"Для создания требуется минимум {cfg.MIN_RECORDS} записей ЭКГ.")
             self.btn_create.configure(text="✨ Создать шаблон")
 
     def _on_create(self):

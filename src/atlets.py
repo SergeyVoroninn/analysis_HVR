@@ -14,7 +14,8 @@ from dialogs import AthleteDialog
 from athlete_generator import (
     _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
     _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd, _calc_age)
-from theme import COL_BG_WIDGET, COL_TEXT_LIGHT
+from theme import COL_BG_WIDGET, COL_TEXT_LIGHT, COL_ACCENT
+from app_constants import SINGLE_CLICK_DELAY_ATLETS_MS
 
 
 class AthletesPanel(tk.Frame):
@@ -56,7 +57,7 @@ class AthletesPanel(tk.Frame):
             self, 
             text="📋 Список ЭКГ", 
             command=self.open_ecg_list,
-            fg_color="#1f6aa5"  # COL_ACCENT из theme.py
+            fg_color=COL_ACCENT
         )
         self._list_btn.grid(row=3, column=0, sticky="ew", padx=5, pady=(5, 2))
         # ==================================
@@ -111,7 +112,7 @@ class AthletesPanel(tk.Frame):
                 self.after_cancel(self._select_timer)
             except Exception:
                 pass
-        self._select_timer = self.after(350, self._on_select)
+        self._select_timer = self.after(SINGLE_CLICK_DELAY_ATLETS_MS, self._on_select)
 
     def _on_double_click(self, event=None):
         """Двойной клик: отменяем отложенный выбор и открываем редактирование."""

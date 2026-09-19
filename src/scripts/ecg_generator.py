@@ -19,7 +19,7 @@ sys.path.insert(0, SRC_DIR)
 # ЦЕНТРАЛИЗОВАННЫЕ ИМПОРТЫ (Устранение хардкода)
 # ============================================================
 from analysis import cfg
-from app_constants import ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION
+from app_constants import ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION, DEFAULT_QUALITY_TARGETS
 
 # ============================================================
 # КОНСТАНТЫ ГЕНЕРАТОРА (Вынесены из функций для читаемости)
@@ -281,11 +281,7 @@ if __name__ == '__main__':
         quality = analyze_ecg_quality(test_record)
 
         if quality:
-            target = {
-                'min_snr': 15.0,
-                'max_artifact_pct': 2.0,
-                'max_baseline_drift': 50.0,
-            }
+            target = dict(DEFAULT_QUALITY_TARGETS)
 
             snr = quality['snr']
             art = quality['artifact_pct']
@@ -346,9 +342,10 @@ if __name__ == '__main__':
                     try:
                         level = stress_level(si)
                     except Exception:
-                        if si < 50: level = 'низкий'
-                        elif si < 100: level = 'умеренный'
-                        elif si < 200: level = 'высокий'
+                        th = cfg.STRESS_THRESHOLDS
+                        if si < th["low"]: level = 'низкий'
+                        elif si < th["moderate"]: level = 'умеренный'
+                        elif si < th["high"]: level = 'высокий'
                         else: level = 'перенапряжение'
                     
                     icons = {'низкий': '🟢', 'умеренный': '🟡', 'высокий': '🟠', 'перенапряжение': '🔴'}
@@ -360,9 +357,10 @@ if __name__ == '__main__':
                     print(f"  Уровень:          {icons.get(level, '⚪')} {level.upper()}")
                     
                     print(f"\n  Интерпретация:")
-                    if si < 50: print("    ✅ Отличная адаптация, высокий резерв")
-                    elif si < 100: print("    ✅ Норма, адекватная нагрузка")
-                    elif si < 200: print("    ⚠️  Напряжение регуляторных систем")
+                    th = cfg.STRESS_THRESHOLDS
+                    if si < th["low"]: print("    ✅ Отличная адаптация, высокий резерв")
+                    elif si < th["moderate"]: print("    ✅ Норма, адекватная нагрузка")
+                    elif si < th["high"]: print("    ⚠️  Напряжение регуляторных систем")
                     elif si < 500: print("    ⚠️  Выраженное напряжение")
                     else: print("    ❌ Критическое перенапряжение!")
                 else:

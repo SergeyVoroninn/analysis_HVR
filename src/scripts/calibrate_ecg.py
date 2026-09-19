@@ -23,7 +23,7 @@ sys.path.insert(0, BASE_DIR)
 
 from ecg_generator import create_record
 from analysis import parse_rr, calc_metrics
-from app_constants import ECG_PROFILES_YAML_PATH
+from app_constants import ECG_PROFILES_YAML_PATH, DEFAULT_QUALITY_TARGETS
 
 
 # ============================================================
@@ -135,9 +135,9 @@ def analyze_ecg_quality(raw_str: str, skip_transient: int = 200,
 # ============================================================
 def _adapt_profile(profile: Dict, quality: Dict, target: Dict) -> Dict:
     p = profile.copy()
-    snr_t = target.get('min_snr', 15)
-    art_t = target.get('max_artifact_pct', 2)
-    drift_t = target.get('max_baseline_drift', 50)
+    snr_t = target.get('min_snr', DEFAULT_QUALITY_TARGETS['min_snr'])
+    art_t = target.get('max_artifact_pct', DEFAULT_QUALITY_TARGETS['max_artifact_pct'])
+    drift_t = target.get('max_baseline_drift', DEFAULT_QUALITY_TARGETS['max_baseline_drift'])
 
     drift, snr, art = (quality['baseline_drift'], quality['snr'],
                        quality['artifact_pct'])
@@ -178,7 +178,7 @@ def _compute_score(quality: Dict, target: Dict) -> float:
     score = 0
 
     # SNR (до 40 баллов)
-    snr_target = target.get('min_snr', 15)
+    snr_target = target.get('min_snr', DEFAULT_QUALITY_TARGETS['min_snr'])
     snr = quality['snr']
     if snr >= snr_target:
         score += 40 + min(20, (snr - snr_target) * 2)
@@ -186,7 +186,7 @@ def _compute_score(quality: Dict, target: Dict) -> float:
         score += max(0, 40 - (snr_target - snr) * 4)
 
     # Артефакты (до 35 баллов)
-    art_target = target.get('max_artifact_pct', 2)
+    art_target = target.get('max_artifact_pct', DEFAULT_QUALITY_TARGETS['max_artifact_pct'])
     art = quality['artifact_pct']
     if art <= art_target:
         score += 35
@@ -194,7 +194,7 @@ def _compute_score(quality: Dict, target: Dict) -> float:
         score += max(0, 35 - (art - art_target) * 7)
 
     # Дрейф (до 25 баллов)
-    drift_target = target.get('max_baseline_drift', 50)
+    drift_target = target.get('max_baseline_drift', DEFAULT_QUALITY_TARGETS['max_baseline_drift'])
     drift = quality['baseline_drift']
     if drift <= drift_target:
         score += 25
@@ -237,9 +237,9 @@ def calibrate_profile(profile_name: str, profiles: Dict,
 
         score = _compute_score(quality, target)
 
-        print(f"  SNR:     {quality['snr']:6.2f} дБ  (цель: ≥{target.get('min_snr', 15)})")
-        print(f"  Арт-ты:  {quality['artifact_pct']:5.2f}%   (цель: ≤{target.get('max_artifact_pct', 2)}%)")
-        print(f"  Дрейф:   {quality['baseline_drift']:6.2f}    (цель: ≤{target.get('max_baseline_drift', 50)})")
+        print(f"  SNR:     {quality['snr']:6.2f} дБ  (цель: ≥{target.get('min_snr', DEFAULT_QUALITY_TARGETS['min_snr'])})")
+        print(f"  Арт-ты:  {quality['artifact_pct']:5.2f}%   (цель: ≤{target.get('max_artifact_pct', DEFAULT_QUALITY_TARGETS['max_artifact_pct'])}%)")
+        print(f"  Дрейф:   {quality['baseline_drift']:6.2f}    (цель: ≤{target.get('max_baseline_drift', DEFAULT_QUALITY_TARGETS['max_baseline_drift'])})")
         print(f"  ⭐ Score: {score:.1f}/100")
 
         if score > best_score:
@@ -249,9 +249,9 @@ def calibrate_profile(profile_name: str, profiles: Dict,
             print("  ✅ Новый лучший результат")
 
         # Все цели достигнуты — выход
-        if (quality['snr'] >= target.get('min_snr', 15)
-                and quality['artifact_pct'] <= target.get('max_artifact_pct', 2)
-                and quality['baseline_drift'] <= target.get('max_baseline_drift', 50)):
+        if (quality['snr'] >= target.get('min_snr', DEFAULT_QUALITY_TARGETS['min_snr'])
+                and quality['artifact_pct'] <= target.get('max_artifact_pct', DEFAULT_QUALITY_TARGETS['max_artifact_pct'])
+                and quality['baseline_drift'] <= target.get('max_baseline_drift', DEFAULT_QUALITY_TARGETS['max_baseline_drift'])):
             print("\n  🎉 Все целевые метрики достигнуты!")
             break
 

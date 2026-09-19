@@ -185,17 +185,18 @@ python app.py
 
 ```txt
 analysis_HVR\src\
-|   analysis.py                    Парсинг RR-интервалов, расчёт ВРС-метрик (SDNN, RMSSD) и индекса стресса
+|   analysis.py                    Парсинг RR-интервалов, расчёт ВРС-метрик (SDNN, RMSSD) и индекса стресса. Содержит AnalysisConfig
 |   analysis_dialog.py             Модальное окно детального анализа метрик ВРС (MetricAnalysis)
-|   analyzer.py                    MetricAnalyzer: классификация метрик по статусам/категориям, рекомендации
+|   analyzer.py                    MetricAnalyzer: классификация метрик по статусам/категориям (пороги из cfg.TP_THRESHOLDS/SI_THRESHOLDS)
 |   app.py                         Главное окно приложения: оркестратор, сплэш, восстановление состояния
+|   app_constants.py               Централизованные константы: имена файлов, расширения, пороги, сентинелы (замена хардкода)
 |   appsettings.py                 Сохранение/восстановление состояния (атлет, год, неделя, зум) в JSON
 |   atlets.py                      Панель списка спортсменов: отображение, CRUD, импорт записей
 |   build.bat                      Скрипт сборки AnalysisHVR.exe через PyInstaller с прогоном тестов
 |   charts.py                      Контейнер графиков TP/Стресс, синхронизация масштаба, колбэки кликов
 |   database.py                    Менеджер пути к БД с учётом режима запуска (exe/исходники/тесты)
 |   dialogs.py                     Диалоги AthleteDialog (создание/редактирование), ECGListDialog (список ЭКГ); DateEntry поверх окна
-|   ecg_biometrics.py              Биометрическая проверка принадлежности ЭКГ (DTW, FFT, шаблоны BiometricTemplate)
+|   ecg_biometrics.py              Биометрическая проверка принадлежности ЭКГ (DTW, FFT, шаблоны BiometricTemplate). Содержит ECGConfig
 |   ecg_list_window.py             Окно быстрого просмотра последних 100 записей (ttk.Treeview, двойной клик → анализ)
 |   ghost.py                       ResizeController — адаптивный ресайз виджетов
 |   heatmap.py                     Составной виджет: годовой heatmap + недельный + переключатель года

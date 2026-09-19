@@ -14,13 +14,11 @@ import tkinter as tk
 
 from database import get_db_path
 from models import get_session, ECGRecord
-from app_constants import DOUBLE_CLICK_THRESHOLD_SEC
+from app_constants import DOUBLE_CLICK_THRESHOLD_SEC, SINGLE_CLICK_DELAY_YEARMAP_MS
 from theme import (COL_BG_DARK, COL_TEXT_DIM, COL_WEEKDAY, COL_WEEKEND,
                    COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN, COL_CRIT,
                    COL_SELECTION)
-
-MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн",
-             "июл", "авг", "сен", "окт", "ноя", "дек"]
+from timeframe import MONTHS_RU
 
 X0, Y0 = 5, 18
 
@@ -284,7 +282,7 @@ class YearHeatmap(tk.Canvas):
             if self._single_timer is not None:
                 self.after_cancel(self._single_timer)
             self._single_timer = self.after(
-                300, lambda mm=monday: self._fire_week_pick(mm))
+                SINGLE_CLICK_DELAY_YEARMAP_MS, lambda mm=monday: self._fire_week_pick(mm))
 
     def _fire_week_pick(self, monday):
         self._single_timer = None

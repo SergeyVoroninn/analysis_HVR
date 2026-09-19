@@ -9,7 +9,7 @@ import argparse
 import numpy as np
 import yaml
 from analysis import cfg
-from app_constants import ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION
+from app_constants import ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION, DEFAULT_QUALITY_TARGETS
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROFILES_PATH = os.path.join(BASE_DIR, ECG_PROFILES_YAML_PATH)
@@ -107,7 +107,7 @@ def fit(signal, rr):
     p['r_wave'] = {'start': 14, 'end': 19, 'amplitude': int(avg[before] - bc)}
     p['s_wave'] = {'start': 19, 'end': 25, 'amplitude': int(min(-100, np.min(avg[before+2:before+12]) - bc))}
     p['t_wave'] = {'start': 35, 'end': 55, 'amplitude': int(max(100, np.max(avg[before+18:before+50]) - bc))}
-    p['target'] = {'min_snr': 15.0, 'max_artifact_pct': 2.0, 'max_baseline_drift': 50.0}
+    p['target'] = dict(DEFAULT_QUALITY_TARGETS)
 
     # --- 5. ВРС спортсмена ---
     rr_arr = np.asarray(rr, dtype=float)

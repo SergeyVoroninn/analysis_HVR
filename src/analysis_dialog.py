@@ -3,7 +3,8 @@ analysis_dialog.py — диалоговое окно для отображени
 Без скроллинга, весь текст выводится сразу.
 """
 import tkinter as tk
-from theme import COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT
+from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT,
+                   COL_DATE, COL_DIVIDER, COL_BUTTON_BG, COL_BUTTON_TEXT)
 
 
 class AnalysisDialog(tk.Toplevel):
@@ -51,7 +52,7 @@ class AnalysisDialog(tk.Toplevel):
             text=self.analysis.recorded_at.strftime("%d.%m.%Y %H:%M"),
             font=("Segoe UI", 10),
             bg=COL_BG_WIDGET,
-            fg="#888"
+            fg=COL_DATE
         ).pack()
         
         # 2. Основной контент (простой Frame без Canvas и скролла)
@@ -68,7 +69,7 @@ class AnalysisDialog(tk.Toplevel):
         ])
         
         # Разделитель
-        tk.Frame(content_frame, height=2, bg="#444").pack(fill="x", pady=10)
+        tk.Frame(content_frame, height=2, bg=COL_DIVIDER).pack(fill="x", pady=10)
         
         # Секция: Рекомендация
         self._add_section(content_frame, "💡 Рекомендация", [
@@ -105,8 +106,8 @@ class AnalysisDialog(tk.Toplevel):
             btn_frame,
             text="Закрыть (Esc)",
             command=self.destroy,
-            bg="#4fc3f7",
-            fg="#1e1e1e",
+            bg=COL_BUTTON_BG,
+            fg=COL_BUTTON_TEXT,
             font=("Segoe UI", 10, "bold"),
             padx=30,
             pady=8,
@@ -135,7 +136,7 @@ class AnalysisDialog(tk.Toplevel):
                     text=label,
                     font=("Segoe UI", 10, "bold"),
                     bg=COL_BG_WIDGET,
-                    fg="#4fc3f7",
+                    fg=COL_BUTTON_BG,
                     width=20,
                     anchor="w"
                 ).pack(side="left", padx=15, pady=5)
