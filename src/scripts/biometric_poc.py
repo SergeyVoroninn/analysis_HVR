@@ -202,7 +202,7 @@ def run_poc():
             ref_labels.append(person_name)
             print(f"   ✅ {person_name}: шаблон создан ({len(shapes)} записей)")
         else:
-            print(f"   ⚠️  {person_name}: НЕ ХВАТАЕТ ДАННЫХ (нужно ≥3, есть {len(shapes)})")
+            print(f"   ⚠️  {person_name}: НЕ ХВАТАЕТ ДАННЫХ (нужно ≥{cfg.MIN_RECORDS}, есть {len(shapes)})")
     
     print(f"\n🔍 Тестирование идентификации (порог отсева = {cfg.BIOMETRIC_THRESHOLD})...")
     

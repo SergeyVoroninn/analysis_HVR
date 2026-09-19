@@ -37,6 +37,9 @@ DEFAULT_QUALITY_TARGETS = {
     'max_baseline_drift': 50.0,
 }
 
+# --- Параметры калибровки (скрипты calibrate_ecg / fit_profile_from_real) ---
+R_PEAK_AMPLITUDE_THRESHOLD = 500    # Минимальная амплитуда R-пика в остаточном сигнале
+
 # --- Жестко заданные пары родственников (для PoC и тестов) ---
 # В продакшене это должно храниться в БД, но для скриптов выносим сюда
 HARDCODED_RELATIVE_PAIRS = [("filipp", "trofim")]

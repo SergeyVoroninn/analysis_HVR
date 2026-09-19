@@ -361,7 +361,7 @@ if __name__ == '__main__':
                     if si < th["low"]: print("    ✅ Отличная адаптация, высокий резерв")
                     elif si < th["moderate"]: print("    ✅ Норма, адекватная нагрузка")
                     elif si < th["high"]: print("    ⚠️  Напряжение регуляторных систем")
-                    elif si < 500: print("    ⚠️  Выраженное напряжение")
+                    elif si < cfg.SI_THRESHOLDS["high"]: print("    ⚠️  Выраженное напряжение")
                     else: print("    ❌ Критическое перенапряжение!")
                 else:
                     print(f"\n  ⚠️  ИС не рассчитан")

@@ -23,7 +23,7 @@ sys.path.insert(0, BASE_DIR)
 
 from ecg_generator import create_record
 from analysis import parse_rr, calc_metrics
-from app_constants import ECG_PROFILES_YAML_PATH, DEFAULT_QUALITY_TARGETS
+from app_constants import ECG_PROFILES_YAML_PATH, DEFAULT_QUALITY_TARGETS, R_PEAK_AMPLITUDE_THRESHOLD
 
 
 # ============================================================
@@ -85,7 +85,7 @@ def analyze_ecg_quality(raw_str: str, skip_transient: int = 200,
     residual = signal - base
 
     # R-пики и маска ВСЕГО комплекса (P начинается ~за 25 до R, T кончается ~+60)
-    r_peaks = np.where(residual > 500)[0]
+    r_peaks = np.where(residual > R_PEAK_AMPLITUDE_THRESHOLD)[0]
     full_mask = np.zeros(n, bool)
     for p in r_peaks:
         full_mask[max(0, p - 25):min(n, p + 60)] = True

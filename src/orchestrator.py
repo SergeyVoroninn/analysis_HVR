@@ -92,20 +92,40 @@ class AppOrchestrator:
         """ПКМ: показать весь период данных, курсор на последнюю запись."""
         self._saved_range = None
         
+        # 0. Гарантируем, что heatmap тоже сбросил свои внутренние кэши до начала работы
+        if hasattr(self.heatmap, 'refresh'):
+            self.heatmap.refresh()
+        
+        # 1. ПРИНУДИТЕЛЬНО обнуляем кэш дат. 
+        # БЕЗ этого шага _load_sync пропустит пересчет и оставит старый год (2024).
+        for p in self.charts._plots:
+            p._start = None
+            p._end = None
+            p.view = None
+            
+        # 2. Синхронно перезагружаем данные из БД. 
+        # Мы ждем завершения (async_load=False), чтобы гарантированно получить 
+        # новые _start и _end перед тем, как искать last_date.
+        # (SQLite отрабатывает за доли миллисекунды, GUI не "подвиснет")
+        for p in self.charts._plots:
+            p._reload(async_load=False)
+            
+        # 3. Ищем актуальную последнюю дату ПОСЛЕ того, как кэш гарантированно обновился
         last_date = None
         for p in self.charts._plots:
             if p._end is not None:
                 if last_date is None or p._end > last_date:
                     last_date = p._end
         
+        # 4. Обновляем интерфейс только если данные действительно есть (защита от краша)
         if last_date is not None:
             self.heatmap.set_cursor_by_date(last_date)
             self.heatmap.year = last_date.year
+            
+        # 5. Принудительно перерисовываем графики с новыми границами (view=None)
+        self.charts.redraw()
         
-        for p in self.charts._plots:
-            p.view = None
-            p._reload()
-        
+        # 6. Финальная синхронизация heatmap
         self.heatmap.reset_to_data_last()
 
     def _handle_chart_single_click(self, d):

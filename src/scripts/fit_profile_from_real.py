@@ -9,7 +9,7 @@ import argparse
 import numpy as np
 import yaml
 from analysis import cfg
-from app_constants import ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION, DEFAULT_QUALITY_TARGETS
+from app_constants import ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION, DEFAULT_QUALITY_TARGETS, R_PEAK_AMPLITUDE_THRESHOLD
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROFILES_PATH = os.path.join(BASE_DIR, ECG_PROFILES_YAML_PATH)
@@ -78,7 +78,7 @@ def fit(signal, rr):
     p['baseline_respiratory_frequency'] = round(float(2 * np.pi * f), 4)
 
     resid = work - base_w
-    r_raw = np.where(resid > 500)[0]
+    r_raw = np.where(resid > R_PEAK_AMPLITUDE_THRESHOLD)[0]
     mask = np.zeros(len(work), bool)
     for q in r_raw:
         mask[max(0, q - 30):q + 70] = True

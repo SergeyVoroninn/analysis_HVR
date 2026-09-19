@@ -50,6 +50,10 @@ class ECGConfig:
     BIOMETRIC_THRESHOLD = 0.15  
     MATCH_WARNING_THRESHOLD = 0.10
 
+    # --- Параметры извлечения признаков ---
+    MIN_CYCLES_FOR_TEMPLATE = 3              # Минимум циклов/спектров для валидного шаблона
+    SPECTRAL_BANDS_HZ = [(5, 15), (15, 30), (30, 50)]   # Энергетические полосы спектра (Гц)
+
     # --- Бонусы за надежность шаблона ---
     RELIABILITY_HIGH_THRESH = 20
     RELIABILITY_LOW_THRESH = 10
@@ -134,11 +138,10 @@ def _extract_features(ecg_clean, fs=None):
                 
                 dom_freq = xf_pos[np.argmax(yf_pos[1:]) + 1] if len(yf_pos) > 1 else 0
                 
-                # Динамические маски частот (можно вынести в конфиг, если потребуется гибкость)
+                # Динамические маски частот (полосы из конфига)
                 masks = [
-                    (xf_pos >= 5) & (xf_pos < 15), 
-                    (xf_pos >= 15) & (xf_pos < 30), 
-                    (xf_pos >= 30) & (xf_pos < 50)
+                    (xf_pos >= lo) & (xf_pos < hi)
+                    for lo, hi in cfg.SPECTRAL_BANDS_HZ
                 ]
                 energies = [np.trapezoid(yf_pos[m], xf_pos[m]) if np.any(m) else 0 for m in masks]
                 total = sum(energies)
@@ -148,7 +151,7 @@ def _extract_features(ecg_clean, fs=None):
                 # Нормализация доминирующей частоты относительно верхней границы фильтра
                 spectral_features.append([dom_freq / cfg.BANDPASS_HIGH] + energies)
 
-    if len(shape_cycles) < 3 or len(spectral_features) < 3: 
+    if len(shape_cycles) < cfg.MIN_CYCLES_FOR_TEMPLATE or len(spectral_features) < cfg.MIN_CYCLES_FOR_TEMPLATE: 
         return None, None
     return np.median(shape_cycles, axis=0), np.median(spectral_features, axis=0)
 

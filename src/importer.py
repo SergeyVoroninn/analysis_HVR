@@ -10,7 +10,7 @@ from tkinter import messagebox, filedialog
 
 from database import get_db_path
 from models import get_session, Athlete, ECGRecord, ECGRaw
-from analysis import parse_rr, calc_metrics, calc_stress, filter_rr, compute_psd
+from analysis import parse_rr, calc_metrics, calc_stress, filter_rr, compute_psd, cfg as analysis_cfg
 
 # ИМПОРТ ФУНКЦИЙ И КОНФИГУРАЦИИ БИОМЕТРИИ
 from ecg_biometrics import (
@@ -47,6 +47,9 @@ class BiometricChoiceDialog(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
         self.result = None
+
+        self.protocol("WM_DELETE_WINDOW", lambda: self._close("cancel"))
+
         self.configure(bg=COL_BG_DARK)  # <-- ЗАМЕНЕНО
 
         tk.Label(self, text="Обнаружено расхождение биометрических данных", 
@@ -256,7 +259,7 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         duration = sum(rr) / 1000.0 if rr else 0.0
 
         spectral_tp = None
-        if seq and len(seq) >= 3:
+        if seq and len(seq) >= analysis_cfg.MIN_RR_FOR_METRICS:
             try:
                 _, _, bands = compute_psd(seq)
                 spectral_tp = bands.get("tp")
