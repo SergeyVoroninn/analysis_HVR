@@ -4,6 +4,20 @@ app.py — чистый старт с использованием вынесе�
 Состояние (атлет, год, курсор недели, масштаб графиков) сохраняется
 при закрытии и восстанавливается при старте (appsettings.py).
 """
+import locale
+
+# Попытка установить русскую локаль
+try:
+    # Для Linux/Mac
+    locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
+except locale.Error:
+    try:
+        # Для Windows
+        locale.setlocale(locale.LC_TIME, 'Russian_Russia.1251')
+    except locale.Error:
+        # Альтернатива для Windows
+        locale.setlocale(locale.LC_TIME, 'ru_RU')
+
 import datetime
 import os
 import sys

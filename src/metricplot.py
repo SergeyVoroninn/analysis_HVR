@@ -16,7 +16,7 @@ from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
 from timeframe import TimeFrame, get_chart_config, calc_proportional_bar_size, pick_year_step
 from timeframe import WEEKDAYS_RU, MONTHS_RU  # Импортируем константы локализации
 from analyzer import MetricAnalyzer
-
+from app_constants import HOVER_TOLERANCE_ORDINAL, DOUBLE_CLICK_THRESHOLD_SEC, MAX_ZOOM_ORDINALS  # <-- ДОБАВЛЕНО
 
 class _FrozenCanvas(FigureCanvasTkAgg):
     def __init__(self, figure, master=None):
@@ -260,7 +260,7 @@ class MetricPlot(tk.Frame):
         factor = 0.85 if event.button == "up" else 1.18
         width_px = max(100, self.ax.get_window_extent().width)
         min_span = 1.0
-        new_span = min(365000, max(min_span, (hi - lo) * factor))
+        new_span = min(MAX_ZOOM_ORDINALS, max(min_span, (hi - lo) * factor))
         ratio = (event.xdata - lo) / max(1e-9, hi - lo)
         new_lo = event.xdata - ratio * new_span
         new_hi = new_lo + new_span
@@ -279,7 +279,7 @@ class MetricPlot(tk.Frame):
             return
 
         now = _time.monotonic()
-        is_dbl = (now - self._click_t < 0.45 and
+        is_dbl = (now - self._click_t < DOUBLE_CLICK_THRESHOLD_SEC and
                   abs(event.x - self._click_x) < 6 and
                   abs(event.y - self._click_y) < 6)
         self._click_t = now
@@ -455,7 +455,7 @@ class MetricPlot(tk.Frame):
             return None
         
         closest = min(candidates, key=lambda item: abs(item[0] - xdata))
-        if abs(closest[0] - xdata) > 0.5:
+        if abs(closest[0] - xdata) > HOVER_TOLERANCE_ORDINAL:
             return None
         return closest
 
@@ -711,7 +711,7 @@ class MetricPlot(tk.Frame):
     def _shade_years(self, ax, lo, hi, n):
         start_year = max(1, datetime.date.fromordinal(int(lo)).year)
         y = (start_year // n) * n - n
-        while y <= 9999:
+        while y <= hi:
             x0 = datetime.date(max(1, y), 1, 1).toordinal()
             if x0 > hi:
                 break

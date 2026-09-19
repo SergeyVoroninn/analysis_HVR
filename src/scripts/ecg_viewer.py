@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import tkinter as tk
 from tkinter import filedialog, messagebox
+from analysis import cfg
 
 # Добавляем корневую папку проекта в путь (поднимаемся на 1 уровень выше scripts)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -17,7 +18,7 @@ import analysis as hrv
 # ==============================================================================
 # НАСТРОЙКИ
 # ==============================================================================
-FS_ECG = 130.0   # Частота дискретизации ЭКГ (Polar H10)
+FS_ECG = cfg.FS   # Частота дискретизации ЭКГ (Polar H10)
 # ==============================================================================
 
 

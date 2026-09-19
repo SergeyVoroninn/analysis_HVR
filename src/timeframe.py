@@ -106,8 +106,8 @@ def get_chart_config(span_days: float) -> ChartConfig:
             force_edge_format=False          
         )
     
-    # === Диапазон 1-3 месяца (31-90 дней) ===
-    if span_days <= 90:
+    # === Диапазон 1-4 месяца (31-120 дней) ===
+    if span_days <= 120:
         return ChartConfig(
             bar_tf=TimeFrame.DAY,
             zebra_tf=TimeFrame.WEEK,
@@ -116,13 +116,14 @@ def get_chart_config(span_days: float) -> ChartConfig:
             show_month_label=True            # 🔧 Включаем отображение месяца
         )
     
-    # === Диапазон 3-12 месяцев (90-366 дней) ===
+    # === Диапазон 4-12 месяцев (120-366 дней) ===
     if span_days <= 366:
         return ChartConfig(
             bar_tf=TimeFrame.DAY,
             zebra_tf=TimeFrame.WEEK,
-            tick_step_days=14,               
-            tick_format="%d.%m"              
+            tick_step_days=99999,               
+            tick_format="%d",                # Обычные тики показывают число дня
+            show_month_label=True            # 🔧 ВКЛЮЧАЕМ: добавляет тики на 1-е число с названием месяца
         )
     
     # === Больше года: пропорциональный режим ===

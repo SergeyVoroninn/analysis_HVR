@@ -12,32 +12,48 @@ import shutil
 import argparse
 import hashlib
 import numpy as np
-from scipy.signal import find_peaks, iirnotch, butter, filtfilt
-from scipy.fft import fft, fftfreq
 from scipy.cluster.hierarchy import linkage, fcluster
 from dtaidistance import dtw
 from collections import Counter
 
+# ==============================================================================
+# 1. СНАЧАЛА добавляем корневую папку проекта (src) в пути поиска модулей
+# ==============================================================================
 script_dir = os.path.dirname(os.path.abspath(__file__))
+# Добавляем родительскую директорию (src) в начало sys.path
 sys.path.insert(0, os.path.dirname(script_dir))
 
+# ==============================================================================
+# 2. ТОЛЬКО ТЕПЕРЬ импортируем локальные модули из папки src
+# ==============================================================================
 try:
-    from models import get_session, BiometricTemplate, Athlete
-    MODELS_AVAILABLE = True
+    from app_constants import (
+        SORT_LARGE_GROUP_THRESHOLD, 
+        SORT_STRICT_THRESHOLD, 
+        BIOMETRIC_ERROR_DISTANCE,
+        ECG_FILE_EXTENSION
+    )
 except ImportError:
+    print("❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось найти файл 'app_constants.py' в папке src.")
+    print("Убедитесь, что он создан и содержит необходимые константы.")
+    sys.exit(1)
+
+try:
+    # ЦЕНТРАЛИЗОВАННЫЙ ИМПОРТ: Путь к БД, модели и алгоритмы биометрии
+    from database import get_db_path
+    from models import get_session, BiometricTemplate, Athlete
+    from ecg_biometrics import _parse_and_clean_ecg, _extract_features, cfg
+    MODELS_AVAILABLE = True
+except ImportError as e:
     MODELS_AVAILABLE = False
-    print("⚠️ Предупреждение: Не удалось импортировать 'models'. Сопоставление с БД будет пропущено.")
+    print(f"⚠️ Предупреждение: Не удалось импортировать модули ({e}). Сопоставление с БД будет пропущено.")
 
 # ==============================================================================
-# НАСТРОЙКИ ПОРОГОВ (Скорректированы по результатам диагностики)
+# НАСТРОЙКИ СКРИПТА (Только те, что не вынесены в app_constants)
 # ==============================================================================
-FS = 130.0
-BIOMETRIC_THRESHOLD = 0.15       # ✅ Оптимальный порог (Balanced Acc: 84.4%)
-MIN_GROUP_SIZE = 3               # Группы меньше этого размера идут в undetermined
-SUPPORTED_EXTENSIONS = ('.teamloggerh10', '.txt')
-MAX_PENALTY_DISTANCE = 10.0
-LARGE_GROUP_THRESHOLD = 50       # Порог для попытки умного разделения больших групп
-STRICT_THRESHOLD = 0.12          # ✅ Строгий порог для разделения внутри больших групп
+MIN_GROUP_SIZE = 3  # Группы меньше этого размера идут в undetermined
+# Используем константу из app_constants + возможное расширение .txt для совместимости
+SUPPORTED_EXTENSIONS = (ECG_FILE_EXTENSION, '.txt')
 
 def get_file_hash(filepath):
     hasher = hashlib.md5()
@@ -46,97 +62,26 @@ def get_file_hash(filepath):
             hasher.update(chunk)
     return hasher.hexdigest()
 
-def _parse_and_clean_ecg(raw_data, fs=FS):
-    lines = raw_data.split('\n')
-    in_ecg, samples = False, []
-    for line in lines:
-        line = line.strip()
-        if line == '[ECG]':
-            in_ecg = True
-            continue
-        if line.startswith('['):
-            in_ecg = False
-            continue
-        if in_ecg and ':' in line:
-            try:
-                data_part = line.split(':', 1)[1]
-                samples.extend(float(v) for v in data_part.split(',') if v.strip())
-            except (ValueError, IndexError):
-                pass
-
-    sig = np.asarray(samples, dtype=float)
-    if len(sig) < 20:
-        return np.array([])
-
-    nyq = 0.5 * fs
-    try:
-        if 0 < 50.0 < nyq:
-            b, a = iirnotch(50.0 / nyq, Q=30.0)
-            sig = filtfilt(b, a, sig)
-        if 0 < 0.5 < 50.0 < nyq:
-            b, a = butter(4, [0.5 / nyq, 50.0 / nyq], btype='band')
-            sig = filtfilt(b, a, sig)
-    except ValueError:
-        return np.array([])
-    return sig
-
-def _extract_features(ecg_clean, fs=FS):
-    min_r_height = np.mean(ecg_clean) + 1.5 * np.std(ecg_clean)
-    rough_peaks, _ = find_peaks(ecg_clean, distance=int(0.3 * fs), height=min_r_height)
-    window_samples, half_win = int(0.2 * fs), int(0.1 * fs)
-    shape_cycles, spectral_features = [], []
-
-    for rough_peak in rough_peaks:
-        if rough_peak - half_win > 0 and rough_peak + half_win < len(ecg_clean):
-            cycle = ecg_clean[rough_peak - half_win : rough_peak + half_win].copy()
-            center = half_win
-            local_region = cycle[max(0, center - 10) : min(len(cycle), center + 10)]
-            r_offset = np.argmax(local_region) - min(center, 10)
-            if r_offset != 0:
-                cycle = np.roll(cycle, -r_offset)
-
-            r_value, baseline = cycle[center], np.min(cycle[:max(1, int(0.05 * fs))])
-            if abs(r_value - baseline) > 1e-8:
-                r_norm = (cycle - baseline) / (r_value - baseline)
-                shape_cycles.append(r_norm)
-
-                yf, xf = fft(cycle), fftfreq(len(cycle), 1 / fs)
-                xf_pos, yf_pos = xf[xf > 0], np.abs(yf[xf > 0])
-                if np.max(yf_pos) > 1e-8:
-                    yf_pos /= np.max(yf_pos)
-
-                dom_freq = xf_pos[np.argmax(yf_pos[1:]) + 1] if len(yf_pos) > 1 else 0
-                masks = [
-                    (xf_pos >= 5) & (xf_pos < 15),
-                    (xf_pos >= 15) & (xf_pos < 30),
-                    (xf_pos >= 30) & (xf_pos < 50),
-                ]
-                energies = [np.trapezoid(yf_pos[m], xf_pos[m]) if np.any(m) else 0 for m in masks]
-                total = sum(energies)
-                if total > 1e-8:
-                    energies = [e / total for e in energies]
-                spectral_features.append([dom_freq / 50.0] + energies)
-
-    if len(shape_cycles) < 3 or len(spectral_features) < 3:
-        return None, None
-    return np.median(shape_cycles, axis=0), np.median(spectral_features, axis=0)
-
 def calculate_distance(data1, data2):
+    """Расчет расстояния с использованием весов и нормализации из центрального конфига."""
     try:
         shape_dist = dtw.distance_fast(data1['shape'].astype(np.double), data2['shape'].astype(np.double))
         spec_dist = np.sqrt(np.sum((data1['spec'] - data2['spec']) ** 2))
-        # Веса 0.6 и 0.4 показали лучшую сбалансированную точность в диагностике
-        dist = 0.6 * (shape_dist / 2.0) + 0.4 * (spec_dist / 0.5)
+        
+        # ИСПОЛЬЗУЕМ cfg для 100% синхронизации с приложением
+        dist = cfg.SHAPE_WEIGHT * (shape_dist / cfg.SHAPE_NORM_FACTOR) + \
+               cfg.SPEC_WEIGHT * (spec_dist / cfg.SPEC_NORM_FACTOR)
+               
         if not np.isfinite(dist):
-            return MAX_PENALTY_DISTANCE
+            return BIOMETRIC_ERROR_DISTANCE  # ✅ ИСПРАВЛЕНО: была несуществующая MAX_PENALTY
         return float(dist)
     except Exception:
-        return MAX_PENALTY_DISTANCE
+        return BIOMETRIC_ERROR_DISTANCE      # ✅ ИСПРАВЛЕНО: был хардкод 10.0
 
 def main():
     parser = argparse.ArgumentParser(description="Кластеризация и сопоставление ЭКГ с БД")
     parser.add_argument("source_folder", help="Имя исходной папки с файлами")
-    parser.add_argument("--db", dest="db_path", help="Путь к файлу базы данных SQLite", default=None)
+    parser.add_argument("--db", dest="db_path", help="Путь к файлу БД (по умолчанию используется системный get_db_path())", default=None)
     args = parser.parse_args()
 
     source_dir = os.path.join(script_dir, args.source_folder)
@@ -188,7 +133,7 @@ def main():
     valid_files_data = []
 
     # ==========================================================================
-    # ЭТАП 1: Извлечение признаков
+    # ЭТАП 1: Извлечение признаков (Используем импортированные функции)
     # ==========================================================================
     print("Этап 1: Извлечение признаков из файлов...")
     for idx, filename in enumerate(all_files, 1):
@@ -199,6 +144,7 @@ def main():
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 raw = f.read()
+            
             clean_ecg = _parse_and_clean_ecg(raw)
             if len(clean_ecg) == 0:
                 undetermined_files.append(filepath)
@@ -239,7 +185,7 @@ def main():
     # ==========================================================================
     print("Этап 3: Группировка файлов...")
     Z = linkage(condensed_dist_matrix, method='average')
-    labels = fcluster(Z, t=BIOMETRIC_THRESHOLD, criterion='distance')
+    labels = fcluster(Z, t=cfg.BIOMETRIC_THRESHOLD, criterion='distance')
 
     groups = {}
     for i, file_info in enumerate(valid_files_data):
@@ -253,17 +199,21 @@ def main():
     # ==========================================================================
     print("Этап 4: Копирование файлов и сопоставление с БД...")
     db_matches_report = {}
-    athlete_consolidation = {} # Для Этапа 5: athlete_id -> {'name': str, 'files': list, 'groups': list}
+    athlete_consolidation = {} 
     
-    if MODELS_AVAILABLE and args.db_path and os.path.exists(args.db_path):
-        print(f"  🔍 Загрузка шаблонов из БД: {args.db_path}")
-        session = get_session(args.db_path)
+    actual_db_path = args.db_path if args.db_path else get_db_path()
+    db_templates = []
+    
+    if MODELS_AVAILABLE and os.path.exists(actual_db_path):
+        print(f"  🔍 Загрузка шаблонов из БД: {actual_db_path}")
+        session = get_session(actual_db_path)
         db_templates = session.query(BiometricTemplate, Athlete).join(Athlete).all()
         print(f"  Найдено шаблонов в БД: {len(db_templates)}")
     else:
-        db_templates = []
-        if args.db_path:
-            print(f"  ⚠️ База данных по пути '{args.db_path}' не найдена.")
+        if MODELS_AVAILABLE:
+            print(f"  ⚠️ База данных не найдена по пути: {actual_db_path}. Сопоставление пропущено.")
+        else:
+            print("  ⚠️ Модули БД недоступны. Сопоставление пропущено.")
 
     copied_count = 0
     small_group_files = []
@@ -275,8 +225,8 @@ def main():
             small_group_files.extend(group_files)
             continue
 
-        # Умное разделение больших групп
-        if len(group_files) >= LARGE_GROUP_THRESHOLD and db_templates:
+        # ✅ ИСПРАВЛЕНО: Используем импортированную константу SORT_LARGE_GROUP_THRESHOLD
+        if len(group_files) >= SORT_LARGE_GROUP_THRESHOLD and db_templates:
             print(f"  🔎 Группа {cid} большая ({len(group_files)} файлов). Пробую разделить на подгруппы...")
             n_sub = len(group_files)
             sub_dist_matrix = []
@@ -286,8 +236,8 @@ def main():
                     sub_dist_matrix.append(dist)
             
             Z_sub = linkage(sub_dist_matrix, method='average')
-            # Используем STRICT_THRESHOLD (0.12) для более жесткого разделения
-            sub_labels = fcluster(Z_sub, t=STRICT_THRESHOLD, criterion='distance')
+            # ✅ ИСПРАВЛЕНО: Используем импортированную константу SORT_STRICT_THRESHOLD
+            sub_labels = fcluster(Z_sub, t=SORT_STRICT_THRESHOLD, criterion='distance')
             sub_cluster_sizes = Counter(sub_labels)
             
             valid_sub_groups = [sub_id for sub_id, count in sub_cluster_sizes.items() if count >= MIN_GROUP_SIZE]
@@ -340,11 +290,9 @@ def main():
                 except Exception:
                     continue
         
-        # Сравниваем с обновленным BIOMETRIC_THRESHOLD (0.15)
-        if min_dist <= BIOMETRIC_THRESHOLD and matched_athlete:
+        if min_dist <= cfg.BIOMETRIC_THRESHOLD and matched_athlete:
             best_match_name = f"✅ {best_match_name} (расстояние: {min_dist:.3f})"
             
-            # Добавляем в словарь для консолидации (Этап 5)
             ath_id = matched_athlete.id
             if ath_id not in athlete_consolidation:
                 athlete_consolidation[ath_id] = {
@@ -355,7 +303,7 @@ def main():
             athlete_consolidation[ath_id]['files'].extend([f['filepath'] for f in group_files])
             athlete_consolidation[ath_id]['groups'].append(cid)
         else:
-            best_match_name = f"Неизвестно (мин. расстояние: {min_dist:.3f} > порога {BIOMETRIC_THRESHOLD})"
+            best_match_name = f"Неизвестно (мин. расстояние: {min_dist:.3f} > порога {cfg.BIOMETRIC_THRESHOLD})"
 
         db_matches_report[cid] = {'count': len(group_files), 'match': best_match_name}
 

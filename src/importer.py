@@ -12,15 +12,26 @@ from database import get_db_path
 from models import get_session, Athlete, ECGRecord, ECGRaw
 from analysis import parse_rr, calc_metrics, calc_stress, filter_rr, compute_psd
 
-# ИМПОРТ ФУНКЦИЙ И КОНСТАНТ БИОМЕТРИИ
+# ИМПОРТ ФУНКЦИЙ И КОНФИГУРАЦИИ БИОМЕТРИИ
 from ecg_biometrics import (
     check_ownership_with_saved_template, 
     find_best_match,
     auto_update_template_if_needed,
-    BIOMETRIC_THRESHOLD,
-    MATCH_WARNING_THRESHOLD
+    cfg,
+    _are_relatives_by_name
 )
 
+# ИМПОРТ ЦВЕТОВОЙ ПАЛИТРЫ (Устранение хардкода цветов)
+from theme import (
+    COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
+    COL_ONE, COL_WARN, COL_CRIT, COL_ACCENT, COL_SELECTION
+)
+
+# ИМПОРТ КОНСТАНТ БИЗНЕС-ЛОГИКИ (Устранение хардкода порогов)
+from app_constants import (
+    IMPORT_RELATIVE_PROB_THRESHOLD,
+    IMPORT_UNKNOWN_PROB_THRESHOLD
+)
 
 # ==============================================================================
 # ДИАЛОГ ВЫБОРА АТЛЕТА ПРИ БИОМЕТРИЧЕСКОМ НЕСОВПАДЕНИИ
@@ -35,58 +46,59 @@ class BiometricChoiceDialog(tk.Toplevel):
         self.transient(parent)
         self.grab_set()
         self.result = None
-        self.configure(bg="#2b2b2b")
+        self.configure(bg=COL_BG_DARK)  # <-- ЗАМЕНЕНО
 
         tk.Label(self, text="Обнаружено расхождение биометрических данных", 
-                 font=("Segoe UI", 12, "bold"), bg="#2b2b2b", fg="#ffffff").pack(pady=10)
+                 font=("Segoe UI", 12, "bold"), bg=COL_BG_DARK, fg=COL_TEXT_LIGHT).pack(pady=10)  # <-- ЗАМЕНЕНО
         
         tk.Label(self, text="Если ни один из вариантов не подходит, выберите отмену импорта.", 
-                 font=("Segoe UI", 9), bg="#2b2b2b", fg="#ffb74d").pack(pady=(0, 10))
+                 font=("Segoe UI", 9), bg=COL_BG_DARK, fg=COL_WARN).pack(pady=(0, 10))  # <-- ЗАМЕНЕНО
 
-        # Текущий атлет
-        cur_frame = tk.Frame(self, bg="#1e3a5f", padx=15, pady=10)
+        # Текущий атлет (используем COL_ACCENT вместо #1e3a5f)
+        cur_frame = tk.Frame(self, bg=COL_ACCENT, padx=15, pady=10)
         cur_frame.pack(fill="x", padx=20, pady=5)
-        tk.Label(cur_frame, text=f"👤 Текущий выбор:", font=("Segoe UI", 10), bg="#1e3a5f", fg="#90caf9").pack(anchor="w")
-        tk.Label(cur_frame, text=current_name, font=("Segoe UI", 11, "bold"), bg="#1e3a5f", fg="#ffffff").pack(anchor="w")
-        tk.Label(cur_frame, text=f"Совпадение: {current_prob:.1f}%", font=("Segoe UI", 10), bg="#1e3a5f", fg="#ffb74d").pack(anchor="w")
+        tk.Label(cur_frame, text=f"👤 Текущий выбор:", font=("Segoe UI", 10), bg=COL_ACCENT, fg=COL_TEXT_LIGHT).pack(anchor="w")
+        tk.Label(cur_frame, text=current_name, font=("Segoe UI", 11, "bold"), bg=COL_ACCENT, fg=COL_SELECTION).pack(anchor="w")
+        tk.Label(cur_frame, text=f"Совпадение: {current_prob:.1f}%", font=("Segoe UI", 10), bg=COL_ACCENT, fg=COL_WARN).pack(anchor="w")
 
-        # Лучший кандидат
-        best_frame = tk.Frame(self, bg="#1b5e20", padx=15, pady=10)
+        # Лучший кандидат (используем COL_ONE вместо #1b5e20)
+        best_frame = tk.Frame(self, bg=COL_ONE, padx=15, pady=10)
         best_frame.pack(fill="x", padx=20, pady=5)
         
         relative_marker = " 👥 (возможно, родственник)" if is_relative else ""
         tk.Label(best_frame, text=f"🎯 Найдено лучшее совпадение{relative_marker}:", 
-                 font=("Segoe UI", 10), bg="#1b5e20", fg="#a5d6a7").pack(anchor="w")
-        tk.Label(best_frame, text=best_name, font=("Segoe UI", 11, "bold"), bg="#1b5e20", fg="#ffffff").pack(anchor="w")
+                 font=("Segoe UI", 10), bg=COL_ONE, fg=COL_TEXT_LIGHT).pack(anchor="w")
+        tk.Label(best_frame, text=best_name, font=("Segoe UI", 11, "bold"), bg=COL_ONE, fg=COL_SELECTION).pack(anchor="w")
         
         reliability_text = ""
-        if best_records < 10:
+        # Используем пороги из централизованной конфигурации биометрии
+        if best_records < cfg.RELIABILITY_LOW_THRESH:
             reliability_text = f" ⚠️ (Шаблон ненадежен: всего {best_records} записей)"
-            prob_color = "#ffab91"
-        elif best_records < 20:
+            prob_color = COL_CRIT
+        elif best_records < cfg.RELIABILITY_HIGH_THRESH:
             reliability_text = f" (Шаблон формируется: {best_records} записей)"
-            prob_color = "#ffffff"
+            prob_color = COL_SELECTION
         else:
             reliability_text = f" (Надежный шаблон: {best_records} записей)"
-            prob_color = "#ffffff"
+            prob_color = COL_SELECTION
 
         tk.Label(best_frame, text=f"Совпадение: {best_prob:.1f}%{reliability_text}", 
-                 font=("Segoe UI", 10, "bold"), bg="#1b5e20", fg=prob_color).pack(anchor="w")
+                 font=("Segoe UI", 10, "bold"), bg=COL_ONE, fg=prob_color).pack(anchor="w")
 
         # Кнопки
-        btn_frame = tk.Frame(self, bg="#2b2b2b")
+        btn_frame = tk.Frame(self, bg=COL_BG_DARK)
         btn_frame.pack(fill="x", padx=20, pady=15)
 
         tk.Button(btn_frame, text=f"✅ Привязать к: {best_name.split()[0]}", 
-                  command=lambda: self._close("best"), bg="#4caf50", fg="white", 
+                  command=lambda: self._close("best"), bg=COL_ONE, fg=COL_SELECTION,  # <-- ЗАМЕНЕНО (#4caf50)
                   font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2").pack(fill="x", pady=3)
 
         tk.Button(btn_frame, text=f"✓ Оставить у текущего: {current_name.split()[0]}", 
-                  command=lambda: self._close("current"), bg="#2196f3", fg="white", 
+                  command=lambda: self._close("current"), bg=COL_ACCENT, fg=COL_SELECTION,  # <-- ЗАМЕНЕНО (#2196f3)
                   font=("Segoe UI", 10), relief="flat", cursor="hand2").pack(fill="x", pady=3)
 
         tk.Button(btn_frame, text="❌ Ни один не подходит (Отменить импорт)", 
-                  command=lambda: self._close("cancel"), bg="#f44336", fg="white", 
+                  command=lambda: self._close("cancel"), bg=COL_CRIT, fg=COL_SELECTION,  # <-- ЗАМЕНЕНО (#f44336)
                   font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2").pack(fill="x", pady=3)
 
         self.bind("<Escape>", lambda e: self._close("cancel"))
@@ -95,25 +107,6 @@ class BiometricChoiceDialog(tk.Toplevel):
     def _close(self, result):
         self.result = result
         self.destroy()
-
-
-def _are_relatives_by_name(db_path, athlete_id_1, athlete_id_2):
-    """Проверяет, являются ли атлеты родственниками по фамилии."""
-    if not athlete_id_1 or not athlete_id_2:
-        return False
-    
-    session = get_session(db_path)
-    try:
-        a1 = session.query(Athlete).filter_by(id=athlete_id_1).first()
-        a2 = session.query(Athlete).filter_by(id=athlete_id_2).first()
-        
-        if not a1 or not a2:
-            return False
-        
-        return a1.last_name.lower() == a2.last_name.lower()
-    finally:
-        session.close()
-
 
 # ==============================================================================
 # ЛОГИКА ИМПОРТА
@@ -206,11 +199,11 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                 
                 should_show_dialog = False
                 
-                if best_relative and best_relative_prob >= 0.25:
+                if best_relative and best_relative_prob >= IMPORT_RELATIVE_PROB_THRESHOLD:
                     should_show_dialog = True
                     best_athlete = best_relative['athlete']
                     best_prob = best_relative_prob
-                elif best_athlete and best_prob >= 0.20:
+                elif best_athlete and best_prob >= IMPORT_UNKNOWN_PROB_THRESHOLD:
                     should_show_dialog = True
                 
                 if should_show_dialog:
@@ -242,8 +235,8 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                     if not messagebox.askyesno("Новый человек?", msg, parent=parent_window, icon='warning'):
                         return "cancelled", None
             
-            # ⚡ ПРОВЕРКА ПОГРАНИЧНОГО MATCH (используем константу, без хардкода)
-            elif status == "MATCH" and distance > MATCH_WARNING_THRESHOLD:
+            # ⚡ ПРОВЕРКА ПОГРАНИЧНОГО MATCH (используем конфиг, без хардкода)
+            elif status == "MATCH" and distance > cfg.MATCH_WARNING_THRESHOLD:
                 msg = (f"ℹ️ Запись импортирована, но сходство пограничное.\n\n"
                        f"Атлет: {current_athlete_name}\n"
                        f"Расстояние до шаблона: {distance:.3f}\n"

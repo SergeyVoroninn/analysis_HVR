@@ -11,6 +11,13 @@ class AppOrchestrator:
         self.settings = settings
         self._saved_range = None  # (lo, hi) в ординалах
 
+        # ✅ Получаем ссылку на корневое окно для прослушивания событий
+        self.root = heatmap.winfo_toplevel()
+        
+        # ✅ Подписываемся на сигнал об изменении данных в БД
+        self.root.bind("<<ECGDataChanged>>", self._on_ecg_data_changed)
+
+        # --- Существующие привязки ---
         self.heatmap.on_week_pick = self._handle_week_pick
         self.heatmap.on_week_dbl_pick = self._handle_week_dbl_pick
         self.heatmap.on_month_zoom = self._handle_month_zoom
@@ -25,10 +32,33 @@ class AppOrchestrator:
         self.heatmap.on_weekmap_day_dbl = self._handle_weekmap_day_dbl
         self.heatmap.on_weekmap_week_rmb = self._handle_weekmap_week_rmb
 
+    # ================= НОВЫЙ ОБРАБОТЧИК =================
+
+    def _on_ecg_data_changed(self, event=None):
+        """
+        Реагирует на сигнал <<ECGDataChanged>>.
+        Вызывается при удалении/добавлении записей ЭКГ.
+        """
+
+        # 1. Обновляем Heatmap (год и неделю)
+        # В heatmap.py уже есть метод refresh(), который вызывает _load_data() у карт
+        if hasattr(self.heatmap, 'refresh'):
+            self.heatmap.refresh()
+            
+        # 2. Обновляем Графики (Charts)
+        # В charts.py уже есть метод refresh(), который вызывает _reload() у каждого графика
+        if hasattr(self.charts, 'refresh'):
+            self.charts.refresh()
+            
+        # 3. Сбрасываем сохраненный диапазон зума, чтобы избежать конфликтов 
+        # между старым кэшем и новыми данными при следующем взаимодействии
+        self._saved_range = None 
+       
+
+    # ================= СУЩЕСТВУЮЩИЕ ОБРАБОТЧИКИ =================
+
     def _on_range_changed(self, lo, hi):
         self._saved_range = (lo, hi)
-
-    # ================= Обработчики событий =================
 
     def _handle_week_pick(self, w, d):
         self.heatmap.week_map.week_start = d
@@ -60,28 +90,22 @@ class AppOrchestrator:
 
     def _handle_chart_reset(self):
         """ПКМ: показать весь период данных, курсор на последнюю запись."""
-        # Сбрасываем сохраненный диапазон
         self._saved_range = None
         
-        # Находим последнюю запись среди всех графиков
         last_date = None
         for p in self.charts._plots:
             if p._end is not None:
                 if last_date is None or p._end > last_date:
                     last_date = p._end
         
-        # Перемещаем курсор и год на последнюю запись
         if last_date is not None:
             self.heatmap.set_cursor_by_date(last_date)
-            # Устанавливаем год на год последней записи
             self.heatmap.year = last_date.year
         
-        # Сбрасываем view графиков в None (покажет полный диапазон)
         for p in self.charts._plots:
             p.view = None
             p._reload()
         
-        # Сбрасываем heatmap в центр данных
         self.heatmap.reset_to_data_last()
 
     def _handle_chart_single_click(self, d):
@@ -99,7 +123,7 @@ class AppOrchestrator:
         mid_week = (week_start - self.heatmap.year_map._year_start).days // 7
         self.heatmap.week = mid_week
 
-    # ================= Публичные методы =================
+    # ================= ПУБЛИЧНЫЕ МЕТОДЫ =================
 
     def sync_athlete(self, aid):
         """Смена атлета с сохранением текущего масштаба (или сбросом в полный диапазон)."""
@@ -108,10 +132,8 @@ class AppOrchestrator:
         self.charts.athlete = aid
         
         if saved is not None:
-            # Если был установлен конкретный зум (колесо, двойной клик), применяем его
             self.charts.zoom = saved
         else:
-            # Если был сделан ПКМ (сброс), явно указываем графикам показать полный диапазон нового атлета
             for p in self.charts._plots:
                 p.view = None
                 

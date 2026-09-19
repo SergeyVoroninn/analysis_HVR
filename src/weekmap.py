@@ -8,6 +8,7 @@ import tkinter as tk
 
 from database import get_db_path
 from models import get_session, ECGRecord
+from app_constants import DOUBLE_CLICK_THRESHOLD_SEC
 from theme import (COL_BG_DARK, COL_TEXT_DIM, COL_WEEKDAY, COL_WEEKEND,
                    COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN, COL_CRIT)
 
@@ -192,7 +193,7 @@ class WeekHeatmap(tk.Frame):
 
         now = _time.monotonic()
         # Проверяем время И совпадение индекса ячейки. Это намного надежнее проверки пикселей!
-        is_dbl = (now - self._click_t < 0.45 and d == self._click_d and b == self._click_b)
+        is_dbl = (now - self._click_t < DOUBLE_CLICK_THRESHOLD_SEC and d == self._click_d and b == self._click_b)
         
         self._click_t = now
         self._click_d = d

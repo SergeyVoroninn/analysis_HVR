@@ -14,6 +14,7 @@ import tkinter as tk
 
 from database import get_db_path
 from models import get_session, ECGRecord
+from app_constants import DOUBLE_CLICK_THRESHOLD_SEC
 from theme import (COL_BG_DARK, COL_TEXT_DIM, COL_WEEKDAY, COL_WEEKEND,
                    COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN, COL_CRIT,
                    COL_SELECTION)
@@ -263,7 +264,7 @@ class YearHeatmap(tk.Canvas):
         if not (0 <= w < 53):
             return
         now = time.monotonic()
-        is_dbl = (now - self._click_t < 0.45 and w == self._click_w)
+        is_dbl = (now - self._click_t < DOUBLE_CLICK_THRESHOLD_SEC and w == self._click_w)
         self._click_t = now
         self._click_w = w
 

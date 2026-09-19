@@ -10,6 +10,8 @@ from models import get_session, ECGRecord, Athlete
 from analyzer import MetricAnalyzer
 from analysis_dialog import AnalysisDialog
 
+ECGLIST_DEFAULT_LIMIT = 100
+
 
 class ECGListWindow(tk.Toplevel):
     """Модальное окно со списком последних 100 записей ЭКГ."""
@@ -123,6 +125,9 @@ class ECGListWindow(tk.Toplevel):
                 session.delete(record)
                 session.commit()
                 self._load_data()  # Мгновенно перезагружаем список
+                # ✅ НОВОЕ: БРОСАЕМ СИГНАЛ через родителя (главное окно)
+                # Все, кто подписан на <<ECGDataChanged>>, получат уведомление
+                self.master.event_generate("<<ECGDataChanged>>", when="tail")                
         except Exception as e:
             session.rollback()
             messagebox.showerror("Ошибка", f"Не удалось удалить запись:\n{e}", parent=self)
@@ -141,7 +146,7 @@ class ECGListWindow(tk.Toplevel):
                 Athlete, ECGRecord.athlete_id == Athlete.id
             ).order_by(
                 ECGRecord.updated_at.desc()
-            ).limit(100)
+            ).limit(ECGLIST_DEFAULT_LIMIT)
             
             records = q.all()
             

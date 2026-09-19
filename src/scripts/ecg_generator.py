@@ -16,14 +16,29 @@ SRC_DIR = os.path.dirname(BASE_DIR)  # путь к src/
 sys.path.insert(0, SRC_DIR)
 
 # ============================================================
-# ЗАГРУЗКА ПРОФИЛЕЙ
+# ЦЕНТРАЛИЗОВАННЫЕ ИМПОРТЫ (Устранение хардкода)
 # ============================================================
-PROFILES_PATH = os.path.join(os.path.dirname(__file__), "ecg_profiles.yaml")
+from analysis import cfg
+from app_constants import ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION
+
+# ============================================================
+# КОНСТАНТЫ ГЕНЕРАТОРА (Вынесены из функций для читаемости)
+# ============================================================
+SAMPLES_PER_ROW = 73
+R_OFFSET_SAMPLES = 16      # Вершина R находится на фазе ~16 от начала комплекса
+COMPLEX_LEN_SAMPLES = 56   # P(0)..T(55)
+
+ACC_FS = 200               # Частота дискретизации акселерометра
+ACC_BASELINE = 31500       # Базовое значение ACC
+ACC_NOISE_RANGE = 300      # Диапазон шума ACC
+
+# Путь к профилям (использует константу из app_constants)
+PROFILES_PATH = os.path.join(BASE_DIR, ECG_PROFILES_YAML_PATH)
+
 
 def _load_active_profile() -> dict:
     """Загружает активный профиль из конфига."""
     if not os.path.exists(PROFILES_PATH):
-        # Возвращаем дефолтные значения если конфига нет
         return _default_profile()
     
     with open(PROFILES_PATH, 'r', encoding='utf-8') as f:
@@ -32,7 +47,6 @@ def _load_active_profile() -> dict:
     active_name = config.get('active_profile', 'default')
     profile = config.get('profiles', {}).get(active_name, {})
     
-    # Если профиль пустой — используем дефолт
     if not profile:
         return _default_profile()
     
@@ -75,7 +89,6 @@ version=1.0
 datetime={datetime_str}
 polar_id={device}"""
 
-    # === ЕДИНЫЙ источник RR: секция [RR] и R-пики в ЭКГ согласованы ===
     rr_list = create_rr_list(duration_seconds, mean_rr_ms, rmssd_ms)
 
     ecg_header = '[ECG]'
@@ -101,11 +114,10 @@ def create_ecg(duration_seconds, profile_params=None, rr_intervals=None):
     polar_epoch = time.mktime((2000, 1, 1, 0, 0, 0, 0, 0, 0))
     start_timestamp = int((time.time() - polar_epoch) * 1e9)
 
-    total_samples = int(duration_seconds * 130)
-    samples_per_row = 73
-    ns_per_row = int((samples_per_row / 130.0) * 1e9)
+    # ✅ ИСПОЛЬЗУЕМ cfg.DEFAULT_FS ВМЕСТО 130
+    total_samples = int(duration_seconds * cfg.DEFAULT_FS)
+    ns_per_row = int((SAMPLES_PER_ROW / cfg.DEFAULT_FS) * 1e9)
 
-    # Параметры профиля
     transient_duration = profile_params.get('transient_duration', 146)
     transient_start = profile_params.get('transient_start_value', 13148)
     transient_end = profile_params.get('transient_end_value', -150)
@@ -136,19 +148,15 @@ def create_ecg(duration_seconds, profile_params=None, rr_intervals=None):
 
     # --- 2. Сетка R-пиков ---
     if rr_intervals:
-        # R-пики по накопленным RR (мс → отсчёты @130 Гц)
         r_positions = []
         acc = 0
         for rr in rr_intervals:
-            acc += int(round(rr * 130 / 1000.0))
+            # ✅ ИСПОЛЬЗУЕМ cfg.DEFAULT_FS ВМЕСТО 130
+            acc += int(round(rr * cfg.DEFAULT_FS / 1000.0))
             if acc < total_samples:
                 r_positions.append(acc)
     else:
-        # Фолбэк: фиксированный период (старое поведение)
         r_positions = list(range(heart_rate_period, total_samples, heart_rate_period))
-
-    R_OFFSET = 16      # вершина R находится на фазе ~16 от начала комплекса
-    COMPLEX_LEN = 56   # P(0)..T(55)
 
     def wave(phase):
         if p_wave['start'] <= phase < p_wave['end']:
@@ -170,10 +178,10 @@ def create_ecg(duration_seconds, profile_params=None, rr_intervals=None):
 
     # --- 3. Накладываем комплексы на сетку R-пиков ---
     for r_pos in r_positions:
-        start = r_pos - R_OFFSET
-        if start < 40:                      # не бьём во время переходного процесса
+        start = r_pos - R_OFFSET_SAMPLES
+        if start < 40:
             continue
-        for phase in range(COMPLEX_LEN):
+        for phase in range(COMPLEX_LEN_SAMPLES):
             idx = start + phase
             if idx >= total_samples:
                 break
@@ -182,12 +190,12 @@ def create_ecg(duration_seconds, profile_params=None, rr_intervals=None):
     # --- 4. Форматирование строк ---
     ecg_rows = []
     current_timestamp = start_timestamp
-    for row_idx in range(math.ceil(total_samples / samples_per_row)):
-        begin = row_idx * samples_per_row
-        end = min(begin + samples_per_row, total_samples)
+    for row_idx in range(math.ceil(total_samples / SAMPLES_PER_ROW)):
+        begin = row_idx * SAMPLES_PER_ROW
+        end = min(begin + SAMPLES_PER_ROW, total_samples)
         row_values = [str(int(signal[i])) for i in range(begin, end)]
 
-        if end - begin == samples_per_row:
+        if end - begin == SAMPLES_PER_ROW:
             ecg_rows.append(f"{current_timestamp}:{','.join(row_values)},")
         else:
             ecg_rows.append(f"{current_timestamp}:{','.join(row_values)}")
@@ -218,7 +226,9 @@ def create_rr_list(duration_seconds, mean_rr_ms=None, rmssd_ms=None):
         noise = random.gauss(0, noise_sd)
 
         rr = mean_rr + resp + slow + noise
-        rr = max(0.5 * mean_rr, min(rr, 1.5 * mean_rr))
+        
+        # ✅ ИСПОЛЬЗУЕМ cfg.MIN_RR_MS и cfg.MAX_RR_MS ВМЕСТО 0.5 и 1.5
+        rr = max(cfg.MIN_RR_MS, min(rr, cfg.MAX_RR_MS))
         rr_int = int(round(rr))
         intervals.append(rr_int)
         acc += rr_int
@@ -232,11 +242,10 @@ def create_rr(duration_seconds, mean_rr_ms=None, rmssd_ms=None):
 
 def create_acc(duration_seconds):
     """
-    Генерирует плоский массив ACC (акселерометр, 200 Гц).
-    Базовое значение ~31500 с небольшим шумом.
+    Генерирует плоский массив ACC (акселерометр).
     """
-    count = int(duration_seconds * 200)
-    acc_samples = [str(int(31500 + random.randint(-300, 300)))
+    count = int(duration_seconds * ACC_FS)
+    acc_samples = [str(int(ACC_BASELINE + random.randint(-ACC_NOISE_RANGE, ACC_NOISE_RANGE)))
                    for _ in range(count)]
     return ",".join(acc_samples)
 
@@ -248,11 +257,12 @@ if __name__ == '__main__':
         duration_seconds=300.0
     )
    
-
-    with open('test_ecg_record.teamloggerh10', 'w', encoding='utf-8') as f:
+    # ✅ ИСПОЛЬЗУЕМ ECG_FILE_EXTENSION ВМЕСТО '.teamloggerh10'
+    test_filename = f"test_ecg_record{ECG_FILE_EXTENSION}"
+    with open(test_filename, 'w', encoding='utf-8') as f:
         f.write(test_record)
 
-    print("Тестовая запись сохранена в test_ecg_record.teamloggerh10")
+    print(f"Тестовая запись сохранена в {test_filename}")
     print(f"Размер: {len(test_record)} символов")
 
     # === АНАЛИЗ КАЧЕСТВА ===
@@ -261,6 +271,8 @@ if __name__ == '__main__':
     print('='*50)
 
     try:
+        # Примечание: calibrate_ecg может отсутствовать в некоторых сборках, 
+        # поэтому импорт обернут в try/except
         from calibrate_ecg import analyze_ecg_quality
         from analysis import parse_rr, calc_metrics, calc_stress, stress_level
         
@@ -277,7 +289,6 @@ if __name__ == '__main__':
             art = quality['artifact_pct']
             drift = quality['baseline_drift']
 
-            # === РАСЧЁТ SCORE ===
             snr_t = target['min_snr']
             snr_score = 40 + min(20, (snr - snr_t) * 2) if snr >= snr_t else max(0, 40 - (snr_t - snr) * 4)
 
@@ -289,7 +300,6 @@ if __name__ == '__main__':
 
             total_score = min(100, max(0, snr_score + art_score + drift_score))
 
-            # === ВЫВОД КАЧЕСТВА СИГНАЛА ===
             print(f"  Время записи:   {time.strftime('%Y.%m.%d %H:%M:%S')}")
             print(f"  SNR:            {snr:7.2f} дБ   (цель ≥{snr_t:.1f})   → {snr_score:5.1f}/60")
             print(f"  Артефакты:      {art:7.2f} %    (цель ≤{art_t:.1f}%) → {art_score:5.1f}/35")
@@ -297,7 +307,6 @@ if __name__ == '__main__':
             print(f"  Шум (σ):        {quality['noise_level']:7.3f}")
             print(f"  Длина сигнала:  {quality['analyzed_length']} отсчётов")
 
-            # === ПОЛНЫЙ АНАЛИЗ ВРС ===
             rr = parse_rr(test_record)
             if rr and len(rr) > 10:
                 metrics = calc_metrics(rr)
@@ -307,7 +316,6 @@ if __name__ == '__main__':
                 print("  Метрики вариабельности сердечного ритма")
                 print(f"{'─'*50}")
                 
-                # Основные параметры
                 print(f"  Mean HR:        {metrics.get('mean_hr', 0):7.1f} уд/мин")
                 print(f"  Mean RR:        {metrics.get('mean_rr', 0):7.1f} мс")
                 print(f"  SDNN:           {metrics.get('sdnn', 0):7.1f} мс")
@@ -316,11 +324,9 @@ if __name__ == '__main__':
                 if 'pnn50' in metrics:
                     print(f"  pNN50:          {metrics['pnn50']:7.2f} %")
                 
-                # TP (суммарная мощность)
                 tp = metrics.get('sdnn', 0) ** 2
                 print(f"  TP (SDNN²):     {tp:7.0f} мс²")
                 
-                # Спектральные мощности (если доступны)
                 if all(k in metrics for k in ('vlf', 'lf', 'hf')):
                     print(f"\n  Спектральные мощности:")
                     print(f"    VLF (0.003-0.04 Гц): {metrics['vlf']:6.0f} мс²")
@@ -329,7 +335,6 @@ if __name__ == '__main__':
                     if metrics['hf'] > 0:
                         print(f"    LF/HF ratio:         {metrics['lf']/metrics['hf']:6.2f}")
                 
-                # === ИНДЕКС СТРЕССА ===
                 if stress and 'si' in stress:
                     print(f"\n{'─'*50}")
                     print("  Индекс стресса (Баевского)")
@@ -339,45 +344,25 @@ if __name__ == '__main__':
                     try:
                         level = stress_level(si)
                     except Exception:
-                        if si < 50:
-                            level = 'низкий'
-                        elif si < 100:
-                            level = 'умеренный'
-                        elif si < 200:
-                            level = 'высокий'
-                        else:
-                            level = 'перенапряжение'
+                        if si < 50: level = 'низкий'
+                        elif si < 100: level = 'умеренный'
+                        elif si < 200: level = 'высокий'
+                        else: level = 'перенапряжение'
                     
-                    icons = {
-                        'низкий': '🟢',
-                        'умеренный': '🟡',
-                        'высокий': '🟠',
-                        'перенапряжение': '🔴',
-                    }
+                    icons = {'низкий': '🟢', 'умеренный': '🟡', 'высокий': '🟠', 'перенапряжение': '🔴'}
                     
                     print(f"  ИС:               {si:7.1f} усл.ед.")
-                    
-                    if 'amo' in stress:
-                        print(f"  AMo (мода):       {stress['amo']:7.1f} %")
-                    if 'mo' in stress:
-                        print(f"  Mo (мода):        {stress['mo']:7.1f} мс")
-                    if 'mxmn' in stress:
-                        print(f"  MxDMn (размах):   {stress['mxmn']:7.1f} мс")
-                    
+                    if 'amo' in stress: print(f"  AMo (мода):       {stress['amo']:7.1f} %")
+                    if 'mo' in stress: print(f"  Mo (мода):        {stress['mo']:7.1f} мс")
+                    if 'mxmn' in stress: print(f"  MxDMn (размах):   {stress['mxmn']:7.1f} мс")
                     print(f"  Уровень:          {icons.get(level, '⚪')} {level.upper()}")
                     
-                    # Интерпретация
                     print(f"\n  Интерпретация:")
-                    if si < 50:
-                        print("    ✅ Отличная адаптация, высокий резерв")
-                    elif si < 100:
-                        print("    ✅ Норма, адекватная нагрузка")
-                    elif si < 200:
-                        print("    ⚠️  Напряжение регуляторных систем")
-                    elif si < 500:
-                        print("    ⚠️  Выраженное напряжение")
-                    else:
-                        print("    ❌ Критическое перенапряжение!")
+                    if si < 50: print("    ✅ Отличная адаптация, высокий резерв")
+                    elif si < 100: print("    ✅ Норма, адекватная нагрузка")
+                    elif si < 200: print("    ⚠️  Напряжение регуляторных систем")
+                    elif si < 500: print("    ⚠️  Выраженное напряжение")
+                    else: print("    ❌ Критическое перенапряжение!")
                 else:
                     print(f"\n  ⚠️  ИС не рассчитан")
                 
@@ -385,19 +370,14 @@ if __name__ == '__main__':
             else:
                 print("\n  ⚠️  Недостаточно RR-интервалов для полного анализа")
 
-            # === ИТОГОВЫЙ SCORE ===
             print(f"\n{'─'*50}")
             print(f"  КАЧЕСТВО: {total_score:5.1f}%")
             print(f"{'─'*50}")
 
-            if total_score >= 80:
-                print("✅ ОТЛИЧНО — данные готовы к анализу")
-            elif total_score >= 60:
-                print("⚠️  ХОРОШО — небольшие замечания")
-            elif total_score >= 40:
-                print("⚠️  УДОВЛЕТВОРИТЕЛЬНО — рекомендуется переснять")
-            else:
-                print("❌ ПЛОХО — необходимо переснять запись")
+            if total_score >= 80: print("✅ ОТЛИЧНО — данные готовы к анализу")
+            elif total_score >= 60: print("⚠️  ХОРОШО — небольшие замечания")
+            elif total_score >= 40: print("⚠️  УДОВЛЕТВОРИТЕЛЬНО — рекомендуется переснять")
+            else: print("❌ ПЛОХО — необходимо переснять запись")
         else:
             print("⚠️  Не удалось проанализировать качество")
 

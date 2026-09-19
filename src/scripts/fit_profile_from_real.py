@@ -8,6 +8,8 @@ import os
 import argparse
 import numpy as np
 import yaml
+from analysis import cfg
+from app_constants import ECG_PROFILES_YAML_PATH, ECG_FILE_EXTENSION
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROFILES_PATH = os.path.join(BASE_DIR, "ecg_profiles.yaml")
@@ -55,7 +57,7 @@ def fit(signal, rr):
 
     # --- 1. Переходный процесс ---
     base = _rolling_median(signal, 231)
-    med = float(np.median(base[500:2000]))
+    med = float(np.median(base[cfg.MIN_RR_MS:cfg.MAX_RR_MS]))
     near = np.where(np.abs(base - med) < 250)[0]
     tr_dur = int(max(50, near[0])) if len(near) else 146
     p['transient_duration'] = tr_dur

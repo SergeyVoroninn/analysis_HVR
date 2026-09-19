@@ -19,7 +19,7 @@ sys.path.insert(0, SRC_DIR)
 
 from schedule_engine import build_schedules, load_config
 from ecg_generator import create_record
-from analysis import parse_rr, calc_metrics, calc_stress, compute_psd  # <-- ДОБАВЛЕНО compute_psd
+from analysis import parse_rr, calc_metrics, calc_stress, compute_psd
 from database import get_db_path
 from models import get_session, Athlete, ECGRecord, ECGRaw
 
@@ -102,7 +102,6 @@ def prepare_database(config_path="config.yaml"):
                 "first_name":          athlete["first_name"],
                 "middle_name":         athlete["middle_name"],
                 "gender":              athlete["gender"],
-                # ИСПРАВЛЕНО: преобразуем строку 'YYYY-MM-DD' в объект datetime.date
                 "birth_date":          datetime.date.fromisoformat(athlete["birth_date"]) if isinstance(athlete["birth_date"], str) else athlete["birth_date"],
                 "height_cm":           athlete["height_cm"],
                 "weight_kg":           athlete["weight_kg"],
@@ -144,18 +143,17 @@ def prepare_database(config_path="config.yaml"):
                 tp_value = bands.get("tp")
                 # ================
 
-                # 1) Создаём лёгкую запись (без raw)
+                # 1) Создаём запись (profile УДАЛЁН)
                 rec = ECGRecord(
                     athlete_id=athlete["id"],
                     recorded_at=ts.isoformat(sep=" "),
                     duration_seconds=duration,
-                    profile=profile_name,
                     mean_hr=m["mean_hr"],
                     rmssd=m["rmssd"],
                     sdnn=m["sdnn"],
                     status=m["status"],
                     stress_si=s["si"] if s else None,
-                    tp=tp_value,  # <-- ТЕПЕРЬ TP СОХРАНЯЕТСЯ
+                    tp=tp_value,
                 )
                 session.add(rec)
                 session.flush()  # ← получаем rec.id
@@ -209,26 +207,27 @@ def verify_database(db_path):
         from sqlalchemy.orm import aliased
         AthleteAlias = aliased(Athlete)
 
+        # ✅ profile УДАЛЁН из запроса и группировки
         rows = (
             session.query(
                 AthleteAlias.last_name,
                 AthleteAlias.first_name,
                 AthleteAlias.polar_id,
-                ECGRecord.profile,
                 func.count(ECGRecord.id).label("cnt"),
                 func.avg(ECGRecord.rmssd).label("avg_rmssd"),
                 func.avg(ECGRecord.stress_si).label("avg_si"),
             )
             .join(ECGRecord, ECGRecord.athlete_id == AthleteAlias.id)
-            .group_by(AthleteAlias.id, ECGRecord.profile)
+            .group_by(AthleteAlias.id)
             .order_by(func.count(ECGRecord.id).desc())
             .all()
         )
 
-        print(f"\n{'ФИО':22} | {'polar_id':8} | {'Профиль':15} | Зап | RMSSD |  ИС")
-        print("-" * 90)
-        for last, first, pid, prof, cnt, rmssd, si in rows:
-            print(f"{last} {first:12} | {pid:8} | {prof or '':15} | "
+        # ✅ Заголовок таблицы обновлён (без колонки "Профиль")
+        print(f"\n{'ФИО':22} | {'polar_id':8} | Зап | RMSSD |  ИС")
+        print("-" * 70)
+        for last, first, pid, cnt, rmssd, si in rows:
+            print(f"{last} {first:12} | {pid:8} | "
                   f"{cnt:3} | {rmssd or 0:5.0f} | {si or 0:3.0f}")
 
     finally:
