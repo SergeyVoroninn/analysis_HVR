@@ -20,7 +20,7 @@ import time as _time
 
 import tkinter as tk
 
-from theme import COL_BG_DARK
+from theme import COL_BG_DARK, COL_SELECTION
 
 DEBUG = os.environ.get("HVR_DEBUG") == "1"
 _T0 = _time.time()
@@ -148,7 +148,7 @@ class ResizeController:
         for b, (w, h), y in zip(self.blocks, sizes, ys):
             for x1, y1, x2, y2 in b.ghost_rects(w, h):
                 self._rect_items.append(self._overlay.create_rectangle(
-                    x1, y1 + y, x2, y2 + y, outline="white", tags="ghost"))
+                    x1, y1 + y, x2, y2 + y, outline=COL_SELECTION, tags="ghost"))
         for b in self.blocks:
             b.ghost_shown()
         _dbg(f"GHOST+ {sizes}")

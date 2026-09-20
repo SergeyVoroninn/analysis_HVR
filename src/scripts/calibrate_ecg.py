@@ -173,35 +173,33 @@ def _adapt_profile(profile: Dict, quality: Dict, target: Dict) -> Dict:
     return p
 
 
-def _compute_score(quality: Dict, target: Dict) -> float:
-    """Вычисляет интегральный score качества (0-100)."""
-    score = 0
+def score_quality(quality: Dict, target: Dict) -> Dict:
+    """Вычисляет интегральный score качества ЭКГ (0-100) и покомпонентные баллы.
 
-    # SNR (до 40 баллов)
+    Единый источник формулы для calibrate_ecg.py и ecg_generator.py.
+    Возвращает {'total', 'snr', 'art', 'drift'}.
+    """
     snr_target = target.get('min_snr', DEFAULT_QUALITY_TARGETS['min_snr'])
     snr = quality['snr']
     if snr >= snr_target:
-        score += 40 + min(20, (snr - snr_target) * 2)
+        snr_score = 40 + min(20, (snr - snr_target) * 2)
     else:
-        score += max(0, 40 - (snr_target - snr) * 4)
+        snr_score = max(0, 40 - (snr_target - snr) * 4)
 
-    # Артефакты (до 35 баллов)
     art_target = target.get('max_artifact_pct', DEFAULT_QUALITY_TARGETS['max_artifact_pct'])
     art = quality['artifact_pct']
-    if art <= art_target:
-        score += 35
-    else:
-        score += max(0, 35 - (art - art_target) * 7)
+    art_score = 35 if art <= art_target else max(0, 35 - (art - art_target) * 7)
 
-    # Дрейф (до 25 баллов)
     drift_target = target.get('max_baseline_drift', DEFAULT_QUALITY_TARGETS['max_baseline_drift'])
     drift = quality['baseline_drift']
-    if drift <= drift_target:
-        score += 25
-    else:
-        score += max(0, 25 - (drift - drift_target) * 0.5)
+    drift_score = 25 if drift <= drift_target else max(0, 25 - (drift - drift_target) * 0.5)
 
-    return min(100, max(0, score))
+    return {
+        'total': min(100, max(0, snr_score + art_score + drift_score)),
+        'snr': snr_score,
+        'art': art_score,
+        'drift': drift_score,
+    }
 
 
 # ============================================================
@@ -235,7 +233,7 @@ def calibrate_profile(profile_name: str, profiles: Dict,
             print("  ❌ Не удалось проанализировать")
             continue
 
-        score = _compute_score(quality, target)
+        score = score_quality(quality, target)['total']
 
         print(f"  SNR:     {quality['snr']:6.2f} дБ  (цель: ≥{target.get('min_snr', DEFAULT_QUALITY_TARGETS['min_snr'])})")
         print(f"  Арт-ты:  {quality['artifact_pct']:5.2f}%   (цель: ≤{target.get('max_artifact_pct', DEFAULT_QUALITY_TARGETS['max_artifact_pct'])}%)")

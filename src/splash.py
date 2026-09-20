@@ -6,9 +6,14 @@ import os
 import customtkinter as ctk
 import tkinter as tk
 
-from theme import COL_BG_DARK, COL_TEXT_LIGHT, COL_ACCENT, COL_TEXT_DIM, COL_VERSION
+from theme import COL_BG_DARK, COL_TEXT_LIGHT, COL_ACCENT, COL_TEXT_DIM, COL_VERSION, COL_SELECTION
+from app_constants import SPLASH_LOGO_FILENAME
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+SPLASH_LOGO_TARGET_PX = 90    # Целевая высота логотипа (подпись)
+SPLASH_ANIM_STEPS = 40        # Шагов в фазе анимации прогресс-бара
+SPLASH_ANIM_INTERVAL_MS = 40  # Интервал кадров анимации (мс)
 
 
 class SplashScreen(ctk.CTkToplevel):
@@ -38,7 +43,7 @@ class SplashScreen(ctk.CTkToplevel):
         self.logo.pack(pady=(40, 10))
         self.logo.create_oval(5, 5, 75, 75, fill=COL_ACCENT, outline="")
         self.logo.create_line(20, 40, 30, 40, 35, 25, 42, 55, 49, 40, 60, 40,
-                              fill="white", width=3, smooth=True)
+                              fill=COL_SELECTION, width=3, smooth=True)
 
         ctk.CTkLabel(self, text="Анализ ВСР",
                      font=ctk.CTkFont(size=22, weight="bold"),
@@ -79,12 +84,12 @@ class SplashScreen(ctk.CTkToplevel):
             self.master.update()
 
     def _load_corner_logo(self):
-        logo_path = os.path.join(BASE_DIR, "logo21.png")
+        logo_path = os.path.join(BASE_DIR, SPLASH_LOGO_FILENAME)
         if not os.path.exists(logo_path):
             return
         try:
             img = tk.PhotoImage(file=logo_path)
-            img = img.subsample(max(1, img.width() // 90))
+            img = img.subsample(max(1, img.width() // SPLASH_LOGO_TARGET_PX))
             self._corner_logo = img
             tk.Label(self, image=img, bg=COL_BG_DARK, bd=0,
                      highlightthickness=0).place(relx=1.0, rely=0.0,
@@ -97,7 +102,7 @@ class SplashScreen(ctk.CTkToplevel):
         if self._manual_mode:
             return  # Ручное управление включено — анимация больше не нужна
             
-        steps = 40
+        steps = SPLASH_ANIM_STEPS
         phase = step % (2 * steps)
         v = phase / steps if phase < steps else 2 - phase / steps
         try:
@@ -105,7 +110,7 @@ class SplashScreen(ctk.CTkToplevel):
         except Exception:
             return
         self._after_ids.append(
-            self.after(40, lambda: self._animate_progress(step + 1)))
+            self.after(SPLASH_ANIM_INTERVAL_MS, lambda: self._animate_progress(step + 1)))
 
     def close_splash(self):
         self._close()

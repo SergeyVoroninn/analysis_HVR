@@ -225,10 +225,12 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                     
                     parent_window.wait_window(dialog)
                     
+                    # 🔧 ИЗМЕНЕНО: Любое значение, кроме "best" (включая None при закрытии крестиком), = отмена
                     if dialog.result == "best":
                         aid = best_athlete.id
-                    elif dialog.result == "cancel":
+                    else:
                         return "cancelled", None
+                    
                 else:
                     msg = (f"⚠️ Биометрическое сходство низкое!\n\n"
                            f"Вероятность совпадения с текущим атлетом: {prob*100:.1f}%\n"
@@ -324,7 +326,7 @@ def import_ecg(parent, db_path, athletes, selected_athlete, status_cb):
             updated_athletes.add(aid)
             
         total = sum(stats.values())
-        if total % 10 == 0 or total == len(paths):
+        if total % IMPORT_PROGRESS_STEP == 0 or total == len(paths):
             status_cb(f"Импорт... {total}/{len(paths)}")
 
     # Фоновый расчёт шаблонов

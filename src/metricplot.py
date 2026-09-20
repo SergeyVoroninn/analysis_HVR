@@ -16,7 +16,11 @@ from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
 from timeframe import TimeFrame, get_chart_config, calc_proportional_bar_size, pick_year_step
 from timeframe import WEEKDAYS_RU, MONTHS_RU  # Импортируем константы локализации
 from analyzer import MetricAnalyzer
-from app_constants import HOVER_TOLERANCE_ORDINAL, DOUBLE_CLICK_THRESHOLD_SEC, MAX_ZOOM_ORDINALS, MAX_YEAR, SINGLE_CLICK_DELAY_METRICPLOT_MS  # <-- ДОБАВЛЕНО
+from app_constants import (HOVER_TOLERANCE_ORDINAL, DOUBLE_CLICK_THRESHOLD_SEC,
+                           MAX_ZOOM_ORDINALS, MAX_YEAR, SINGLE_CLICK_DELAY_METRICPLOT_MS,
+                           PAN_REDRAW_MS, ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR,
+                           MIN_ZOOM_SPAN_DAYS, DOUBLE_CLICK_PX_TOLERANCE,
+                           MID_WEEK_OFFSET_DAYS)
 
 class _FrozenCanvas(FigureCanvasTkAgg):
     def __init__(self, figure, master=None):
@@ -70,7 +74,6 @@ class MetricPlot(tk.Frame):
         self.on_single_click = None
         self._draw_timer = None
         self._pending_view = None
-        self._pan_throttle_ms = 33
 
         self.analyzer = MetricAnalyzer(self.db_path) if self.db_path else None
         
@@ -257,9 +260,9 @@ class MetricPlot(tk.Frame):
         if v is None:
             return
         lo, hi = v
-        factor = 0.85 if event.button == "up" else 1.18
+        factor = ZOOM_IN_FACTOR if event.button == "up" else ZOOM_OUT_FACTOR
         width_px = max(100, self.ax.get_window_extent().width)
-        min_span = 1.0
+        min_span = MIN_ZOOM_SPAN_DAYS
         new_span = min(MAX_ZOOM_ORDINALS, max(min_span, (hi - lo) * factor))
         ratio = (event.xdata - lo) / max(1e-9, hi - lo)
         new_lo = event.xdata - ratio * new_span
@@ -280,8 +283,8 @@ class MetricPlot(tk.Frame):
 
         now = _time.monotonic()
         is_dbl = (now - self._click_t < DOUBLE_CLICK_THRESHOLD_SEC and
-                  abs(event.x - self._click_x) < 6 and
-                  abs(event.y - self._click_y) < 6)
+                  abs(event.x - self._click_x) < DOUBLE_CLICK_PX_TOLERANCE and
+                  abs(event.y - self._click_y) < DOUBLE_CLICK_PX_TOLERANCE)
         self._click_t = now
         self._click_x = event.x
         self._click_y = event.y
@@ -329,7 +332,7 @@ class MetricPlot(tk.Frame):
             if self._draw_timer is not None:
                 self.after_cancel(self._draw_timer)
             
-            self._draw_timer = self.after(16, self._apply_pending_view)
+            self._draw_timer = self.after(PAN_REDRAW_MS, self._apply_pending_view)
             return
         
         if self._mouse_on_axes and event.xdata is not None:
@@ -356,7 +359,7 @@ class MetricPlot(tk.Frame):
             return
         lo, hi = v
         span = hi - lo
-        center = self._ord(week_start_date + datetime.timedelta(days=3))
+        center = self._ord(week_start_date + datetime.timedelta(days=MID_WEEK_OFFSET_DAYS))
         self._commit_view(center - span / 2, center + span / 2)
 
     def _on_axes_enter(self, event):

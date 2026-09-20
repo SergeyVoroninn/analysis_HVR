@@ -14,7 +14,7 @@ import tkinter as tk
 
 from database import get_db_path
 from models import get_session, ECGRecord
-from app_constants import DOUBLE_CLICK_THRESHOLD_SEC, SINGLE_CLICK_DELAY_YEARMAP_MS
+from app_constants import DOUBLE_CLICK_THRESHOLD_SEC, SINGLE_CLICK_DELAY_YEARMAP_MS, WHEEL_LOCK_SEC
 from theme import (COL_BG_DARK, COL_TEXT_DIM, COL_WEEKDAY, COL_WEEKEND,
                    COL_FUTURE, COL_ONE, COL_MULTI, COL_WARN, COL_CRIT,
                    COL_SELECTION)
@@ -322,7 +322,7 @@ class YearHeatmap(tk.Canvas):
         
         # 0.2 секунды (200 мс) — идеально: гасит двойные срабатывания мыши, 
         # но не создает ощущения задержки ("как только колесо останавливалось")
-        self._wheel_lock = now + 0.2
+        self._wheel_lock = now + WHEEL_LOCK_SEC
         
         # Кроссплатформенное определение направления прокрутки
         if hasattr(event, 'delta'):

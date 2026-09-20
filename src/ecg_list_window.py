@@ -1,11 +1,11 @@
 """
-ecg_list_window.py — окно со списком последних 100 записей ЭКГ.
+ecg_list_window.py — окно со списком последних ECGLIST_DEFAULT_LIMIT записей ЭКГ.
 Сортировка жестко задана: по дате обновления (убывание).
 """
 import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox
-from theme import COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_CRIT
+from theme import COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_CRIT, COL_SELECTION
 from models import get_session, ECGRecord, Athlete
 from analyzer import MetricAnalyzer
 from analysis_dialog import AnalysisDialog
@@ -13,11 +13,11 @@ from app_constants import ECGLIST_DEFAULT_LIMIT
 
 
 class ECGListWindow(tk.Toplevel):
-    """Модальное окно со списком последних 100 записей ЭКГ."""
+    """Модальное окно со списком последних ECGLIST_DEFAULT_LIMIT записей ЭКГ."""
     
     def __init__(self, parent, db_path=None, athlete_id=None):
         super().__init__(parent)
-        self.title("📋 Последние 100 записей ЭКГ")
+        self.title(f"📋 Последние {ECGLIST_DEFAULT_LIMIT} записей ЭКГ")
         self.configure(bg=COL_BG_DARK)
         self.geometry("1050x600")
         self.resizable(True, True)
@@ -51,7 +51,7 @@ class ECGListWindow(tk.Toplevel):
             text="🗑 Удалить запись",
             command=self._delete_record,
             bg=COL_CRIT,
-            fg="white",
+            fg=COL_SELECTION,
             font=("Segoe UI", 10, "bold"),
             padx=15,
             relief="flat",

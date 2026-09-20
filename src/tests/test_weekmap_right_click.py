@@ -53,7 +53,11 @@ def test_weekmap_right_click_sync_and_persistence(gui_root):
         p._athlete = "athlete_A"
         p._start = datetime.date(2024, 1, 1)
         p._end = datetime.date(2024, 12, 31)
-        p._values = [(p._ord(datetime.datetime(2024, 6, 1)), 50)]
+            
+        # ✅ ИСПРАВЛЕНИЕ: Добавляем 3-й элемент (строку с датой)
+        dt1 = datetime.datetime(2024, 6, 1)
+        p._values = [(p._ord(dt1), 50.0, f"{dt1:%Y-%m-%d %H:%M:%S}")]
+            
         p._loading = False
         p._draw()
     root.update()

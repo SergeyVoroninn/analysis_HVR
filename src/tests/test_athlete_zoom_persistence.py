@@ -16,26 +16,22 @@ from charts import ChartsPanel, TP_METRIC
 from orchestrator import AppOrchestrator
 
 
-def _inject_and_draw(charts, athlete_id, days_ago_start, days_ago_end):
-    """Инжекция данных и принудительная отрисовка."""
-    today = datetime.date.today()
-    start_date = today - datetime.timedelta(days=days_ago_start)
-    end_date = today - datetime.timedelta(days=days_ago_end)
-    
+def _inject_and_draw(charts, athlete_id, days, offset):
     for p in charts._plots:
-        p._athlete = athlete_id
-        p._start = start_date
-        p._end = end_date
-        
-        # ⚡ ИСПРАВЛЕНИЕ: Преобразуем datetime в ординал (float) перед записью
-        dt_start = datetime.datetime.combine(start_date, datetime.time(12, 0))
-        dt_end = datetime.datetime.combine(end_date, datetime.time(12, 0))
-        
-        p._values = [
-            (p._ord(dt_start), 50),
-            (p._ord(dt_end), 50)
-        ]
-        p._loading = False
+        p._values = []
+        for i in range(days):
+            ordinal = 738000 + offset + i
+            
+            # ✅ ИСПРАВЛЕНИЕ: Используем f-string для надежного форматирования даты
+            dt = datetime.date.fromordinal(int(ordinal))
+            recorded_at = f"{dt:%Y-%m-%d} 12:00:00"
+            
+            # Теперь кортеж содержит ровно 3 элемента, как в реальной БД
+            p._values.append((ordinal, 100.0, recorded_at))
+            
+        if p._values:
+            p._start = datetime.date.fromordinal(int(p._values[0][0]))
+            p._end = datetime.date.fromordinal(int(p._values[-1][0]))
         p._draw()
 
 

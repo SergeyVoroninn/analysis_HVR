@@ -62,6 +62,7 @@ class AnalysisConfig:
     MAX_RR_MS = 1500                # Максимальный физиологический RR (40 уд/мин)
     PEAK_PROMINENCE_RATIO = 0.4     # Доля от размаха сигнала для prominence
     DEFAULT_RR_REPLACEMENT_MS = 800.0 # Значение по умолчанию при пропуске пика
+    RR_REPLACE_MEDIAN_WINDOW = 10   # Окно медианы для подмены выпадающего RR
 
     # --- Пороги статуса записи ---
     RMSSD_CRIT_THRESHOLD = 5
@@ -383,7 +384,7 @@ def extract_rr_from_ecg(ecg_signal, fs, min_rr_ms=None, max_rr_ms=None):
             valid_rr.append(rr)
         else:
             if valid_rr:
-                valid_rr.append(np.median(valid_rr[-10:]))
+                valid_rr.append(np.median(valid_rr[-cfg.RR_REPLACE_MEDIAN_WINDOW:]))
             else:
                 valid_rr.append(cfg.DEFAULT_RR_REPLACEMENT_MS)
     

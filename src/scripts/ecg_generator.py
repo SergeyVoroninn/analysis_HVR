@@ -275,7 +275,7 @@ if __name__ == '__main__':
     try:
         # Примечание: calibrate_ecg может отсутствовать в некоторых сборках, 
         # поэтому импорт обернут в try/except
-        from calibrate_ecg import analyze_ecg_quality
+        from calibrate_ecg import analyze_ecg_quality, score_quality
         from analysis import parse_rr, calc_metrics, calc_stress, stress_level
         
         quality = analyze_ecg_quality(test_record)
@@ -283,25 +283,16 @@ if __name__ == '__main__':
         if quality:
             target = dict(DEFAULT_QUALITY_TARGETS)
 
-            snr = quality['snr']
-            art = quality['artifact_pct']
-            drift = quality['baseline_drift']
-
-            snr_t = target['min_snr']
-            snr_score = 40 + min(20, (snr - snr_t) * 2) if snr >= snr_t else max(0, 40 - (snr_t - snr) * 4)
-
-            art_t = target['max_artifact_pct']
-            art_score = 35 if art <= art_t else max(0, 35 - (art - art_t) * 7)
-
-            drift_t = target['max_baseline_drift']
-            drift_score = 25 if drift <= drift_t else max(0, 25 - (drift - drift_t) * 0.5)
-
-            total_score = min(100, max(0, snr_score + art_score + drift_score))
+            scores = score_quality(quality, target)
+            snr_score = scores['snr']
+            art_score = scores['art']
+            drift_score = scores['drift']
+            total_score = scores['total']
 
             print(f"  Время записи:   {time.strftime('%Y.%m.%d %H:%M:%S')}")
-            print(f"  SNR:            {snr:7.2f} дБ   (цель ≥{snr_t:.1f})   → {snr_score:5.1f}/60")
-            print(f"  Артефакты:      {art:7.2f} %    (цель ≤{art_t:.1f}%) → {art_score:5.1f}/35")
-            print(f"  Дрейф baseline: {drift:7.3f}     (цель ≤{drift_t:.1f})  → {drift_score:5.1f}/25")
+            print(f"  SNR:            {quality['snr']:7.2f} дБ   (цель ≥{target['min_snr']:.1f})   → {snr_score:5.1f}/60")
+            print(f"  Артефакты:      {quality['artifact_pct']:7.2f} %    (цель ≤{target['max_artifact_pct']:.1f}%) → {art_score:5.1f}/35")
+            print(f"  Дрейф baseline: {quality['baseline_drift']:7.3f}     (цель ≤{target['max_baseline_drift']:.1f})  → {drift_score:5.1f}/25")
             print(f"  Шум (σ):        {quality['noise_level']:7.3f}")
             print(f"  Длина сигнала:  {quality['analyzed_length']} отсчётов")
 

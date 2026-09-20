@@ -55,12 +55,17 @@ def test_month_range():
 
 
 def test_year_range():
-    """Диапазон до года — DAY."""
+    """Диапазон до года — DAY, с отключенными регулярными тиками для показа только месяцев."""
     config = get_chart_config(200)
     print(f"  200 дней: bar={config.bar_tf}, zebra={config.zebra_tf}")
     assert config.bar_tf is TimeFrame.DAY
     assert config.zebra_tf is TimeFrame.WEEK
-    assert config.tick_step_days == 30
+    
+    # ✅ ИСПРАВЛЕНО: tick_step_days теперь огромный, чтобы отключить еженедельные тики
+    # и оставить только 1-е числа месяцев (благодаря show_month_label=True)
+    assert config.tick_step_days == 99999
+    assert config.show_month_label is True
+    
     print("✓ Тест year_range пройден")
 
 

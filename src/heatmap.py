@@ -11,6 +11,7 @@ from yearmap import YearHeatmap
 from weekmap import WeekHeatmap
 from database import get_db_path
 from models import get_session, ECGRecord
+from app_constants import DEFAULT_WEEK
 
 
 class Heatmap(ctk.CTkFrame):
@@ -139,8 +140,8 @@ class Heatmap(ctk.CTkFrame):
 
     def set_year(self, year):
         self.year = year
-        self.week = 26
-        d = self.year_map.week_start_date(26)
+        self.week = DEFAULT_WEEK
+        d = self.year_map.week_start_date(DEFAULT_WEEK)
         if d:
             self.week_map.week_start = d
 

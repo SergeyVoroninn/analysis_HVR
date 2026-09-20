@@ -35,7 +35,7 @@ def test_right_click_resets_to_exact_data_range():
         plot = MetricPlot(root, spec, db_path=":memory:")
         plot.pack(fill="both", expand=True)
 
-        # 1. ПРЯМАЯ ИНЪЕКЦИЯ ДАННЫХ (в новом формате: ординал, значение)
+        # 1. ПРЯМАЯ ИНЪЕКЦИЯ ДАННЫХ (в новом формате: ординал, значение, recorded_at)
         today = datetime.date.today()
         # Берем 3650 дней назад
         date_10_years_ago = today - datetime.timedelta(days=3650)
@@ -44,9 +44,10 @@ def test_right_click_resets_to_exact_data_range():
         dt_start = datetime.datetime.combine(date_10_years_ago, datetime.time(12, 0))
         dt_end = datetime.datetime.combine(today, datetime.time(12, 0))
         
+        # ✅ ИСПРАВЛЕНИЕ: Добавляем 3-й элемент (строку с датой), как в реальной БД
         plot._values = [
-            (plot._ord(dt_start), 50),
-            (plot._ord(dt_end), 50)
+            (plot._ord(dt_start), 50.0, f"{dt_start:%Y-%m-%d %H:%M:%S}"),
+            (plot._ord(dt_end), 50.0, f"{dt_end:%Y-%m-%d %H:%M:%S}")
         ]
         plot._start = date_10_years_ago
         plot._end = today

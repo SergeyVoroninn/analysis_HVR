@@ -17,7 +17,7 @@ from metricplot import MetricPlot, MetricSpec
 
 @pytest.fixture
 def plot():
-    """Создает частично замоканный экземпляр MetricPlot для тестирования логики событий."""
+    """Создает частично замокированный экземпляр MetricPlot для тестирования логики событий."""
     spec = MetricSpec("test", "Test", "unit", lambda r: r.value)
     
     p = MetricPlot.__new__(MetricPlot)
@@ -26,7 +26,10 @@ def plot():
     p._athlete = "test_athlete"
     p._start = datetime.date(2026, 1, 1)
     p._end = datetime.date(2026, 12, 31)
-    p._values = [(datetime.datetime(2026, 6, 15, 10), 100)]
+    
+    # ✅ ИСПРАВЛЕНИЕ 1: _values теперь должен содержать 3 элемента (ordinal, value, recorded_at)
+    p._values = [(736132.5, 100.0, "2026-06-15 10:00:00")]
+    
     p.view = None
     p._pan = None
     p._single_timer = None
@@ -40,10 +43,19 @@ def plot():
     p.on_reset = Mock()
     p.on_single_click = Mock()
     
-    # Новые атрибуты для debounce
+    # Debounce атрибуты
     p._draw_timer = None
     p._pending_view = None
     p._pan_throttle_ms = 33
+    
+    # ✅ ИСПРАВЛЕНИЕ 2: Добавлены отсутствующие атрибуты для тултипов и мыши
+    p._hover_timer = None
+    p._hover_tooltip = None
+    p._hover_record_id = None
+    p._mouse_on_axes = False
+    p._load_seq = 0
+    p._loading = False
+    p.analyzer = None  # Чтобы _show_tooltip сразу выходил, не пытаясь делать запросы
     
     # Мокаем методы Tkinter и Matplotlib
     p.after = Mock(return_value="timer_ok")
@@ -52,15 +64,13 @@ def plot():
     p.ax.get_window_extent = Mock(return_value=Mock(width=1000))
     p.canvas = Mock()
     p.widget = Mock()
+    p.widget.winfo_exists = Mock(return_value=True)  # Для безопасности _hide_tooltip
     
     # Мокаем внутренние методы для изоляции теста
-    p._ord = Mock(side_effect=lambda x: x.toordinal() if hasattr(x, 'toordinal') else float(x))
+    p._ord = Mock(side_effect=lambda x: x.toordinal() + (x.hour/24.0 + x.minute/1440.0) if hasattr(x, 'toordinal') else float(x))
     p._view_ordinals = Mock(return_value=(100.0, 200.0))
     p._commit_view = Mock()
     p._draw = Mock()
-    
-    # ⚡ ВАЖНО: НЕ мокаем _apply_pending_view, чтобы тест проверил реальную логику!
-    # Удалите строку: p._apply_pending_view = Mock()
     
     return p
 

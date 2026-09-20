@@ -3,6 +3,8 @@ orchestrator.py — централизованный менеджер состо
 """
 import datetime
 
+from app_constants import MID_WEEK_OFFSET_DAYS, WEEK_ZOOM_HALF_RANGE_DAYS
+
 
 class AppOrchestrator:
     def __init__(self, heatmap, charts, settings):
@@ -65,9 +67,9 @@ class AppOrchestrator:
         self.charts.center_on_week(d)
 
     def _handle_week_dbl_pick(self, w, monday):
-        mid_week = monday + datetime.timedelta(days=3)
-        start = mid_week - datetime.timedelta(days=15)
-        end = mid_week + datetime.timedelta(days=15)
+        mid_week = monday + datetime.timedelta(days=MID_WEEK_OFFSET_DAYS)
+        start = mid_week - datetime.timedelta(days=WEEK_ZOOM_HALF_RANGE_DAYS)
+        end = mid_week + datetime.timedelta(days=WEEK_ZOOM_HALF_RANGE_DAYS)
         lo = start.toordinal()
         hi = end.toordinal() + 1
         self.charts.zoom = (lo, hi)

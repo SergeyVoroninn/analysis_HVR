@@ -1,0 +1,629 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\python.exe
+cachedir: .pytest_cache
+rootdir: C:\s21\projects\analysis_HVR\src
+plugins: cov-7.1.0, mock-3.15.1
+collecting ... collected 85 items
+
+tests/test_appsettings.py::test_real_app_py_close_saves_state PASSED     [  1%]
+tests/test_athlete_zoom_persistence.py::test_pcm_persistence_across_three_athletes PASSED [  2%]
+tests/test_calendar.py::test_calendar_basic_operations PASSED            [  3%]
+tests/test_calendar.py::test_calendar_month_selection_gui PASSED         [  4%]
+tests/test_chart_right_click.py::test_right_click_resets_to_exact_data_range PASSED [  5%]
+tests/test_ghost_resize.py::test_resize_debounce_limits_redraws PASSED   [  7%]
+tests/test_ghost_resize.py::test_resize_ghost_mode_blocks_apply PASSED   [  8%]
+tests/test_ghost_resize.py::test_resize_ignores_unchanged_width PASSED   [  9%]
+tests/test_ghost_resize.py::test_resize_do_apply_direct PASSED           [ 10%]
+tests/test_importer.py::test_import_valid_h10_file PASSED                [ 11%]
+tests/test_importer.py::test_import_duplicate_file_is_skipped PASSED     [ 12%]
+tests/test_importer.py::test_import_corrupted_file_fails_gracefully PASSED [ 14%]
+tests/test_metricplot.py::test_single_click_schedules_callback PASSED    [ 15%]
+tests/test_metricplot.py::test_single_click_sets_pan_state PASSED        [ 16%]
+tests/test_metricplot.py::test_single_click_does_not_commit_view_immediately PASSED [ 17%]
+tests/test_metricplot.py::test_single_click_fires_after_delay PASSED     [ 18%]
+tests/test_metricplot.py::test_double_click_is_explicitly_ignored PASSED [ 20%]
+tests/test_metricplot.py::test_click_different_position_is_not_double PASSED [ 21%]
+tests/test_metricplot.py::test_click_too_slow_is_not_double PASSED       [ 22%]
+tests/test_metricplot.py::test_right_click_calls_reset PASSED            [ 23%]
+tests/test_metricplot.py::test_right_click_clears_current_tf PASSED      [ 24%]
+tests/test_metricplot.py::test_right_click_does_not_commit_view PASSED   [ 25%]
+tests/test_metricplot.py::test_click_no_xdata_ignored PASSED             [ 27%]
+tests/test_metricplot.py::test_click_no_start_ignored PASSED             [ 28%]
+tests/test_metricplot.py::test_click_button_2_ignored PASSED             [ 29%]
+tests/test_metricplot.py::test_click_cancels_previous_timer PASSED       [ 30%]
+tests/test_metricplot.py::test_motion_pans_view PASSED                   [ 31%]
+tests/test_metricplot.py::test_motion_without_pan_ignored PASSED         [ 32%]
+tests/test_metricplot.py::test_motion_wrong_button_ignored PASSED        [ 34%]
+tests/test_metricplot.py::test_release_clears_pan PASSED                 [ 35%]
+tests/test_metricplot.py::test_motion_cancels_single_click_timer PASSED  [ 36%]
+tests/test_orchestrator.py::test_saved_range_after_month_zoom PASSED     [ 37%]
+tests/test_orchestrator.py::test_saved_range_after_year_zoom PASSED      [ 38%]
+tests/test_orchestrator.py::test_saved_range_after_day_dbl PASSED        [ 40%]
+tests/test_orchestrator.py::test_saved_range_after_week_rmb PASSED       [ 41%]
+tests/test_orchestrator.py::test_on_range_changed_sets_saved_range PASSED [ 42%]
+tests/test_orchestrator.py::test_saved_range_reset PASSED                [ 43%]
+tests/test_orchestrator.py::test_sync_athlete_restores_range PASSED      [ 44%]
+tests/test_orchestrator.py::test_sync_athlete_no_saved_range PASSED      [ 45%]
+tests/test_orchestrator.py::test_save_state_uses_view_ordinals PASSED    [ 47%]
+tests/test_orchestrator.py::test_save_state_no_range PASSED              [ 48%]
+tests/test_orchestrator.py::test_restore_state_sets_range PASSED         [ 49%]
+tests/test_orchestrator.py::test_restore_state_no_zoom PASSED            [ 50%]
+tests/test_orchestrator.py::test_full_save_restore_cycle_happy_path PASSED [ 51%]
+tests/test_reference_ecg.py::test_reference_ecg[C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10] FAILED [ 52%]
+tests/test_reference_ecg.py::test_reference_ecg[84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10] FAILED [ 54%]
+tests/test_reference_ecg.py::test_reference_ecg[C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10] FAILED [ 55%]
+tests/test_reference_ecg.py::test_reference_ecg[C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10] FAILED [ 56%]
+tests/test_timeframe.py::test_day_range PASSED                           [ 57%]
+tests/test_timeframe.py::test_half_day_range PASSED                      [ 58%]
+tests/test_timeframe.py::test_week_range PASSED                          [ 60%]
+tests/test_timeframe.py::test_7day_range PASSED                          [ 61%]
+tests/test_timeframe.py::test_month_range PASSED                         [ 62%]
+tests/test_timeframe.py::test_year_range FAILED                          [ 63%]
+tests/test_timeframe.py::test_over_year_range PASSED                     [ 64%]
+tests/test_timeframe.py::test_boundary_week PASSED                       [ 65%]
+tests/test_timeframe.py::test_boundary_month PASSED                      [ 67%]
+tests/test_timeframe.py::test_boundary_year PASSED                       [ 68%]
+tests/test_weekmap.py::test_single_click_schedules_timer PASSED          [ 69%]
+tests/test_weekmap.py::test_single_click_green_cell_payload PASSED       [ 70%]
+tests/test_weekmap.py::test_single_click_green_cell_crit_payload PASSED  [ 71%]
+tests/test_weekmap.py::test_single_click_empty_cell_payload PASSED       [ 72%]
+tests/test_weekmap.py::test_double_click_green_cell PASSED               [ 74%]
+tests/test_weekmap.py::test_double_click_empty_cell PASSED               [ 75%]
+tests/test_weekmap.py::test_double_click_cancels_single_timer PASSED     [ 76%]
+tests/test_weekmap.py::test_slow_second_click_is_new_single PASSED       [ 77%]
+tests/test_weekmap.py::test_right_click_calls_week_rmb PASSED            [ 78%]
+tests/test_weekmap.py::test_right_click_ignored_if_no_week PASSED        [ 80%]
+tests/test_weekmap.py::test_click_outside_grid PASSED                    [ 81%]
+tests/test_weekmap.py::test_click_no_week_start PASSED                   [ 82%]
+tests/test_weekmap_right_click.py::test_weekmap_right_click_sync_and_persistence PASSED [ 83%]
+tests/test_yearmap.py::test_single_click_schedules_timer PASSED          [ 84%]
+tests/test_yearmap.py::test_single_click_filled_week_payload PASSED      [ 85%]
+tests/test_yearmap.py::test_single_click_empty_week_payload PASSED       [ 87%]
+tests/test_yearmap.py::test_double_click_filled_week PASSED              [ 88%]
+tests/test_yearmap.py::test_double_click_empty_week PASSED               [ 89%]
+tests/test_yearmap.py::test_double_click_cancels_single_timer PASSED     [ 90%]
+tests/test_yearmap.py::test_slow_second_click_is_new_single PASSED       [ 91%]
+tests/test_yearmap.py::test_right_click_syncs_week_and_zoom PASSED       [ 92%]
+tests/test_yearmap.py::test_wheel_changes_year PASSED                    [ 94%]
+tests/test_yearmap.py::test_click_outside_grid PASSED                    [ 95%]
+tests/test_yearmap.py::test_click_no_year PASSED                         [ 96%]
+tests/test_yearmap.py::test_right_click_outside_grid PASSED              [ 97%]
+tests/test_yearmap.py::test_yearmap_mouse_wheel_integration PASSED       [ 98%]
+tests/test_yearmap_right_click.py::test_yearmap_right_click_sync_and_persistence PASSED [100%]
+
+================================== FAILURES ===================================
+_ test_reference_ecg[C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10] _
+
+etalon = {'source': 'Omega.Diagnostika, Filipp, row 15.08.2026 9:07', 'polar_id': 'C8219D21', 'expected': {'mo_ms': {'value': 8... {'value': 24.5, 'tol': 0.2}, ...}, 'file': 'tests/reference/C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10'}
+db_with_athlete = ('C:\\Users\\kik\\AppData\\Local\\Temp\\pytest-of-kik\\pytest-258\\test_reference_ecg_C8219D21_200\\ref.db', 'C8219D21', '983c677c-5adc-4198-abc8-4132b167fffe')
+
+    @pytest.mark.parametrize("etalon", _load_etalons(),
+                             ids=lambda e: os.path.basename(e["file"]))
+    def test_reference_ecg(etalon, db_with_athlete):
+        db_path, polar, aid = db_with_athlete
+        path = etalon["file"]
+        if not os.path.isabs(path):
+            path = os.path.join(ROOT, path)
+        assert os.path.exists(path), f"Reference file not found: {path}"
+    
+        from athlete_generator import _calc_age
+        athletes = [(aid, "Reference", "Test", _calc_age("2000-01-01"), "M", polar)]
+        selected = athletes[0]
+    
+        # === 1. Import ECG to DB ===
+        status, changed_aid = _import_one(db_path, path, athletes, selected, None, interactive=False)
+        assert status == "added", f"Import failed: status '{status}'"
+    
+        # === 2. Separate metrics: what's in DB and what's calculated on the fly ===
+        session = get_session(db_path)
+        try:
+            rec = session.query(ECGRecord).filter_by(athlete_id=aid).one()
+            db_metrics = _metrics_from_record(rec)
+        finally:
+            session.close()
+    
+        with open(path, encoding="utf-8") as f:
+            rr = hrv.parse_rr(f.read())
+        calc_metrics = _metrics_from_rr(rr)
+    
+        ours = {**db_metrics, **calc_metrics}
+    
+        # === Extract reference values for visual comparison ===
+        exp = etalon["expected"]
+        ref_si = exp.get("stress_si", {}).get("value", 0)
+        ref_mo = exp.get("mo_ms", {}).get("value", 0)
+        ref_rmssd = exp.get("rmssd", {}).get("value", 0)
+        ref_tp = exp.get("tp", {}).get("value", 0)
+    
+        # ИСПРАВЛЕНИЕ 1: Берем HR и SDNN из эталона, а не хардкодим N/A
+        ref_hr = exp.get("mean_hr", {}).get("value", "N/A")
+        ref_sdnn = exp.get("sdnn", {}).get("value", "N/A")
+    
+        # Форматируем для красивого вывода
+        hr_str = f"{ref_hr:>5.1f}" if isinstance(ref_hr, (int, float)) else "  N/A"
+        sdnn_str = f"{ref_sdnn:>5.1f}" if isinstance(ref_sdnn, (int, float)) else "  N/A"
+    
+        print(f"\n=== OUR STRING (Calculated)   ===")
+        print(f"SI={ours.get('stress_si', 0):>6.1f}  Mo={ours.get('mo_ms', 0):>4.0f}  "
+              f"RMSSD={ours.get('rmssd', 0):>5.1f}  TP={ours.get('tp', 0):>6.0f}  "
+              f"HR={ours.get('mean_hr', 0):>5.1f}  SDNN={ours.get('sdnn', 0):>5.1f}")
+    
+        print(f"=== REFERENCE STRING (Expected) ===")
+        print(f"SI={ref_si:>6.1f}  Mo={ref_mo:>4.0f}  "
+              f"RMSSD={ref_rmssd:>5.1f}  TP={ref_tp:>6.0f}  "
+              f"HR={hr_str:>5}  SDNN={sdnn_str:>5}")
+        print("-" * 78)
+    
+        # === 3. Localized comparison with reference ===
+        problems = []
+        DB_STORED_FIELDS = {"mean_hr", "rmssd", "sdnn", "stress_si", "tp"}
+        SKIP_METRICS = {"nn50", "pnn50"}
+    
+        def fmt(v):
+            return f"{v:.1f}" if v is not None else "None"
+    
+        for key, spec in etalon["expected"].items():
+            if key in SKIP_METRICS:
+                continue
+    
+            value = spec["value"]
+            tol = spec.get("tol", 0.10)
+    
+            db_val = db_metrics.get(key)
+            calc_val = calc_metrics.get(key)
+    
+            if calc_val is None and db_val is None:
+                problems.append(f"[{key}] our program does not calculate and does not store this metric")
+                continue
+    
+            is_calc_ok = False
+            if calc_val is not None:
+                diff_calc = abs(calc_val - value)
+                is_calc_ok = diff_calc <= abs(value) * tol
+    
+            is_db_ok = False
+            if db_val is not None:
+                diff_db = abs(db_val - value)
+                is_db_ok = diff_db <= abs(value) * tol
+            elif key not in DB_STORED_FIELDS:
+                is_db_ok = True
+    
+            if not is_calc_ok and not is_db_ok:
+                problems.append(
+                    f"[{key}] CRITICAL DISCREPANCY: reference={value}, "
+                    f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
+                    f"(tolerance {tol:.0%})"
+                )
+            elif not is_calc_ok and is_db_ok:
+                problems.append(
+                    f"[{key}] CALCULATION ERROR (DB is correct): reference={value}, "
+                    f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
+                    f"(calculation discrepancy {diff_calc/abs(value):.1%} > tolerance {tol:.0%})"
+                )
+            elif is_calc_ok and not is_db_ok:
+                problems.append(
+                    f"[{key}] IMPORT/DB ERROR (calculation is correct!): reference={value}, "
+                    f"calculation={fmt(calc_val)}, but in DB: {fmt(db_val)} "
+                    f"(DB discrepancy > tolerance {tol:.0%})"
+                )
+    
+>       assert not problems, "Localized discrepancies with reference:\n" + "\n".join(problems)
+E       AssertionError: Localized discrepancies with reference:
+E         [rmssd] CRITICAL DISCREPANCY: reference=55.6, calculation=64.8, in DB=64.8 (tolerance 10%)
+E       assert not ['[rmssd] CRITICAL DISCREPANCY: reference=55.6, calculation=64.8, in DB=64.8 (tolerance 10%)']
+
+tests\test_reference_ecg.py:209: AssertionError
+---------------------------- Captured stdout call -----------------------------
+
+=== OUR STRING (Calculated)   ===
+SI=  26.4  Mo= 866  RMSSD= 64.8  TP=  7902  HR= 70.9  SDNN= 96.4
+=== REFERENCE STRING (Expected) ===
+SI=  24.5  Mo= 800  RMSSD= 55.6  TP=  7668  HR= 72.0  SDNN= 93.2
+------------------------------------------------------------------------------
+_ test_reference_ecg[84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10] _
+
+etalon = {'source': 'Omega.Diagnostika, Andrey, row 17.08.2026 9:00', 'polar_id': '84E5FD2B', 'expected': {'mo_ms': {'value': 9...'value': 151.5, 'tol': 0.25}, ...}, 'file': 'tests/reference/84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10'}
+db_with_athlete = ('C:\\Users\\kik\\AppData\\Local\\Temp\\pytest-of-kik\\pytest-258\\test_reference_ecg_84E5FD2B_200\\ref.db', '84E5FD2B', '2012705f-b93c-4e41-9db9-9580dd4cf194')
+
+    @pytest.mark.parametrize("etalon", _load_etalons(),
+                             ids=lambda e: os.path.basename(e["file"]))
+    def test_reference_ecg(etalon, db_with_athlete):
+        db_path, polar, aid = db_with_athlete
+        path = etalon["file"]
+        if not os.path.isabs(path):
+            path = os.path.join(ROOT, path)
+        assert os.path.exists(path), f"Reference file not found: {path}"
+    
+        from athlete_generator import _calc_age
+        athletes = [(aid, "Reference", "Test", _calc_age("2000-01-01"), "M", polar)]
+        selected = athletes[0]
+    
+        # === 1. Import ECG to DB ===
+        status, changed_aid = _import_one(db_path, path, athletes, selected, None, interactive=False)
+        assert status == "added", f"Import failed: status '{status}'"
+    
+        # === 2. Separate metrics: what's in DB and what's calculated on the fly ===
+        session = get_session(db_path)
+        try:
+            rec = session.query(ECGRecord).filter_by(athlete_id=aid).one()
+            db_metrics = _metrics_from_record(rec)
+        finally:
+            session.close()
+    
+        with open(path, encoding="utf-8") as f:
+            rr = hrv.parse_rr(f.read())
+        calc_metrics = _metrics_from_rr(rr)
+    
+        ours = {**db_metrics, **calc_metrics}
+    
+        # === Extract reference values for visual comparison ===
+        exp = etalon["expected"]
+        ref_si = exp.get("stress_si", {}).get("value", 0)
+        ref_mo = exp.get("mo_ms", {}).get("value", 0)
+        ref_rmssd = exp.get("rmssd", {}).get("value", 0)
+        ref_tp = exp.get("tp", {}).get("value", 0)
+    
+        # ИСПРАВЛЕНИЕ 1: Берем HR и SDNN из эталона, а не хардкодим N/A
+        ref_hr = exp.get("mean_hr", {}).get("value", "N/A")
+        ref_sdnn = exp.get("sdnn", {}).get("value", "N/A")
+    
+        # Форматируем для красивого вывода
+        hr_str = f"{ref_hr:>5.1f}" if isinstance(ref_hr, (int, float)) else "  N/A"
+        sdnn_str = f"{ref_sdnn:>5.1f}" if isinstance(ref_sdnn, (int, float)) else "  N/A"
+    
+        print(f"\n=== OUR STRING (Calculated)   ===")
+        print(f"SI={ours.get('stress_si', 0):>6.1f}  Mo={ours.get('mo_ms', 0):>4.0f}  "
+              f"RMSSD={ours.get('rmssd', 0):>5.1f}  TP={ours.get('tp', 0):>6.0f}  "
+              f"HR={ours.get('mean_hr', 0):>5.1f}  SDNN={ours.get('sdnn', 0):>5.1f}")
+    
+        print(f"=== REFERENCE STRING (Expected) ===")
+        print(f"SI={ref_si:>6.1f}  Mo={ref_mo:>4.0f}  "
+              f"RMSSD={ref_rmssd:>5.1f}  TP={ref_tp:>6.0f}  "
+              f"HR={hr_str:>5}  SDNN={sdnn_str:>5}")
+        print("-" * 78)
+    
+        # === 3. Localized comparison with reference ===
+        problems = []
+        DB_STORED_FIELDS = {"mean_hr", "rmssd", "sdnn", "stress_si", "tp"}
+        SKIP_METRICS = {"nn50", "pnn50"}
+    
+        def fmt(v):
+            return f"{v:.1f}" if v is not None else "None"
+    
+        for key, spec in etalon["expected"].items():
+            if key in SKIP_METRICS:
+                continue
+    
+            value = spec["value"]
+            tol = spec.get("tol", 0.10)
+    
+            db_val = db_metrics.get(key)
+            calc_val = calc_metrics.get(key)
+    
+            if calc_val is None and db_val is None:
+                problems.append(f"[{key}] our program does not calculate and does not store this metric")
+                continue
+    
+            is_calc_ok = False
+            if calc_val is not None:
+                diff_calc = abs(calc_val - value)
+                is_calc_ok = diff_calc <= abs(value) * tol
+    
+            is_db_ok = False
+            if db_val is not None:
+                diff_db = abs(db_val - value)
+                is_db_ok = diff_db <= abs(value) * tol
+            elif key not in DB_STORED_FIELDS:
+                is_db_ok = True
+    
+            if not is_calc_ok and not is_db_ok:
+                problems.append(
+                    f"[{key}] CRITICAL DISCREPANCY: reference={value}, "
+                    f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
+                    f"(tolerance {tol:.0%})"
+                )
+            elif not is_calc_ok and is_db_ok:
+                problems.append(
+                    f"[{key}] CALCULATION ERROR (DB is correct): reference={value}, "
+                    f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
+                    f"(calculation discrepancy {diff_calc/abs(value):.1%} > tolerance {tol:.0%})"
+                )
+            elif is_calc_ok and not is_db_ok:
+                problems.append(
+                    f"[{key}] IMPORT/DB ERROR (calculation is correct!): reference={value}, "
+                    f"calculation={fmt(calc_val)}, but in DB: {fmt(db_val)} "
+                    f"(DB discrepancy > tolerance {tol:.0%})"
+                )
+    
+>       assert not problems, "Localized discrepancies with reference:\n" + "\n".join(problems)
+E       AssertionError: Localized discrepancies with reference:
+E         [stress_si] CRITICAL DISCREPANCY: reference=151.5, calculation=91.0, in DB=91.0 (tolerance 25%)
+E         [sdnn] CRITICAL DISCREPANCY: reference=33.4, calculation=47.7, in DB=47.7 (tolerance 15%)
+E       assert not ['[stress_si] CRITICAL DISCREPANCY: reference=151.5, calculation=91.0, in DB=91.0 (tolerance 25%)', '[sdnn] CRITICAL DISCREPANCY: reference=33.4, calculation=47.7, in DB=47.7 (tolerance 15%)']
+
+tests\test_reference_ecg.py:209: AssertionError
+---------------------------- Captured stdout call -----------------------------
+
+=== OUR STRING (Calculated)   ===
+SI=  91.0  Mo= 952  RMSSD= 36.1  TP=   708  HR= 63.0  SDNN= 47.7
+=== REFERENCE STRING (Expected) ===
+SI= 151.5  Mo= 920  RMSSD= 33.2  TP=   877  HR= 63.0  SDNN= 33.4
+------------------------------------------------------------------------------
+_ test_reference_ecg[C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10] _
+
+etalon = {'source': 'Omega.Diagnostika, Kazakov Filipp, row 08.08.2026 9:17', 'polar_id': 'C821E528', 'expected': {'mo_ms': {'v...{'value': 32.3, 'tol': 0.25}, ...}, 'file': 'tests/reference/C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10'}
+db_with_athlete = ('C:\\Users\\kik\\AppData\\Local\\Temp\\pytest-of-kik\\pytest-258\\test_reference_ecg_C821E528_200\\ref.db', 'C821E528', '20164f78-55e5-4d29-93e5-1d84a8c6fcac')
+
+    @pytest.mark.parametrize("etalon", _load_etalons(),
+                             ids=lambda e: os.path.basename(e["file"]))
+    def test_reference_ecg(etalon, db_with_athlete):
+        db_path, polar, aid = db_with_athlete
+        path = etalon["file"]
+        if not os.path.isabs(path):
+            path = os.path.join(ROOT, path)
+        assert os.path.exists(path), f"Reference file not found: {path}"
+    
+        from athlete_generator import _calc_age
+        athletes = [(aid, "Reference", "Test", _calc_age("2000-01-01"), "M", polar)]
+        selected = athletes[0]
+    
+        # === 1. Import ECG to DB ===
+        status, changed_aid = _import_one(db_path, path, athletes, selected, None, interactive=False)
+        assert status == "added", f"Import failed: status '{status}'"
+    
+        # === 2. Separate metrics: what's in DB and what's calculated on the fly ===
+        session = get_session(db_path)
+        try:
+            rec = session.query(ECGRecord).filter_by(athlete_id=aid).one()
+            db_metrics = _metrics_from_record(rec)
+        finally:
+            session.close()
+    
+        with open(path, encoding="utf-8") as f:
+            rr = hrv.parse_rr(f.read())
+        calc_metrics = _metrics_from_rr(rr)
+    
+        ours = {**db_metrics, **calc_metrics}
+    
+        # === Extract reference values for visual comparison ===
+        exp = etalon["expected"]
+        ref_si = exp.get("stress_si", {}).get("value", 0)
+        ref_mo = exp.get("mo_ms", {}).get("value", 0)
+        ref_rmssd = exp.get("rmssd", {}).get("value", 0)
+        ref_tp = exp.get("tp", {}).get("value", 0)
+    
+        # ИСПРАВЛЕНИЕ 1: Берем HR и SDNN из эталона, а не хардкодим N/A
+        ref_hr = exp.get("mean_hr", {}).get("value", "N/A")
+        ref_sdnn = exp.get("sdnn", {}).get("value", "N/A")
+    
+        # Форматируем для красивого вывода
+        hr_str = f"{ref_hr:>5.1f}" if isinstance(ref_hr, (int, float)) else "  N/A"
+        sdnn_str = f"{ref_sdnn:>5.1f}" if isinstance(ref_sdnn, (int, float)) else "  N/A"
+    
+        print(f"\n=== OUR STRING (Calculated)   ===")
+        print(f"SI={ours.get('stress_si', 0):>6.1f}  Mo={ours.get('mo_ms', 0):>4.0f}  "
+              f"RMSSD={ours.get('rmssd', 0):>5.1f}  TP={ours.get('tp', 0):>6.0f}  "
+              f"HR={ours.get('mean_hr', 0):>5.1f}  SDNN={ours.get('sdnn', 0):>5.1f}")
+    
+        print(f"=== REFERENCE STRING (Expected) ===")
+        print(f"SI={ref_si:>6.1f}  Mo={ref_mo:>4.0f}  "
+              f"RMSSD={ref_rmssd:>5.1f}  TP={ref_tp:>6.0f}  "
+              f"HR={hr_str:>5}  SDNN={sdnn_str:>5}")
+        print("-" * 78)
+    
+        # === 3. Localized comparison with reference ===
+        problems = []
+        DB_STORED_FIELDS = {"mean_hr", "rmssd", "sdnn", "stress_si", "tp"}
+        SKIP_METRICS = {"nn50", "pnn50"}
+    
+        def fmt(v):
+            return f"{v:.1f}" if v is not None else "None"
+    
+        for key, spec in etalon["expected"].items():
+            if key in SKIP_METRICS:
+                continue
+    
+            value = spec["value"]
+            tol = spec.get("tol", 0.10)
+    
+            db_val = db_metrics.get(key)
+            calc_val = calc_metrics.get(key)
+    
+            if calc_val is None and db_val is None:
+                problems.append(f"[{key}] our program does not calculate and does not store this metric")
+                continue
+    
+            is_calc_ok = False
+            if calc_val is not None:
+                diff_calc = abs(calc_val - value)
+                is_calc_ok = diff_calc <= abs(value) * tol
+    
+            is_db_ok = False
+            if db_val is not None:
+                diff_db = abs(db_val - value)
+                is_db_ok = diff_db <= abs(value) * tol
+            elif key not in DB_STORED_FIELDS:
+                is_db_ok = True
+    
+            if not is_calc_ok and not is_db_ok:
+                problems.append(
+                    f"[{key}] CRITICAL DISCREPANCY: reference={value}, "
+                    f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
+                    f"(tolerance {tol:.0%})"
+                )
+            elif not is_calc_ok and is_db_ok:
+                problems.append(
+                    f"[{key}] CALCULATION ERROR (DB is correct): reference={value}, "
+                    f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
+                    f"(calculation discrepancy {diff_calc/abs(value):.1%} > tolerance {tol:.0%})"
+                )
+            elif is_calc_ok and not is_db_ok:
+                problems.append(
+                    f"[{key}] IMPORT/DB ERROR (calculation is correct!): reference={value}, "
+                    f"calculation={fmt(calc_val)}, but in DB: {fmt(db_val)} "
+                    f"(DB discrepancy > tolerance {tol:.0%})"
+                )
+    
+>       assert not problems, "Localized discrepancies with reference:\n" + "\n".join(problems)
+E       AssertionError: Localized discrepancies with reference:
+E         [tp] CRITICAL DISCREPANCY: reference=6627, calculation=4969.7, in DB=4969.7 (tolerance 25%)
+E       assert not ['[tp] CRITICAL DISCREPANCY: reference=6627, calculation=4969.7, in DB=4969.7 (tolerance 25%)']
+
+tests\test_reference_ecg.py:209: AssertionError
+---------------------------- Captured stdout call -----------------------------
+
+=== OUR STRING (Calculated)   ===
+SI=  31.2  Mo= 859  RMSSD= 85.4  TP=  4970  HR= 66.8  SDNN= 87.9
+=== REFERENCE STRING (Expected) ===
+SI=  32.3  Mo= 840  RMSSD= 88.0  TP=  6627  HR= 68.0  SDNN= 84.7
+------------------------------------------------------------------------------
+_ test_reference_ecg[C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10] _
+
+etalon = {'source': 'Omega.Diagnostika, Kazakov Filipp, row 10.08.2026 8:33', 'polar_id': 'C821E528', 'expected': {'mo_ms': {'v... {'value': 6.5, 'tol': 0.25}, ...}, 'file': 'tests/reference/C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10'}
+db_with_athlete = ('C:\\Users\\kik\\AppData\\Local\\Temp\\pytest-of-kik\\pytest-258\\test_reference_ecg_C821E528_201\\ref.db', 'C821E528', 'd38a9981-618d-40ab-a9cf-7c9781f93b33')
+
+    @pytest.mark.parametrize("etalon", _load_etalons(),
+                             ids=lambda e: os.path.basename(e["file"]))
+    def test_reference_ecg(etalon, db_with_athlete):
+        db_path, polar, aid = db_with_athlete
+        path = etalon["file"]
+        if not os.path.isabs(path):
+            path = os.path.join(ROOT, path)
+        assert os.path.exists(path), f"Reference file not found: {path}"
+    
+        from athlete_generator import _calc_age
+        athletes = [(aid, "Reference", "Test", _calc_age("2000-01-01"), "M", polar)]
+        selected = athletes[0]
+    
+        # === 1. Import ECG to DB ===
+        status, changed_aid = _import_one(db_path, path, athletes, selected, None, interactive=False)
+        assert status == "added", f"Import failed: status '{status}'"
+    
+        # === 2. Separate metrics: what's in DB and what's calculated on the fly ===
+        session = get_session(db_path)
+        try:
+            rec = session.query(ECGRecord).filter_by(athlete_id=aid).one()
+            db_metrics = _metrics_from_record(rec)
+        finally:
+            session.close()
+    
+        with open(path, encoding="utf-8") as f:
+            rr = hrv.parse_rr(f.read())
+        calc_metrics = _metrics_from_rr(rr)
+    
+        ours = {**db_metrics, **calc_metrics}
+    
+        # === Extract reference values for visual comparison ===
+        exp = etalon["expected"]
+        ref_si = exp.get("stress_si", {}).get("value", 0)
+        ref_mo = exp.get("mo_ms", {}).get("value", 0)
+        ref_rmssd = exp.get("rmssd", {}).get("value", 0)
+        ref_tp = exp.get("tp", {}).get("value", 0)
+    
+        # ИСПРАВЛЕНИЕ 1: Берем HR и SDNN из эталона, а не хардкодим N/A
+        ref_hr = exp.get("mean_hr", {}).get("value", "N/A")
+        ref_sdnn = exp.get("sdnn", {}).get("value", "N/A")
+    
+        # Форматируем для красивого вывода
+        hr_str = f"{ref_hr:>5.1f}" if isinstance(ref_hr, (int, float)) else "  N/A"
+        sdnn_str = f"{ref_sdnn:>5.1f}" if isinstance(ref_sdnn, (int, float)) else "  N/A"
+    
+        print(f"\n=== OUR STRING (Calculated)   ===")
+        print(f"SI={ours.get('stress_si', 0):>6.1f}  Mo={ours.get('mo_ms', 0):>4.0f}  "
+              f"RMSSD={ours.get('rmssd', 0):>5.1f}  TP={ours.get('tp', 0):>6.0f}  "
+              f"HR={ours.get('mean_hr', 0):>5.1f}  SDNN={ours.get('sdnn', 0):>5.1f}")
+    
+        print(f"=== REFERENCE STRING (Expected) ===")
+        print(f"SI={ref_si:>6.1f}  Mo={ref_mo:>4.0f}  "
+              f"RMSSD={ref_rmssd:>5.1f}  TP={ref_tp:>6.0f}  "
+              f"HR={hr_str:>5}  SDNN={sdnn_str:>5}")
+        print("-" * 78)
+    
+        # === 3. Localized comparison with reference ===
+        problems = []
+        DB_STORED_FIELDS = {"mean_hr", "rmssd", "sdnn", "stress_si", "tp"}
+        SKIP_METRICS = {"nn50", "pnn50"}
+    
+        def fmt(v):
+            return f"{v:.1f}" if v is not None else "None"
+    
+        for key, spec in etalon["expected"].items():
+            if key in SKIP_METRICS:
+                continue
+    
+            value = spec["value"]
+            tol = spec.get("tol", 0.10)
+    
+            db_val = db_metrics.get(key)
+            calc_val = calc_metrics.get(key)
+    
+            if calc_val is None and db_val is None:
+                problems.append(f"[{key}] our program does not calculate and does not store this metric")
+                continue
+    
+            is_calc_ok = False
+            if calc_val is not None:
+                diff_calc = abs(calc_val - value)
+                is_calc_ok = diff_calc <= abs(value) * tol
+    
+            is_db_ok = False
+            if db_val is not None:
+                diff_db = abs(db_val - value)
+                is_db_ok = diff_db <= abs(value) * tol
+            elif key not in DB_STORED_FIELDS:
+                is_db_ok = True
+    
+            if not is_calc_ok and not is_db_ok:
+                problems.append(
+                    f"[{key}] CRITICAL DISCREPANCY: reference={value}, "
+                    f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
+                    f"(tolerance {tol:.0%})"
+                )
+            elif not is_calc_ok and is_db_ok:
+                problems.append(
+                    f"[{key}] CALCULATION ERROR (DB is correct): reference={value}, "
+                    f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
+                    f"(calculation discrepancy {diff_calc/abs(value):.1%} > tolerance {tol:.0%})"
+                )
+            elif is_calc_ok and not is_db_ok:
+                problems.append(
+                    f"[{key}] IMPORT/DB ERROR (calculation is correct!): reference={value}, "
+                    f"calculation={fmt(calc_val)}, but in DB: {fmt(db_val)} "
+                    f"(DB discrepancy > tolerance {tol:.0%})"
+                )
+    
+>       assert not problems, "Localized discrepancies with reference:\n" + "\n".join(problems)
+E       AssertionError: Localized discrepancies with reference:
+E         [mean_hr] CRITICAL DISCREPANCY: reference=60.0, calculation=56.9, in DB=56.9 (tolerance 5%)
+E       assert not ['[mean_hr] CRITICAL DISCREPANCY: reference=60.0, calculation=56.9, in DB=56.9 (tolerance 5%)']
+
+tests\test_reference_ecg.py:209: AssertionError
+---------------------------- Captured stdout call -----------------------------
+
+=== OUR STRING (Calculated)   ===
+SI=   6.8  Mo= 905  RMSSD=149.8  TP= 34432  HR= 56.9  SDNN=198.6
+=== REFERENCE STRING (Expected) ===
+SI=   6.5  Mo= 920  RMSSD=167.5  TP= 42578  HR= 60.0  SDNN=206.4
+------------------------------------------------------------------------------
+_______________________________ test_year_range _______________________________
+
+    def test_year_range():
+        """Диапазон до года — DAY."""
+        config = get_chart_config(200)
+        print(f"  200 дней: bar={config.bar_tf}, zebra={config.zebra_tf}")
+        assert config.bar_tf is TimeFrame.DAY
+        assert config.zebra_tf is TimeFrame.WEEK
+>       assert config.tick_step_days == 30
+E       AssertionError: assert 99999 == 30
+E        +  where 99999 = ChartConfig(bar_tf=<TimeFrame.DAY: ('день', 86400)>, zebra_tf=<TimeFrame.WEEK: ('неделя', 604800)>, tick_step_days=99999, tick_format='%d', tick_step_hours=0, is_proportional=False, proportional_bar_size=None, tick_edge_format=None, tick_inner_format=None, weekday_date_on_monday=False, force_edge_format=True, show_month_label=True).tick_step_days
+
+tests\test_timeframe.py:63: AssertionError
+---------------------------- Captured stdout call -----------------------------
+  200 дней: bar=TimeFrame.DAY, zebra=TimeFrame.WEEK
+=========================== short test summary info ===========================
+FAILED tests/test_reference_ecg.py::test_reference_ecg[C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10]
+FAILED tests/test_reference_ecg.py::test_reference_ecg[84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10]
+FAILED tests/test_reference_ecg.py::test_reference_ecg[C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10]
+FAILED tests/test_reference_ecg.py::test_reference_ecg[C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10]
+FAILED tests/test_timeframe.py::test_year_range - AssertionError: assert 9999...
+======================== 5 failed, 80 passed in 23.22s ========================

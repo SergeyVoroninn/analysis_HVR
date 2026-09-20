@@ -7,6 +7,7 @@ ECG_FILE_EXTENSION = ".teamloggerh10"
 CONFIG_YAML_PATH = "config.yaml"
 ECG_PROFILES_YAML_PATH = "ecg_profiles.yaml"
 APP_SETTINGS_FILENAME = "app_settings.json"
+SPLASH_LOGO_FILENAME = "logo21.png"     # Логотип заставки
 
 # --- Биометрические сентинелы (замена магического 9999) ---
 BIOMETRIC_ERROR_DISTANCE = 9999.0
@@ -23,6 +24,21 @@ SINGLE_CLICK_DELAY_METRICPLOT_MS = 500
 SINGLE_CLICK_DELAY_YEARMAP_MS = 300
 SINGLE_CLICK_DELAY_WEEKMAP_MS = 350
 SINGLE_CLICK_DELAY_ATLETS_MS = 350
+
+# --- Отрисовка графиков ---
+PAN_REDRAW_MS = 16          # Интервал отложенной перерисовки при панорамировании (~60 fps)
+ZOOM_IN_FACTOR = 0.85       # Коэффициент зума при прокрутке вверх
+ZOOM_OUT_FACTOR = 1.18      # Коэффициент зума при прокрутке вниз
+MIN_ZOOM_SPAN_DAYS = 1.0    # Минимальный span графика (дни)
+DOUBLE_CLICK_PX_TOLERANCE = 6  # Пиксельный допуск для двойного клика
+MID_WEEK_OFFSET_DAYS = 3    # Смещение к середине недели (среда)
+
+# --- Тайминги приложения ---
+STATUS_TIMEOUT_MS = 8000    # Автоочистка статус-бара (мс)
+WHEEL_LOCK_SEC = 0.2        # Дребезг колеса мыши (сек)
+IMPORT_PROGRESS_STEP = 10   # Шаг обновления прогресса импорта
+WEEK_ZOOM_HALF_RANGE_DAYS = 15  # Полуширина зума на неделю (дни)
+DEFAULT_WEEK = 26           # Неделя по умолчанию при переключении года
 
 # --- Пороги бизнес-логики (Импорт и Сортировка) ---
 IMPORT_RELATIVE_PROB_THRESHOLD = 0.25

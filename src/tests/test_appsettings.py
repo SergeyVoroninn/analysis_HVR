@@ -7,6 +7,9 @@ import sys
 import json
 import tempfile
 import pytest
+from unittest.mock import patch
+import tkinter as tk
+
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_DIR not in sys.path:
@@ -29,23 +32,26 @@ def temp_settings_file():
     if os.path.exists(path):
         os.remove(path)
 
-
 def test_real_app_py_close_saves_state(temp_settings_file):
     """
-    Проверяет, что РЕАЛЬНАЯ функция handle_app_close из app.py 
-    действительно сохраняет состояние на диск.
+    Проверяет, что РЕАЛЬНАЯ функция handle_app_close из app.py
+    действительно сохраняет состояние на диск перед выходом.
     """
     # 1. Начальное состояние (старые данные)
+    from appsettings import AppSettings
     settings = AppSettings(path=temp_settings_file)
     settings.set("athlete_id", "OLD_ATHLETE")
     settings.set("year", 2020)
     settings.save()
 
     # 2. Имитация запущенного приложения
-    import tkinter as tk
     root = tk.Tk()
     root.withdraw()
-    
+
+    from heatmap import Heatmap
+    from charts import ChartsPanel, TP_METRIC
+    from orchestrator import AppOrchestrator
+
     hm = Heatmap(root, db_path=":memory:")
     charts = ChartsPanel(root, metrics=[TP_METRIC], db_path=":memory:")
     orchestrator = AppOrchestrator(hm, charts, settings)
@@ -63,18 +69,18 @@ def test_real_app_py_close_saves_state(temp_settings_file):
     charts.zoom = [738000, 738010]
 
     # 4. ВЫЗЫВАЕМ РЕАЛЬНУЮ ФУНКЦИЮ ЗАКРЫТИЯ ИЗ app.py
-    # Именно она должна вызвать save_state
-    handle_app_close(mock_panel, orchestrator, root)
+    # ИСПОЛЬЗУЕМ patch, чтобы перехватить sys.exit и не дать ему убить тест
+    with patch('app.sys.exit') as mock_exit:
+        from app import handle_app_close
+        handle_app_close(mock_panel, orchestrator, root)
+        
+        # Проверяем, что sys.exit действительно был вызван с кодом 0
+        mock_exit.assert_called_once_with(0)
 
-    # 5. ЖЕСТКАЯ ПРОВЕРКА ДИСКА
-    # Если в app.py закомментирован orchestrator.save_state(), 
-    # файл на диске НЕ обновится, и тест УПАДЕТ здесь:
-    with open(temp_settings_file, 'r', encoding='utf-8') as f:
-        disk_data = json.load(f)
-
-    assert disk_data.get("athlete_id") == "NEW_ATHLETE_FROM_APP", (
-        "КРИТИЧЕСКИЙ БАГ В app.py: handle_app_close не сохранил атлета! "
-        "Проверьте, не закомментирована ли строка orchestrator.save_state() в функции handle_app_close."
-    )
-    assert disk_data.get("year") == 2024, "Год не был сохранен функцией из app.py!"
-    assert disk_data.get("zoom") == [738000, 738010], "Зум не был сохранен функцией из app.py!"
+    # 5. ПРОВЕРЯЕМ, что состояние ДЕЙСТВИТЕЛЬНО сохранилось на диск
+    # Создаем новый экземпляр настроек, чтобы прочитать их с диска
+    saved_settings = AppSettings(path=temp_settings_file).load()
+    
+    assert saved_settings.get("athlete_id") == "NEW_ATHLETE_FROM_APP", "Атлет не сохранился!"
+    assert saved_settings.get("year") == 2024, "Год не сохранился!"
+    assert saved_settings.get("zoom") == [738000, 738010], "Масштаб не сохранился!"

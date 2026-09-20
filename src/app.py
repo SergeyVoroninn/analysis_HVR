@@ -32,6 +32,7 @@ from ghost import ResizeController
 from appsettings import AppSettings
 from splash import SplashScreen
 from orchestrator import AppOrchestrator
+from app_constants import STATUS_TIMEOUT_MS
 
 ATHLETES_COLUMN_FRACTION = 1 / 7
 ATHLETES_COLUMN_MIN = 150
@@ -111,7 +112,7 @@ if __name__ == "__main__":
 
     _status_timer = None
 
-    def set_status(text, timeout=8000):
+    def set_status(text, timeout=STATUS_TIMEOUT_MS):
         global _status_timer
         status_var.set(text)
         if _status_timer:

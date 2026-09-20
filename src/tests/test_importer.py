@@ -65,11 +65,14 @@ def test_import_valid_h10_file(temp_db_and_athlete):
     db_path, athlete_id = temp_db_and_athlete
     
     status_var = MagicMock()
-    mock_athletes = {athlete_id: MagicMock()}
+    mock_athletes = {athlete_id: MagicMock()} # Можно оставить словарь, если polar не совпадет, сработает fallback
     
-    # Мокаем диалог выбора файлов, чтобы он вернул реальный эталонный файл
-    with patch('tkinter.filedialog.askopenfilenames', return_value=(REAL_H10_FILE,)):
-        import_ecg(MagicMock(), db_path, mock_athletes, (athlete_id, "Тестов Атлет"), status_var)
+    # ✅ ИСПРАВЛЕНИЕ: Делаем кортеж из 3+ элементов, чтобы importer.py не упал на athlete[2]
+    selected_athlete = (athlete_id, "Тестов", "Атлет") 
+    
+    with patch('tkinter.filedialog.askopenfilenames', return_value=(REAL_H10_FILE,)), \
+         patch('tkinter.messagebox.askyesno', return_value=True): # Не забываем про askyesno!
+        import_ecg(MagicMock(), db_path, mock_athletes, selected_athlete, status_var)
 
     session = get_session(db_path)
     try:

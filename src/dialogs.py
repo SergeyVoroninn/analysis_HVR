@@ -8,7 +8,8 @@ from tkcalendar import DateEntry, Calendar
 from models import get_session, Athlete, ECGRecord, ECGRaw
 
 from theme import (COL_BG_DARK, COL_TEXT_LIGHT, COL_WEEKEND,
-                   COL_ACCENT, COL_SELECTION, COL_CRIT, COL_DANGER_HOVER)
+                   COL_ACCENT, COL_SELECTION, COL_CRIT, COL_DANGER_HOVER,
+                   COL_ONE, COL_WARN, COL_NEUTRAL, COL_TEXT_DIM)
 
 from app_constants import ECG_FILE_EXTENSION
 
@@ -122,7 +123,7 @@ class AthleteDialog(ctk.CTkToplevel):
         btns = ctk.CTkFrame(self, fg_color="transparent")
         btns.grid(row=row, column=0, columnspan=2, pady=12)
         ctk.CTkButton(btns, text="Сохранить", command=self._on_save).pack(side="left", padx=6)
-        ctk.CTkButton(btns, text="Отмена", fg_color="gray",
+        ctk.CTkButton(btns, text="Отмена", fg_color=COL_NEUTRAL,
                       command=self.destroy).pack(side="left", padx=6)
 
         # Заполняем данные, если редактируем существующего атлета
@@ -290,7 +291,7 @@ class ECGListDialog(ctk.CTkToplevel):
                                         fg_color=COL_CRIT, 
                                         hover_color=COL_DANGER_HOVER)
         self.btn_delete.pack(side="left", padx=4)
-        ctk.CTkButton(btns, text="Закрыть", fg_color="gray",
+        ctk.CTkButton(btns, text="Закрыть", fg_color=COL_NEUTRAL,
                       command=self.destroy).pack(side="left", padx=4)
 
         self._load()
@@ -466,14 +467,14 @@ class BiometricDialog(ctk.CTkToplevel):
         self.status_lbl = ctk.CTkLabel(self, text="Загрузка статуса...", font=ctk.CTkFont(size=12))
         self.status_lbl.pack(pady=10)
 
-        self.info_lbl = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=11), text_color="gray")
+        self.info_lbl = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=11), text_color=COL_TEXT_DIM)
         self.info_lbl.pack(pady=5)
 
         self.btn_create = ctk.CTkButton(self, text="🧬 Сформировать / Обновить шаблон", 
                                         command=self._on_create, height=40)
         self.btn_create.pack(pady=20)
 
-        ctk.CTkButton(self, text="Закрыть", fg_color="gray", command=self.destroy).pack(pady=10)
+        ctk.CTkButton(self, text="Закрыть", fg_color=COL_NEUTRAL, command=self.destroy).pack(pady=10)
 
         self._update_status()
 
@@ -481,11 +482,11 @@ class BiometricDialog(ctk.CTkToplevel):
         from ecg_biometrics import get_saved_template, cfg
         shape, spec = get_saved_template(self.db_path, self.athlete_id)
         if shape is not None:
-            self.status_lbl.configure(text="✅ Шаблон активен", text_color="green")
+            self.status_lbl.configure(text="✅ Шаблон активен", text_color=COL_ONE)
             self.info_lbl.configure(text="Используется для проверки при импорте новых записей.")
             self.btn_create.configure(text="🔄 Обновить шаблон")
         else:
-            self.status_lbl.configure(text="⚠️ Шаблон отсутствует", text_color="orange")
+            self.status_lbl.configure(text="⚠️ Шаблон отсутствует", text_color=COL_WARN)
             self.info_lbl.configure(text=f"Для создания требуется минимум {cfg.MIN_RECORDS} записей ЭКГ.")
             self.btn_create.configure(text="✨ Создать шаблон")
 
