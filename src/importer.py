@@ -31,6 +31,7 @@ from theme import (
 from app_constants import (
     IMPORT_RELATIVE_PROB_THRESHOLD,
     IMPORT_UNKNOWN_PROB_THRESHOLD,
+    IMPORT_PROGRESS_STEP,
     ECG_FILE_EXTENSION
 )
 

@@ -22,6 +22,10 @@ from app_constants import (HOVER_TOLERANCE_ORDINAL, DOUBLE_CLICK_THRESHOLD_SEC,
                            MIN_ZOOM_SPAN_DAYS, DOUBLE_CLICK_PX_TOLERANCE,
                            MID_WEEK_OFFSET_DAYS)
 
+# 🔮 ИМПОРТ ПИД-ПРЕДИКТОРОВ
+from predictor import PIDPredictor
+
+
 class _FrozenCanvas(FigureCanvasTkAgg):
     def __init__(self, figure, master=None):
         super().__init__(figure, master=master)
@@ -37,12 +41,19 @@ class _FrozenCanvas(FigureCanvasTkAgg):
 
 
 class MetricSpec:
-    def __init__(self, key, name, ylabel, value, color=None):
+    def __init__(
+        self, 
+        key, name, ylabel, value, color=None, 
+        pid_floor=None,      # Минимально возможное значение (например, 0)
+        pid_ceiling=None     # Максимально возможное значение
+    ):
         self.key = key
         self.name = name
         self.ylabel = ylabel
         self.value = value
         self.color = color
+        self.pid_floor = pid_floor
+        self.pid_ceiling = pid_ceiling
 
 
 class MetricPlot(tk.Frame):
@@ -252,7 +263,7 @@ class MetricPlot(tk.Frame):
             self._draw()
 
     def _on_scroll(self, event):
-        self._hide_tooltip()  # <-- ДОБАВЛЕНО: скрываем тултип при начале зума
+        self._hide_tooltip()
         
         if event.xdata is None or self._start is None:
             return
@@ -470,7 +481,7 @@ class MetricPlot(tk.Frame):
         self.ax.set_autoscale_on(False)
 
     def _draw(self):
-        self._hide_tooltip()  # <-- ДОБАВЛЕНО: гарантированно скрываем тултип при любой перерисовке
+        self._hide_tooltip()
         
         ax = self.ax
         ax.clear()
@@ -520,7 +531,76 @@ class MetricPlot(tk.Frame):
         if xs and ys:
             c = self.spec.color
             colors = [c(vv) for vv in ys] if callable(c) else (c or COL_TP_YEAR)
+            
+            # 1. Рисуем основные (фактические) столбцы
             ax.bar(xs, ys, width=bw, color=colors, align="edge", zorder=2, rasterized=True)
+
+            # ======================================================================
+            # 🔮 2. PID-ПРОГНОЗ (подводка к соревнованиям)
+            # ======================================================================
+            # Создаем универсальный предиктор с параметрами ТЕКУЩЕЙ метрики
+            predictor = PIDPredictor(
+                value_floor=self.spec.pid_floor,
+                value_ceiling=self.spec.pid_ceiling
+            )
+
+            # Строим прогноз ТОЛЬКО от последней записи в БД
+            forecast = []
+            last_db_point = None
+            
+            if self._values:
+                # Находим последнюю запись во всей БД
+                last_ordinal = max(x for x, _, _ in self._values)
+                
+                # Берем все точки за последние 7 дней относительно последней записи
+                recent_points = [
+                    (x, y) for x, y, _ in self._values 
+                    if (last_ordinal - x) <= predictor.history_days
+                ]
+                
+                if len(recent_points) >= predictor.min_points:
+                    # Агрегируем по дням (на случай нескольких записей в один день)
+                    agg = {}
+                    for x, y in recent_points:
+                        agg.setdefault(x, []).append(y)
+                    
+                    recent_xs = sorted(agg)
+                    recent_ys = [sum(agg[x]) / len(agg[x]) for x in recent_xs]
+                    
+                    # Строим прогноз
+                    forecast = predictor.predict(list(zip(recent_xs, recent_ys)))
+                    last_db_point = (recent_xs[-1], recent_ys[-1])
+
+            # Рисуем прогноз, только если он есть
+            if forecast and last_db_point:
+                last_x, last_y = last_db_point
+                
+                for fp in forecast:
+                    pred_color = colors[-1] if isinstance(colors, list) and colors else (
+                        c(fp.y) if callable(c) else COL_TP_YEAR
+                    )
+                    alpha = 0.4 * fp.confidence
+
+                    ax.bar(
+                        [fp.x], [fp.y], width=bw,
+                        color=pred_color, alpha=alpha, align="edge", zorder=1
+                    )
+                    # Пунктирная линия от последней записи в БД к прогнозу
+                    ax.plot(
+                        [last_x + bw, fp.x], [last_y, fp.y],
+                        color=pred_color, linestyle="--",
+                        alpha=0.8 * fp.confidence, linewidth=1.5, zorder=1
+                    )
+                    ax.text(
+                        fp.x + bw / 2, fp.y * 1.02, "прогноз",
+                        ha="center", va="bottom", fontsize=7,
+                        color=pred_color, alpha=0.9 * fp.confidence
+                    )
+                
+                # Расширяем ось X, чтобы вместить прогноз (только если прогноз в будущем)
+                if forecast[-1].x > last_x:
+                    max_forecast_x = forecast[-1].x + bw
+                    ax.set_xlim(lo, max(hi, max_forecast_x + 1))
 
         ax.set_xlim(lo, hi)
         if ys:
@@ -536,13 +616,9 @@ class MetricPlot(tk.Frame):
         self.canvas.draw_idle()
 
     def _set_x_ticks_small(self, ax, lo, hi, vspan, config):
-        """
-        УНИВЕРСАЛЬНАЯ отрисовка. Работает исключительно на основе параметров из ChartConfig.
-        """
         ticks, names = [], []
         raw_ticks = []
 
-        # 1. Определяем шаг и тип данных на основе конфига
         if config.tick_step_hours > 0:
             step = datetime.timedelta(hours=config.tick_step_hours)
             current = datetime.datetime.fromordinal(max(1, int(lo))).replace(hour=0, minute=0, second=0)
@@ -551,9 +627,8 @@ class MetricPlot(tk.Frame):
             step = datetime.timedelta(days=max(1, config.tick_step_days))
             start_date = datetime.date.fromordinal(max(1, int(lo)))
             
-            # Сдвигаем к ближайшему понедельнику, который >= начала диапазона
             if step.days >= 7:
-                days_since_monday = start_date.weekday()  # 0=пн, 1=вт, ..., 6=вс
+                days_since_monday = start_date.weekday()
                 if days_since_monday == 0:
                     current = start_date
                 else:
@@ -563,7 +638,6 @@ class MetricPlot(tk.Frame):
                 
             is_datetime = False
 
-        # 2. Генерируем все возможные точки (тики по понедельникам)
         while True:
             tick_val = self._ord(current)
                 
@@ -577,12 +651,10 @@ class MetricPlot(tk.Frame):
                 
             current += step
 
-        # 3. 🔧 ДОБАВЛЯЕМ 1-Е ЧИСЛО КАЖДОГО МЕСЯЦА (если show_month_label=True)
         if getattr(config, 'show_month_label', False) and not is_datetime:
             d_start = datetime.date.fromordinal(max(1, int(lo)))
             d_end = datetime.date.fromordinal(max(1, int(hi)))
             
-            # Находим первое 1-е число в диапазоне
             first_first = d_start.replace(day=1)
             if first_first < d_start:
                 if first_first.month == 12:
@@ -590,27 +662,20 @@ class MetricPlot(tk.Frame):
                 else:
                     first_first = first_first.replace(month=first_first.month + 1)
             
-            # Добавляем все 1-е числа месяца
             current_first = first_first
             while current_first <= d_end:
                 tick_val = current_first.toordinal()
-                # Добавляем только если еще нет такого тика
                 if not any(abs(tv - tick_val) < 0.1 for tv, _ in raw_ticks):
                     raw_ticks.append((tick_val, current_first))
                 
-                # Переходим к следующему месяцу
                 if current_first.month == 12:
                     current_first = current_first.replace(year=current_first.year + 1, month=1)
                 else:
                     current_first = current_first.replace(month=current_first.month + 1)
 
-        # 4. Сортируем все тики по дате
         raw_ticks.sort(key=lambda x: x[0])
-
-        # 5. Фильтруем только те точки, которые попадают в видимый диапазон
         valid_ticks = [(tv, dt) for tv, dt in raw_ticks if lo - 0.1 <= tv <= hi + 0.1]
 
-        # 6. Форматируем
         for i, (tick_val, dt_obj) in enumerate(valid_ticks):
             ticks.append(tick_val)
 
@@ -618,7 +683,6 @@ class MetricPlot(tk.Frame):
             is_last = (i == len(valid_ticks) - 1)
             is_edge = is_first or is_last
 
-            # Выбираем формат по приоритету
             if is_edge and config.force_edge_format and config.tick_edge_format:
                 fmt = config.tick_edge_format
             elif config.tick_inner_format:
@@ -626,7 +690,6 @@ class MetricPlot(tk.Frame):
             else:
                 fmt = config.tick_format
 
-            # === 🔧 УПРОЩЕННАЯ ЛОГИКА ФОРМАТИРОВАНИЯ ===
             if fmt == "weekday":
                 if getattr(config, 'weekday_date_on_monday', False) and dt_obj.weekday() == 0:
                     names.append(dt_obj.strftime("%d"))
@@ -639,11 +702,9 @@ class MetricPlot(tk.Frame):
                     names.append(MONTHS_RU[d.month - 1])
                     
             else:
-                # Показываем месяц 1-го числа (любой день недели)
                 if getattr(config, 'show_month_label', False) and dt_obj.day == 1:
                     names.append(MONTHS_RU[dt_obj.month - 1])
                 else:
-                    # Все остальные случаи — показываем число
                     names.append(dt_obj.strftime(fmt))
 
         ax.set_xticks(ticks)

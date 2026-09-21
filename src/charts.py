@@ -18,10 +18,23 @@ def _si_color(v):
         stress_level(v), COL_ONE)
 
 
-TP_METRIC = MetricSpec("tp", "TP", "мс²",
-                       lambda r: r.tp if r.tp is not None else None)
-SI_METRIC = MetricSpec("si", "Стресс", "ИС",
-                       lambda r: r.stress_si, _si_color)
+# TP не может быть отрицательным, и у здоровых людей редко превышает 15000-20000 мс²
+TP_METRIC = MetricSpec(
+    "tp", "TP", "мс²",
+    lambda r: r.tp if r.tp is not None else None,
+    pid_floor=100.0,
+    pid_ceiling=20000.0
+)
+
+# Индекс стресса (SI) не может быть отрицательным. Ограничим сверху разумным значением, 
+# чтобы регулятор не предсказывал абсурдные 1000+ при резком скачке.
+SI_METRIC = MetricSpec(
+    "si", "Стресс", "ИС",
+    lambda r: r.stress_si, 
+    _si_color,
+    pid_floor=0.0,
+    pid_ceiling=300.0
+)
 
 
 class ChartsPanel(tk.Frame):
