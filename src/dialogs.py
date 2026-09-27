@@ -133,17 +133,22 @@ class AthleteDialog(ctk.CTkToplevel):
                       command=self.destroy).pack(side="left", padx=6)
         row += 1
 
-        # Кнопка "Список ЭКГ" — журнал записей конкретного атлета (под Сохранить/Отмена)
+        # Кнопки действий с данными атлета (под Сохранить/Отмена)
         ecg_btn_row = ctk.CTkFrame(self, fg_color="transparent")
         ecg_btn_row.grid(row=row, column=0, columnspan=2, pady=(6, 10))
         self.btn_ecg_list = ctk.CTkButton(
             ecg_btn_row, text="📋 Список ЭКГ",
             command=self._open_ecg_list,
             fg_color=COL_ACCENT)
-        self.btn_ecg_list.pack()
-        # Для нового атлета ещё нет id — журнал открыть нельзя
+        self.btn_ecg_list.pack(side="left", padx=4)
+        self.btn_template = ctk.CTkButton(
+            ecg_btn_row, text="🧬 Сформировать шаблон",
+            command=self._build_template)
+        self.btn_template.pack(side="left", padx=4)
+        # Для нового атлета ещё нет id — действия недоступны
         if not self.athlete_id:
             self.btn_ecg_list.configure(state="disabled")
+            self.btn_template.configure(state="disabled")
 
         # Заполняем данные, если редактируем существующего атлета
         if data:
@@ -215,6 +220,25 @@ class AthleteDialog(ctk.CTkToplevel):
         ECGJournal(self, athlete_id=self.athlete_id,
                    db_path=self.db_path, limit=ECGLIST_DEFAULT_LIMIT,
                    title="ЭКГ атлета")
+
+    def _build_template(self):
+        """Формирует биометрический шаблон атлета из его записей.
+
+        Если записей недостаточно — показывает соответствующее сообщение.
+        """
+        if not self.athlete_id:
+            return
+        from ecg_biometrics import create_and_save_template
+        self.btn_template.configure(state="disabled", text="Формирование...")
+        self.update()
+        try:
+            success, message = create_and_save_template(self.db_path, self.athlete_id)
+        finally:
+            self.btn_template.configure(state="normal", text="🧬 Сформировать шаблон")
+        if success:
+            messagebox.showinfo("Шаблон", message, parent=self)
+        else:
+            messagebox.showwarning("Шаблон", message, parent=self)
 
     def _on_save(self):
         try:
@@ -351,6 +375,10 @@ class ECGJournal(ctk.CTkToplevel):
                                         command=self._delete, state="disabled",
                                         fg_color=COL_CRIT, hover_color=COL_DANGER_HOVER)
         self.btn_delete.pack(side="left", padx=4)
+        self.btn_improve = ctk.CTkButton(btns, text="🎯 Улучшить сходство",
+                                         command=self._improve_similarity, state="disabled",
+                                         fg_color=COL_ACCENT)
+        self.btn_improve.pack(side="left", padx=4)
         ctk.CTkButton(btns, text="Закрыть", fg_color=COL_NEUTRAL,
                       command=self._safe_close).pack(side="left", padx=4)
 
@@ -483,10 +511,36 @@ class ECGJournal(ctk.CTkToplevel):
         state = "normal" if sel else "disabled"
         self.btn_export.configure(state=state)
         self.btn_delete.configure(state=state)
+        self.btn_improve.configure(state=state)
 
     def _selected_id(self):
         sel = self.tree.selection()
         return int(sel[0]) if sel else None
+
+    def _improve_similarity(self):
+        """Открывает диалог выбора лучшего атлета для записи и переназначает её."""
+        rid = self._selected_id()
+        if rid is None:
+            return
+
+        def on_apply(record_id, new_athlete_id, prob):
+            session = get_session(self.db_path)
+            try:
+                rec = session.get(ECGRecord, record_id)
+                if rec is None:
+                    return
+                rec.athlete_id = new_athlete_id
+                rec.bio_similarity_pct = round(prob * 100, 2) if prob is not None else None
+                session.commit()
+            finally:
+                session.close()
+            self._load()
+            try:
+                self.winfo_toplevel().event_generate("<<ECGDataChanged>>", when="tail")
+            except Exception:
+                pass
+
+        SimilarityDialog(self, self.db_path, rid, on_apply=on_apply)
 
     def _export(self):
         rid = self._selected_id()
@@ -548,6 +602,145 @@ class ECGJournal(ctk.CTkToplevel):
             self.winfo_toplevel().event_generate("<<ECGDataChanged>>", when="tail")
         except Exception:
             pass
+
+class SimilarityDialog(ctk.CTkToplevel):
+    """Диалог «Улучшить сходство»: ранжирует атлетов по биометрии для записи ЭКГ.
+
+    Атлеты перечислены по убыванию степени сходства (по вероятности совпадения),
+    с метриками (расстояние, количество записей в шаблоне) — чтобы выбирать
+    по всем признакам, а не только по фамилии.
+    """
+
+    COLS = ("ФИО", "Polar ID", "Сходство %", "Расстояние", "Записей в шаблоне", "Отметка")
+
+    def __init__(self, parent, db_path, record_id, on_apply=None):
+        super().__init__(parent)
+        self.title("Улучшить сходство")
+        self.geometry("780x480")
+        self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
+
+        self.db_path = db_path
+        self.record_id = record_id
+        self.on_apply = on_apply
+        self.candidates = []
+
+        ctk.CTkLabel(self, text="Выберите наиболее подходящего атлета (по биометрии)",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(padx=12, pady=(10, 4))
+
+        frame = ctk.CTkFrame(self)
+        frame.pack(fill="both", expand=True, padx=10, pady=4)
+        self.tree = ttk.Treeview(frame, columns=self.COLS, show="headings", height=12)
+        widths = {"ФИО": 200, "Polar ID": 95, "Сходство %": 90, "Расстояние": 95,
+                  "Записей в шаблоне": 70, "Отметка": 140}
+        for c in self.COLS:
+            self.tree.heading(c, text=c)
+            self.tree.column(c, width=widths[c], anchor="center")
+        self.tree.tag_configure("current", background=COL_ACCENT, foreground=COL_SELECTION)
+        self.tree.tag_configure("relative", background=COL_WARN, foreground=COL_BG_DARK)
+        self.tree.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        sb.pack(side="right", fill="y")
+        self.tree.configure(yscrollcommand=sb.set)
+        self.tree.bind("<<TreeviewSelect>>", self._on_select)
+
+        self.info_label = ctk.CTkLabel(self, text="Загрузка...", text_color=COL_TEXT_DIM,
+                                       font=ctk.CTkFont(size=11))
+        self.info_label.pack(pady=(2, 2))
+
+        btns = ctk.CTkFrame(self, fg_color="transparent")
+        btns.pack(pady=8)
+        self.btn_template = ctk.CTkButton(btns, text="🧬 Сформировать шаблон",
+                                          command=self._build_template, state="disabled")
+        self.btn_template.pack(side="left", padx=6)
+        self.btn_apply = ctk.CTkButton(btns, text="Привязать к выбранному",
+                                       command=self._apply, state="disabled")
+        self.btn_apply.pack(side="left", padx=6)
+        ctk.CTkButton(btns, text="Отмена", fg_color=COL_NEUTRAL,
+                      command=self.destroy).pack(side="left", padx=6)
+
+        self._load()
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def _load(self):
+        from ecg_biometrics import rank_athletes_for_record
+        self.candidates = rank_athletes_for_record(self.db_path, self.record_id)
+        if not self.candidates:
+            self.info_label.configure(
+                text="Нет данных: для записи нет сырых данных или шаблонов атлетов.")
+            return
+
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        for m in self.candidates:
+            a = m['athlete']
+            name = f"{a.last_name} {a.first_name} {a.middle_name or ''}".strip()
+            marks = []
+            if m['is_current']:
+                marks.append("ТЕКУЩИЙ")
+            if m['is_relative']:
+                marks.append("родственник")
+            tags = ()
+            if m['is_current']:
+                tags = ("current",)
+            elif m['is_relative']:
+                tags = ("relative",)
+            self.tree.insert("", "end", iid=str(a.id), tags=tags, values=(
+                name, a.polar_id or "—",
+                f"{m['probability'] * 100:.0f}",
+                f"{m['distance']:.3f}",
+                m['records_used'],
+                " · ".join(marks)))
+
+        best = self.candidates[0]['athlete']
+        self.info_label.configure(
+            text=f"Лучший: {best.last_name} {best.first_name} "
+                 f"({self.candidates[0]['probability'] * 100:.0f}%). "
+                 f"Кандидатов: {len(self.candidates)}.")
+
+    def _on_select(self, event=None):
+        sel = self.tree.selection()
+        state = "normal" if sel else "disabled"
+        self.btn_apply.configure(state=state)
+        self.btn_template.configure(state=state)
+
+    def _build_template(self):
+        """Формирует биометрический шаблон для выбранного атлета.
+
+        Если записей недостаточно — показываем соответствующее сообщение.
+        """
+        sel = self.tree.selection()
+        if not sel:
+            return
+        aid = sel[0]
+
+        from ecg_biometrics import create_and_save_template
+        self.btn_template.configure(state="disabled", text="Формирование...")
+        self.update()
+        try:
+            success, message = create_and_save_template(self.db_path, aid)
+        finally:
+            self.btn_template.configure(state="normal", text="🧬 Сформировать шаблон")
+
+        if success:
+            messagebox.showinfo("Шаблон", message, parent=self)
+        else:
+            messagebox.showwarning("Шаблон", message, parent=self)
+        # обновляем рейтинг — новый шаблон появится в списке кандидатов
+        self._load()
+
+    def _apply(self):
+        sel = self.tree.selection()
+        if not sel:
+            return
+        new_aid = sel[0]
+        m = next((x for x in self.candidates if x['athlete'].id == new_aid), None)
+        if self.on_apply:
+            self.on_apply(self.record_id, new_aid, m['probability'] if m else None)
+        self.destroy()
+
 
 class BiometricDialog(ctk.CTkToplevel):
     """Окно управления биометрическим шаблоном атлета."""

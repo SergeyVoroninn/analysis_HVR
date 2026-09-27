@@ -20,7 +20,7 @@ from app_constants import (HOVER_TOLERANCE_ORDINAL, DOUBLE_CLICK_THRESHOLD_SEC,
                            MAX_ZOOM_ORDINALS, MAX_YEAR, SINGLE_CLICK_DELAY_METRICPLOT_MS,
                            PAN_REDRAW_MS, ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR,
                            MIN_ZOOM_SPAN_DAYS, DOUBLE_CLICK_PX_TOLERANCE,
-                           MID_WEEK_OFFSET_DAYS)
+                           MID_WEEK_OFFSET_DAYS, ENABLE_PID_FORECAST)
 
 # 🔮 ИМПОРТ ПИД-ПРЕДИКТОРОВ
 from predictor import PIDPredictor
@@ -571,8 +571,8 @@ class MetricPlot(tk.Frame):
                     forecast = predictor.predict(list(zip(recent_xs, recent_ys)))
                     last_db_point = (recent_xs[-1], recent_ys[-1])
 
-            # Рисуем прогноз, только если он есть
-            if forecast and last_db_point:
+            # Рисуем прогноз, только если он есть (и отрисовка прогноза включена)
+            if forecast and last_db_point and ENABLE_PID_FORECAST:
                 last_x, last_y = last_db_point
                 
                 for fp in forecast:

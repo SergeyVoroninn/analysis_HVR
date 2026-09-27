@@ -260,6 +260,72 @@ def check_ownership_with_saved_template(db_path, athlete_id, new_file_path):
         return "MATCH", distance, probability
 
 
+def _score_cycles(db_path, q_shape, q_spec, exclude_athlete_id=None):
+    """Сравнивает признаки ЭКГ-цикла с шаблонами всех атлетов.
+
+    Возвращает список кандидатов (dict), отсортированный по расстоянию
+    (меньше = похожее). Ключи каждого элемента:
+    'athlete', 'distance', 'probability', 'base_probability',
+    'records_used', 'is_relative'.
+    """
+    if q_shape is None or q_spec is None:
+        return []
+
+    session = get_session(db_path)
+    try:
+        results = session.query(BiometricTemplate, Athlete).join(
+            Athlete, BiometricTemplate.athlete_id == Athlete.id
+        ).all()
+
+        matches = []
+        for tpl, athlete in results:
+            if exclude_athlete_id and athlete.id == exclude_athlete_id:
+                continue
+            try:
+                ref_shape = np.array(json.loads(tpl.shape_template))
+                ref_spec = np.array(json.loads(tpl.spectrum_template))
+
+                shape_dist = dtw.distance_fast(q_shape.astype(np.double), ref_shape.astype(np.double))
+                spec_dist = np.sqrt(np.sum((q_spec - ref_spec) ** 2))
+
+                if exclude_athlete_id and _are_relatives_by_name(db_path, exclude_athlete_id, athlete.id):
+                    distance = cfg.REL_SHAPE_WEIGHT * (shape_dist / cfg.SHAPE_NORM_FACTOR) + \
+                               cfg.REL_SPEC_WEIGHT * (spec_dist / cfg.SPEC_NORM_FACTOR)
+                    base_prob = float(np.exp(-cfg.PROB_DECAY_RELATIVE * distance))
+                    is_relative = True
+                else:
+                    distance = cfg.SHAPE_WEIGHT * (shape_dist / cfg.SHAPE_NORM_FACTOR) + \
+                               cfg.SPEC_WEIGHT * (spec_dist / cfg.SPEC_NORM_FACTOR)
+                    base_prob = float(np.exp(-cfg.PROB_DECAY_NORMAL * distance))
+                    is_relative = False
+
+                records_used = max(1, tpl.records_used)
+
+                reliability_bonus = 0.0
+                if records_used >= cfg.RELIABILITY_HIGH_THRESH:
+                    reliability_bonus = cfg.RELIABILITY_BONUS_HIGH
+                elif records_used >= cfg.RELIABILITY_LOW_THRESH:
+                    reliability_bonus = cfg.RELIABILITY_BONUS_LOW
+
+                final_prob = min(1.0, base_prob * (1.0 + reliability_bonus))
+
+                matches.append({
+                    'athlete': athlete,
+                    'distance': distance,
+                    'probability': final_prob,
+                    'base_probability': base_prob,
+                    'records_used': records_used,
+                    'is_relative': is_relative
+                })
+            except Exception:
+                continue
+
+        matches.sort(key=lambda x: x['distance'])
+        return matches
+    finally:
+        session.close()
+
+
 def find_best_match(db_path, new_file_path, exclude_athlete_id=None):
     """
     Ищет атлета с наилучшим биометрическим совпадением.
@@ -275,64 +341,43 @@ def find_best_match(db_path, new_file_path, exclude_athlete_id=None):
     if q_shape is None or q_spec is None:
         return None, BIOMETRIC_ERROR_DISTANCE, 0.0, []
 
+    matches = _score_cycles(db_path, q_shape, q_spec, exclude_athlete_id)
+
+    if matches:
+        best = matches[0]
+        return best['athlete'], best['distance'], best['probability'], matches
+    return None, BIOMETRIC_ERROR_DISTANCE, 0.0, []
+
+
+def rank_athletes_for_record(db_path, record_id):
+    """Возвращает кандидатов-атлетов по биометрии для сохранённой записи ЭКГ.
+
+    Используется в диалоге «Улучшить сходство»: читает сырые данные записи из БД,
+    сравнивает с шаблонами ВСЕХ атлетов и возвращает список, отсортированный
+    по убыванию сходства (probability). Отмечает текущего атлета и родственников.
+    """
     session = get_session(db_path)
     try:
-        results = session.query(BiometricTemplate, Athlete).join(
-            Athlete, BiometricTemplate.athlete_id == Athlete.id
-        ).all()
-
-        matches = []
-        for tpl, athlete in results:
-            if exclude_athlete_id and athlete.id == exclude_athlete_id:
-                continue
-            
-            try:
-                ref_shape = np.array(json.loads(tpl.shape_template))
-                ref_spec = np.array(json.loads(tpl.spectrum_template))
-                
-                shape_dist = dtw.distance_fast(q_shape.astype(np.double), ref_shape.astype(np.double))
-                spec_dist = np.sqrt(np.sum((q_spec - ref_spec) ** 2))
-                
-                is_relative = _are_relatives_by_name(db_path, exclude_athlete_id, athlete.id)
-                
-                if is_relative:
-                    distance = cfg.REL_SHAPE_WEIGHT * (shape_dist / cfg.SHAPE_NORM_FACTOR) + \
-                               cfg.REL_SPEC_WEIGHT * (spec_dist / cfg.SPEC_NORM_FACTOR)
-                    base_prob = float(np.exp(-cfg.PROB_DECAY_RELATIVE * distance))
-                else:
-                    distance = cfg.SHAPE_WEIGHT * (shape_dist / cfg.SHAPE_NORM_FACTOR) + \
-                               cfg.SPEC_WEIGHT * (spec_dist / cfg.SPEC_NORM_FACTOR)
-                    base_prob = float(np.exp(-cfg.PROB_DECAY_NORMAL * distance))
-                
-                records_used = max(1, tpl.records_used)
-                
-                reliability_bonus = 0.0
-                if records_used >= cfg.RELIABILITY_HIGH_THRESH:
-                    reliability_bonus = cfg.RELIABILITY_BONUS_HIGH
-                elif records_used >= cfg.RELIABILITY_LOW_THRESH:
-                    reliability_bonus = cfg.RELIABILITY_BONUS_LOW
-                
-                final_prob = min(1.0, base_prob * (1.0 + reliability_bonus))
-                
-                matches.append({
-                    'athlete': athlete,
-                    'distance': distance,
-                    'probability': final_prob,
-                    'base_probability': base_prob,
-                    'records_used': records_used,
-                    'is_relative': is_relative
-                })
-            except Exception:
-                continue
-        
-        matches.sort(key=lambda x: x['distance'])
-        
-        if matches:
-            best = matches[0]
-            return best['athlete'], best['distance'], best['probability'], matches
-        return None, BIOMETRIC_ERROR_DISTANCE, 0.0, []
+        rec = session.query(ECGRecord).filter_by(id=record_id).first()
+        if rec is None or rec.raw is None or not rec.raw.raw_data:
+            return []
+        raw = rec.raw.raw_data
+        current_athlete_id = rec.athlete_id
     finally:
         session.close()
+
+    q_shape, q_spec = _extract_features(_parse_and_clean_ecg(raw))
+    if q_shape is None or q_spec is None:
+        return []
+
+    matches = _score_cycles(db_path, q_shape, q_spec, exclude_athlete_id=None)
+    for m in matches:
+        m['is_current'] = (m['athlete'].id == current_athlete_id)
+        m['is_relative'] = bool(
+            current_athlete_id and _are_relatives_by_name(db_path, current_athlete_id, m['athlete'].id))
+    # Сортируем по убыванию сходства (большая вероятность = лучше)
+    matches.sort(key=lambda x: x['probability'], reverse=True)
+    return matches
 
 
 def auto_update_template_if_needed(db_path, athlete_id):
