@@ -78,7 +78,7 @@ if __name__ == "__main__":
     pump(0.60)
     from atlets import AthletesPanel
     from heatmap import Heatmap
-    from dialogs import ECGListDialog
+    from dialogs import ECGJournal
     from charts import ChartsPanel, TP_METRIC, SI_METRIC
     pump(0.80)
     from importer import import_ecg
@@ -133,8 +133,8 @@ if __name__ == "__main__":
         dt_to = dt_from + datetime.timedelta(hours=3)
         title = f"ЭКГ за {dt_from:%d.%m.%Y %H:%M}–{dt_to:%H:%M}"
         right.db_path = panel.db_path
-        dlg = ECGListDialog(right, cur[0], dt_from, dt_to,
-                            title, on_change=hm.refresh)
+        dlg = ECGJournal(right, athlete_id=cur[0], date_from=dt_from, date_to=dt_to,
+                         title=title, on_change=hm.refresh)
 
     hm = Heatmap(right, on_pick=on_week_pick_action)
     charts = ChartsPanel(right, metrics=[TP_METRIC, SI_METRIC])

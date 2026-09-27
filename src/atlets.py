@@ -15,7 +15,7 @@ from athlete_generator import (
     _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
     _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd, _calc_age)
 from theme import COL_BG_WIDGET, COL_TEXT_LIGHT, COL_ACCENT
-from app_constants import SINGLE_CLICK_DELAY_ATLETS_MS
+from app_constants import SINGLE_CLICK_DELAY_ATLETS_MS, ECGLIST_DEFAULT_LIMIT
 
 
 class AthletesPanel(tk.Frame):
@@ -257,13 +257,16 @@ class AthletesPanel(tk.Frame):
 
     # ------------------------------------------------ НОВОЕ: Список ЭКГ
     def open_ecg_list(self):
-        """Открывает модальное окно со списком ЭКГ записей."""
-        cur = self.selected()
-        athlete_id = cur[0] if cur else None
-        
+        """Открывает модальное окно со списком последних ЭКГ записей.
+
+        Показываются последние записи БЕЗ фильтра по выбранному атлету —
+        чтобы можно было найти и удалить последнюю запись после неудачного импорта.
+        """
         try:
-            from ecg_list_window import ECGListWindow
-            ECGListWindow(self.winfo_toplevel(), db_path=self.db_path, athlete_id=athlete_id)
+            from dialogs import ECGJournal
+            ECGJournal(self.winfo_toplevel(),
+                       db_path=self.db_path, limit=ECGLIST_DEFAULT_LIMIT,
+                       title="Последние записи ЭКГ (все)")
         except ImportError as e:
             print(f"Ошибка загрузки списка ЭКГ: {e}")
         except Exception as e:

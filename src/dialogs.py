@@ -5,13 +5,14 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 from tkcalendar import DateEntry, Calendar
 
-from models import get_session, Athlete, ECGRecord, ECGRaw
+from models import get_session, Athlete, ECGRecord, ECGRaw, Device
 
 from theme import (COL_BG_DARK, COL_TEXT_LIGHT, COL_WEEKEND,
                    COL_ACCENT, COL_SELECTION, COL_CRIT, COL_DANGER_HOVER,
                    COL_ONE, COL_WARN, COL_NEUTRAL, COL_TEXT_DIM)
 
-from app_constants import ECG_FILE_EXTENSION
+from app_constants import (ECG_FILE_EXTENSION, ECGLIST_DEFAULT_LIMIT,
+                           BIO_SIMILARITY_WARN_PCT, BIO_SIMILARITY_CRIT_PCT)
 
 
 class _ForegroundDateEntry(DateEntry):
@@ -20,6 +21,11 @@ class _ForegroundDateEntry(DateEntry):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._rebuild_lock = False  # Блокировка от рекурсии
+        # tkcalendar инициализирует _downarrow_name асинхронно (через таймер),
+        # а _on_motion по наведению мыши может сработать раньше -> AttributeError.
+        # Ставим безопасное значение по умолчанию, чтобы не падало до его определения.
+        if not hasattr(self, "_downarrow_name"):
+            self._downarrow_name = "__none__"
 
     def drop_down(self):
         super().drop_down()
@@ -64,7 +70,7 @@ class AthleteDialog(ctk.CTkToplevel):
     def __init__(self, parent, title, data=None, db_path=None):
         super().__init__(parent)
         self.title(title)
-        self.geometry("380x520")  # ⚡ УВЕЛИЧИЛИ ВЫСОТУ (было 460), чтобы кнопка поместилась
+        self.geometry("380x545")  # ⚡ высота увеличена: отдельная строка под кнопку "Список ЭКГ"
         self.resizable(False, False)
         self.transient(parent)
         self.result = None
@@ -121,10 +127,23 @@ class AthleteDialog(ctk.CTkToplevel):
         row += 1
 
         btns = ctk.CTkFrame(self, fg_color="transparent")
-        btns.grid(row=row, column=0, columnspan=2, pady=12)
+        btns.grid(row=row, column=0, columnspan=2, pady=(10, 0))
         ctk.CTkButton(btns, text="Сохранить", command=self._on_save).pack(side="left", padx=6)
         ctk.CTkButton(btns, text="Отмена", fg_color=COL_NEUTRAL,
                       command=self.destroy).pack(side="left", padx=6)
+        row += 1
+
+        # Кнопка "Список ЭКГ" — журнал записей конкретного атлета (под Сохранить/Отмена)
+        ecg_btn_row = ctk.CTkFrame(self, fg_color="transparent")
+        ecg_btn_row.grid(row=row, column=0, columnspan=2, pady=(6, 10))
+        self.btn_ecg_list = ctk.CTkButton(
+            ecg_btn_row, text="📋 Список ЭКГ",
+            command=self._open_ecg_list,
+            fg_color=COL_ACCENT)
+        self.btn_ecg_list.pack()
+        # Для нового атлета ещё нет id — журнал открыть нельзя
+        if not self.athlete_id:
+            self.btn_ecg_list.configure(state="disabled")
 
         # Заполняем данные, если редактируем существующего атлета
         if data:
@@ -189,6 +208,14 @@ class AthleteDialog(ctk.CTkToplevel):
             return True
         return bool(re.fullmatch(r"\d*\.?\d*", proposed))
 
+    def _open_ecg_list(self):
+        """Открывает журнал ЭКГ, отфильтрованный по текущему атлету."""
+        if not self.athlete_id:
+            return
+        ECGJournal(self, athlete_id=self.athlete_id,
+                   db_path=self.db_path, limit=ECGLIST_DEFAULT_LIMIT,
+                   title="ЭКГ атлета")
+
     def _on_save(self):
         try:
             last = self.entries["last_name"].get().strip()
@@ -236,25 +263,58 @@ class AthleteDialog(ctk.CTkToplevel):
             traceback.print_exc()
             messagebox.showerror("Ошибка сохранения", f"Произошла непредвиденная ошибка:\n{e}")
 
-class ECGListDialog(ctk.CTkToplevel):
-    """Окно со списком ЭКГ за выбранный интервал (ORM-версия)."""
+class ECGJournal(ctk.CTkToplevel):
+    """Единый журнал записей ЭКГ (используется и из heatmap, и из главной формы).
 
-    # ⚡ ЗАМЕНИЛИ "Профиль" на "Обновлено"
-    DISPLAY_COLS = ("Время", "Обновлено", "ЧСС", "RMSSD", "SDNN", "ИС", "TP", "Статус")
+    Режимы выборки:
+      * интервал: date_from/date_to по recorded_at (из недельного heatmap),
+        сортировка по умолчанию — время снятия (recorded_at ASC);
+      * последние: limit по времени импорта (updated_at DESC), конкретный атлет
+        или все (из главной формы).
 
-    def __init__(self, parent, athlete_id, date_from, date_to, title, on_change=None):
+    Сортировка — кликом по заголовку любой колонки, а также кнопками
+    «По времени снятия» / «По времени импорта». Записи с низкой биологической
+    схожестью с шаблоном подсвечиваются цветом (< WARN — жёлтым, < CRIT — красным).
+    """
+
+    DISPLAY_COLS = ("Атлет", "Прибор", "Время", "Импорт", "Сходство",
+                    "ЧСС", "RMSSD", "SDNN", "ИС", "TP", "Статус")
+
+    # имя колонки -> (ORM-таблица, атрибут) для order_by
+    SORT_ATTR = {
+        "Атлет": (Athlete, Athlete.last_name),
+        "Прибор": (Device, Device.serial_number),
+        "Время": (ECGRecord, ECGRecord.recorded_at),
+        "Импорт": (ECGRecord, ECGRecord.updated_at),
+        "Сходство": (ECGRecord, ECGRecord.bio_similarity_pct),
+        "ЧСС": (ECGRecord, ECGRecord.mean_hr),
+        "RMSSD": (ECGRecord, ECGRecord.rmssd),
+        "SDNN": (ECGRecord, ECGRecord.sdnn),
+        "ИС": (ECGRecord, ECGRecord.stress_si),
+        "TP": (ECGRecord, ECGRecord.tp),
+        "Статус": (ECGRecord, ECGRecord.status),
+    }
+
+    def __init__(self, parent, *, athlete_id=None, date_from=None, date_to=None,
+                 limit=None, db_path=None, title="Журнал ЭКГ", on_change=None):
         super().__init__(parent)
         self.title(title)
-        self.geometry("720x480")
+        self.geometry("1150x520")
+        self.resizable(True, True)
         self.transient(parent)
-        self._calendar_open = False
-        self._setup_grab()
+        self.grab_set()
 
-        self.db_path = parent.db_path
+        self.db_path = db_path or getattr(parent, "db_path", None)
         self.athlete_id = athlete_id
         self.date_from = date_from
         self.date_to = date_to
+        self.limit = limit
         self.on_change = on_change
+
+        # Сортировка по умолчанию: для интервала — по времени снятия (Время, ASC),
+        # для "последних" — по времени импорта (Импорт, DESC).
+        self._sort_col = "Время" if date_from is not None else "Импорт"
+        self._sort_desc = date_from is None
 
         ctk.CTkLabel(self, text=title,
                      font=ctk.CTkFont(size=14, weight="bold")).pack(padx=12, pady=8)
@@ -263,17 +323,14 @@ class ECGListDialog(ctk.CTkToplevel):
         frame.pack(fill="both", expand=True, padx=10, pady=6)
         self.tree = ttk.Treeview(frame, columns=self.DISPLAY_COLS, show="headings",
                                  height=14)
+        widths = {"Атлет": 150, "Прибор": 120, "Время": 120, "Импорт": 120,
+                  "Сходство": 80, "ЧСС": 70, "RMSSD": 70, "SDNN": 70,
+                  "ИС": 70, "TP": 80, "Статус": 80}
         for c in self.DISPLAY_COLS:
-            if c == "Время":
-                w = 110
-            elif c == "Обновлено":  # ⚡ НОВАЯ КОЛОНКА
-                w = 110
-            elif c == "TP":
-                w = 80
-            else:
-                w = 70
-            self.tree.heading(c, text=c)
-            self.tree.column(c, width=w, anchor="center")
+            self.tree.heading(c, text=c, command=lambda _c=c: self._sort_by(_c))
+            self.tree.column(c, width=widths[c], anchor="center")
+        self.tree.tag_configure("warn", background=COL_WARN, foreground=COL_BG_DARK)
+        self.tree.tag_configure("crit", background=COL_CRIT, foreground=COL_SELECTION)
         self.tree.pack(side="left", fill="both", expand=True)
 
         sb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
@@ -282,38 +339,49 @@ class ECGListDialog(ctk.CTkToplevel):
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
 
         btns = ctk.CTkFrame(self, fg_color="transparent")
-        btns.pack(pady=8)
+        btns.pack(pady=6)
+        ctk.CTkButton(btns, text="По времени снятия", width=110,
+                      command=lambda: self._sort_preset("Время", False)).pack(side="left", padx=4)
+        ctk.CTkButton(btns, text="По времени импорта", width=130,
+                      command=lambda: self._sort_preset("Импорт", True)).pack(side="left", padx=4)
         self.btn_export = ctk.CTkButton(btns, text=" Экспорт в файл",
                                         command=self._export, state="disabled")
         self.btn_export.pack(side="left", padx=4)
         self.btn_delete = ctk.CTkButton(btns, text="🗑 Удалить",
                                         command=self._delete, state="disabled",
-                                        fg_color=COL_CRIT, 
-                                        hover_color=COL_DANGER_HOVER)
+                                        fg_color=COL_CRIT, hover_color=COL_DANGER_HOVER)
         self.btn_delete.pack(side="left", padx=4)
         ctk.CTkButton(btns, text="Закрыть", fg_color=COL_NEUTRAL,
-                      command=self.destroy).pack(side="left", padx=4)
+                      command=self._safe_close).pack(side="left", padx=4)
+
+        self.sort_label = ctk.CTkLabel(self, text="", text_color=COL_TEXT_DIM,
+                                       font=ctk.CTkFont(size=11))
+        self.sort_label.pack(pady=(0, 4))
+        self.count_label = ctk.CTkLabel(self, text="", text_color=COL_TEXT_LIGHT,
+                                        font=ctk.CTkFont(size=11))
+        self.count_label.pack(pady=(0, 2))
 
         self._load()
         self.protocol("WM_DELETE_WINDOW", self._safe_close)
         self._parent_watch = self.after(200, self._check_parent)
 
-    def _setup_grab(self):
-        """Grab_set включается только когда календарь закрыт."""
-        if not self.winfo_exists():
-            return
-        try:
-            for w in self.master.winfo_children():
-                if hasattr(w, 'calendar') and w.winfo_exists():
-                    self._calendar_open = True
-                    return
-            self._calendar_open = False
-            self.grab_set()
-        except Exception:
-            pass
+    # ---------- сортировка ----------
+    def _sort_preset(self, col, desc):
+        self._sort_col = col
+        self._sort_desc = desc
+        self._load()
 
+    def _sort_by(self, col):
+        """Клик по заголовку: переключает направление либо меняет колонку."""
+        if col == self._sort_col:
+            self._sort_desc = not self._sort_desc
+        else:
+            self._sort_col = col
+            self._sort_desc = False
+        self._load()
+
+    # ---------- жизненный цикл окна ----------
     def _check_parent(self):
-        """Периодически проверяет, жив ли родитель."""
         try:
             if not self.master.winfo_exists():
                 self.destroy()
@@ -327,7 +395,6 @@ class ECGListDialog(ctk.CTkToplevel):
         self._parent_watch = self.after(200, self._check_parent)
 
     def _safe_close(self):
-        """Безопасное закрытие диалога."""
         try:
             if hasattr(self, '_parent_watch'):
                 self.after_cancel(self._parent_watch)
@@ -338,47 +405,79 @@ class ECGListDialog(ctk.CTkToplevel):
         except Exception:
             pass
 
+    # ---------- загрузка ----------
+    def _base_query(self, session):
+        q = (session.query(ECGRecord, Athlete, Device)
+             .join(Athlete, ECGRecord.athlete_id == Athlete.id)
+             .outerjoin(Device, ECGRecord.device_id == Device.id))
+        if self.athlete_id:
+            q = q.filter(ECGRecord.athlete_id == self.athlete_id)
+        if self.date_from is not None and self.date_to is not None:
+            dt_from = self.date_from.strftime("%Y-%m-%d %H:%M:%S")
+            dt_to = self.date_to.strftime("%Y-%m-%d %H:%M:%S")
+            q = q.filter(ECGRecord.recorded_at >= dt_from,
+                         ECGRecord.recorded_at < dt_to)
+        return q
+
     def _load(self):
-        """Загружает ЭКГ за интервал через ORM."""
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        dt_from = self.date_from.strftime("%Y-%m-%d %H:%M:%S")
-        dt_to = self.date_to.strftime("%Y-%m-%d %H:%M:%S")
-
         session = get_session(self.db_path)
         try:
-            records = (
-                session.query(ECGRecord)
-                .filter(ECGRecord.athlete_id == self.athlete_id,
-                        ECGRecord.recorded_at >= dt_from,
-                        ECGRecord.recorded_at < dt_to)
-                .order_by(ECGRecord.recorded_at)
-                .all()
-            )
+            tbl, attr = self.SORT_ATTR[self._sort_col]
+            order = attr.asc() if not self._sort_desc else attr.desc()
+            q = self._base_query(session).order_by(order)
+            if self.limit is not None:
+                q = q.limit(self.limit)
+            rows = q.all()
 
-            for rec in records:
-                #  ФОРМАТИРОВАНИЕ updated_at
-                updated_str = ""
-                if rec.updated_at:
-                    if isinstance(rec.updated_at, datetime.datetime):
-                        updated_str = rec.updated_at.strftime("%d.%m.%Y %H:%M")
-                    else:
-                        updated_str = str(rec.updated_at)[:16]
-                
-                self.tree.insert("", "end", iid=str(rec.id), values=(
-                    rec.recorded_at[:16] if rec.recorded_at else "",
-                    updated_str,  # ⚡ ВМЕСТО rec.profile
-                    f"{rec.mean_hr:.0f}" if rec.mean_hr is not None else "",
-                    f"{rec.rmssd:.1f}" if rec.rmssd is not None else "",
-                    f"{rec.sdnn:.1f}" if rec.sdnn is not None else "",
-                    f"{rec.stress_si:.0f}" if rec.stress_si is not None else "",
-                    f"{rec.tp:.0f}" if rec.tp is not None else "",
-                    rec.status or "",
-                ))
+            for record, athlete, device in rows:
+                self._insert(record, athlete, device)
+
+            arrow = "↓" if self._sort_desc else "↑"
+            self.count_label.configure(text=f"Записей: {len(rows)}")
+            self.sort_label.configure(
+                text=f"Сортировка: {self._sort_col} {arrow}  •  клик по заголовку меняет сортировку")
         finally:
             session.close()
 
+    def _insert(self, rec, athlete, device):
+        athlete_name = f"{athlete.last_name} {athlete.first_name} {athlete.middle_name or ''}".strip()
+        device_name = f"{device.model} · {device.serial_number}" if device else "—"
+
+        try:
+            rec_at = datetime.datetime.fromisoformat(rec.recorded_at).strftime("%d.%m.%Y %H:%M")
+        except Exception:
+            rec_at = rec.recorded_at if rec.recorded_at else ""
+
+        updated_str = ""
+        if rec.updated_at:
+            if isinstance(rec.updated_at, datetime.datetime):
+                updated_str = rec.updated_at.strftime("%d.%m.%Y %H:%M")
+            else:
+                updated_str = str(rec.updated_at)[:16]
+
+        sim = f"{rec.bio_similarity_pct:.0f}" if rec.bio_similarity_pct is not None else "—"
+
+        tags = tuple([str(rec.id)])
+        if rec.bio_similarity_pct is not None:
+            if rec.bio_similarity_pct < BIO_SIMILARITY_CRIT_PCT:
+                tags += ("crit",)
+            elif rec.bio_similarity_pct < BIO_SIMILARITY_WARN_PCT:
+                tags += ("warn",)
+
+        self.tree.insert("", "end", iid=str(rec.id), tags=tags, values=(
+            athlete_name, device_name, rec_at, updated_str, sim,
+            f"{rec.mean_hr:.0f}" if rec.mean_hr is not None else "",
+            f"{rec.rmssd:.1f}" if rec.rmssd is not None else "",
+            f"{rec.sdnn:.1f}" if rec.sdnn is not None else "",
+            f"{rec.stress_si:.0f}" if rec.stress_si is not None else "",
+            f"{rec.tp:.0f}" if rec.tp is not None else "",
+            rec.status or "",
+        ))
+
+    # ---------- действия ----------
     def _on_select(self, event=None):
         sel = self.tree.selection()
         state = "normal" if sel else "disabled"
@@ -390,7 +489,6 @@ class ECGListDialog(ctk.CTkToplevel):
         return int(sel[0]) if sel else None
 
     def _export(self):
-        """Экспорт записи в файл через ORM (raw теперь в ECGRaw)."""
         rid = self._selected_id()
         if rid is None:
             return
@@ -405,7 +503,6 @@ class ECGListDialog(ctk.CTkToplevel):
                     "Запись была создана без сохранения raw."
                 )
                 return
-
             rec_at = rec.recorded_at
             raw = rec.raw.raw_data
         finally:
@@ -426,7 +523,6 @@ class ECGListDialog(ctk.CTkToplevel):
             messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{e}")
 
     def _delete(self):
-        """Удаление записи через ORM."""
         rid = self._selected_id()
         if rid is None:
             return
@@ -447,6 +543,11 @@ class ECGListDialog(ctk.CTkToplevel):
         self._on_select()
         if self.on_change:
             self.on_change()
+        # уведомляем главное окно (orchestrator обновит heatmap/графики)
+        try:
+            self.winfo_toplevel().event_generate("<<ECGDataChanged>>", when="tail")
+        except Exception:
+            pass
 
 class BiometricDialog(ctk.CTkToplevel):
     """Окно управления биометрическим шаблоном атлета."""

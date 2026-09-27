@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 
 from database import get_db_path
-from models import get_session, Athlete, ECGRecord, ECGRaw
+from models import get_session, Athlete, ECGRecord, ECGRaw, Device
 from analysis import parse_rr, calc_metrics, calc_stress, filter_rr, compute_psd, cfg as analysis_cfg
 
 # ИМПОРТ ФУНКЦИЙ И КОНФИГУРАЦИИ БИОМЕТРИИ
@@ -174,11 +174,14 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         current_athlete_name = f"{athlete[1]} {athlete[2]}"
         
         # ==========================================================================
-        # БИОМЕТРИЧЕСКАЯ ПРОВЕРКА (только для интерактивного режима)
+        # БИОМЕТРИЧЕСКАЯ ПРОВЕРКА
+        # Считается всегда (нужен % схожести для сохранения в БД), а диалоги
+        # и подтверждения показываются только в интерактивном режиме.
         # ==========================================================================
+        status, distance, prob = check_ownership_with_saved_template(db_path, aid, path)
+        bio_prob = prob  # вероятность для итогового атлета (обновляется при перенаправлении)
+
         if interactive and parent_window:
-            status, distance, prob = check_ownership_with_saved_template(db_path, aid, path)
-            
             if status == "NO_TEMPLATE":
                 if not messagebox.askyesno("Биометрия", 
                     "Для этого атлета еще нет шаблона. Он будет создан автоматически в фоне.\n\nПродолжить?", 
@@ -226,9 +229,10 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                     
                     parent_window.wait_window(dialog)
                     
-                    # 🔧 ИЗМЕНЕНО: Любое значение, кроме "best" (включая None при закрытии крестиком), = отмена
+                    # Любое значение, кроме "best" (включая None при закрытии крестиком), = отмена
                     if dialog.result == "best":
                         aid = best_athlete.id
+                        bio_prob = best_prob
                     else:
                         return "cancelled", None
                     
@@ -269,11 +273,28 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
             except Exception:
                 pass
 
+        # Прибор, которым сделана запись (если polar_id есть в шапке файла)
+        device_id = None
+        if polar:
+            dev = session.query(Device).filter(Device.serial_number == polar).first()
+            if dev is None:
+                dev = Device(serial_number=polar)  # model по умолчанию "Polar H10"
+                session.add(dev)
+                session.flush()
+            device_id = dev.id
+
+        # % биологической схожести с эталонным шаблоном атлета
+        # (None, если корректного сравнения не было: нет шаблона, ошибка, плохой сигнал)
+        bio_pct = None
+        if status not in ("NO_TEMPLATE", "ERROR", "BAD_SIGNAL") and bio_prob is not None:
+            bio_pct = round(bio_prob * 100, 2)
+
         rec = ECGRecord(
             athlete_id=aid, recorded_at=recorded_at, duration_seconds=duration,
             mean_hr=m["mean_hr"] if m else None, rmssd=m["rmssd"] if m else None,
             sdnn=m["sdnn"] if m else None, status=m["status"] if m else "ok",
             stress_si=s["si"] if s else None, tp=spectral_tp,
+            device_id=device_id, bio_similarity_pct=bio_pct,
         )
         session.add(rec)
         session.flush()

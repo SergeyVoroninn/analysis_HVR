@@ -44,7 +44,7 @@ class ECGConfig:
     PROB_DECAY_RELATIVE = 3.5
 
     # --- Пороги и лимиты ---
-    MIN_RECORDS = 9      
+    MIN_RECORDS = 8      
     OPTIMAL_RECORDS = 20 
     MAX_RECORDS = 50     
     BIOMETRIC_THRESHOLD = 0.15  

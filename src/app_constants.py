@@ -46,6 +46,10 @@ IMPORT_UNKNOWN_PROB_THRESHOLD = 0.15
 SORT_LARGE_GROUP_THRESHOLD = 50
 SORT_STRICT_THRESHOLD = 0.12
 
+# --- Подсветка биологической схожести ЭКГ в журнале ---
+BIO_SIMILARITY_WARN_PCT = 50   # ниже — жёлтая подсветка строки (COL_WARN)
+BIO_SIMILARITY_CRIT_PCT = 30   # ниже — красная подсветка строки (COL_CRIT)
+
 # --- Целевые метрики качества ЭКГ (по умолчанию, для скриптов генерации/калибровки) ---
 DEFAULT_QUALITY_TARGETS = {
     'min_snr': 15.0,
