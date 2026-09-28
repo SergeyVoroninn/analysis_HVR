@@ -14,7 +14,7 @@ from dialogs import AthleteDialog
 from athlete_generator import (
     _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
     _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd, _calc_age)
-from theme import COL_BG_WIDGET, COL_TEXT_LIGHT, COL_ACCENT
+from theme import COL_BG_WIDGET, COL_TEXT_LIGHT
 from app_constants import SINGLE_CLICK_DELAY_ATLETS_MS, ECGLIST_DEFAULT_LIMIT
 
 
@@ -54,10 +54,9 @@ class AthletesPanel(tk.Frame):
 
         # === НОВАЯ КНОПКА: Список ЭКГ ===
         self._list_btn = ctk.CTkButton(
-            self, 
-            text="📋 Список ЭКГ", 
+            self,
+            text="📋 Список ЭКГ",
             command=self.open_ecg_list,
-            fg_color=COL_ACCENT
         )
         self._list_btn.grid(row=3, column=0, sticky="ew", padx=5, pady=(5, 2))
         # ==================================

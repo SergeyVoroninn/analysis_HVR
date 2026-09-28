@@ -138,8 +138,7 @@ class AthleteDialog(ctk.CTkToplevel):
         ecg_btn_row.grid(row=row, column=0, columnspan=2, pady=(6, 10))
         self.btn_ecg_list = ctk.CTkButton(
             ecg_btn_row, text="📋 Список ЭКГ",
-            command=self._open_ecg_list,
-            fg_color=COL_ACCENT)
+            command=self._open_ecg_list)
         self.btn_ecg_list.pack(side="left", padx=4)
         self.btn_template = ctk.CTkButton(
             ecg_btn_row, text="🧬 Сформировать шаблон",
@@ -376,8 +375,7 @@ class ECGJournal(ctk.CTkToplevel):
                                         fg_color=COL_CRIT, hover_color=COL_DANGER_HOVER)
         self.btn_delete.pack(side="left", padx=4)
         self.btn_improve = ctk.CTkButton(btns, text="🎯 Улучшить сходство",
-                                         command=self._improve_similarity, state="disabled",
-                                         fg_color=COL_ACCENT)
+                                         command=self._improve_similarity, state="disabled")
         self.btn_improve.pack(side="left", padx=4)
         ctk.CTkButton(btns, text="Закрыть", fg_color=COL_NEUTRAL,
                       command=self._safe_close).pack(side="left", padx=4)
