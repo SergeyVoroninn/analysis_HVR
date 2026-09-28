@@ -210,6 +210,27 @@ def create_and_save_template(db_path, athlete_id, progress_cb=None):
         session.add(new_template)
         session.commit()
         
+        # Дозаполняем схожесть у записей атлета, загруженных до создания шаблона
+        # (у них bio_similarity_pct был пуст, т.к. шаблона не существовало).
+        try:
+            old_records = (session.query(ECGRecord)
+                           .join(ECGRaw, ECGRecord.id == ECGRaw.record_id)
+                           .filter(ECGRecord.athlete_id == athlete_id,
+                                   ECGRecord.bio_similarity_pct.is_(None)).all())
+            filled = 0
+            for rec in old_records:
+                q_shape, q_spec = _extract_features(_parse_and_clean_ecg(rec.raw.raw_data))
+                if q_shape is None or q_spec is None:
+                    continue
+                _, probability = _score_features(final_shape, final_spec, q_shape, q_spec)
+                rec.bio_similarity_pct = round(probability * 100, 2)
+                filled += 1
+            session.commit()
+            if filled:
+                print(f"[биометрия] дозаполнена схожесть: {filled} записей для атлета {athlete_id}")
+        except Exception:
+            session.rollback()
+
         avg_dist = sum(x[1] for x in distances[:num_to_use]) / num_to_use
         return True, f"Шаблон успешно создан из {len(best_shapes)} лучших записей (среднее отклонение: {avg_dist:.3f})"
     except Exception as e:
@@ -230,6 +251,20 @@ def get_saved_template(db_path, athlete_id):
         session.close()
 
 
+def _score_features(ref_shape, ref_spec, q_shape, q_spec):
+    """Считает расстояние и вероятность сходства признаков ЭКГ с шаблоном.
+
+    Единая формула для импорта и для дозаполнения схожести записей,
+    загруженных до создания шаблона.
+    """
+    shape_dist = dtw.distance_fast(q_shape.astype(np.double), ref_shape.astype(np.double))
+    spec_dist = np.sqrt(np.sum((q_spec - ref_spec) ** 2))
+    distance = cfg.SHAPE_WEIGHT * (shape_dist / cfg.SHAPE_NORM_FACTOR) + \
+               cfg.SPEC_WEIGHT * (spec_dist / cfg.SPEC_NORM_FACTOR)
+    probability = float(np.exp(-cfg.PROB_DECAY_NORMAL * distance))
+    return distance, probability
+
+
 def check_ownership_with_saved_template(db_path, athlete_id, new_file_path):
     ref_shape, ref_spec = get_saved_template(db_path, athlete_id)
     if ref_shape is None:
@@ -245,14 +280,7 @@ def check_ownership_with_saved_template(db_path, athlete_id, new_file_path):
     if q_shape is None or q_spec is None:
         return "BAD_SIGNAL", BIOMETRIC_ERROR_DISTANCE, 0.0
 
-    shape_dist = dtw.distance_fast(q_shape.astype(np.double), ref_shape.astype(np.double))
-    spec_dist = np.sqrt(np.sum((q_spec - ref_spec) ** 2))
-    
-    # Используем конфигурационные веса и нормализаторы
-    distance = cfg.SHAPE_WEIGHT * (shape_dist / cfg.SHAPE_NORM_FACTOR) + \
-               cfg.SPEC_WEIGHT * (spec_dist / cfg.SPEC_NORM_FACTOR)
-               
-    probability = float(np.exp(-cfg.PROB_DECAY_NORMAL * distance))
+    distance, probability = _score_features(ref_shape, ref_spec, q_shape, q_spec)
 
     if distance > cfg.BIOMETRIC_THRESHOLD:
         return "SUSPICIOUS", distance, probability
