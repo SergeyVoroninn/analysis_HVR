@@ -12,3 +12,4 @@ __pycache__/
 dist
 build
 requirements-test.txt
+raw_data/
