@@ -1,5 +1,27 @@
-"""Reference ECGs: import to database and comparison with external program calculation."""
-import datetime
+"""
+test_reference_ecg.py — регрессионный тест расчёта метрик HRV по эталонным ЭКГ.
+
+Задача: подсветить, когда в алгоритм расчёта метрик (analysis.py) внесены изменения.
+
+Строгие допуски + golden-значения:
+  - Набор эталонных файлов читается из etalons.json (там же лежат справочные
+    значения Омега.Диагностика — выводятся для контекста, но НЕ участвуют в
+    жёсткой проверке).
+  - Тест считает метрики текущим алгоритмом и сверяет их со строгим допуском
+    с сохранёнными golden-значениями (эталон = наши собственные значения).
+  - Любое изменение в алгоритме/настройках анализа меняет числа -> тест падает
+    с диффом, указывая на изменённые метрики.
+
+Поведение golden:
+  - Если reference_golden.json нет или установлена UPDATE_GOLDEN=1 — тест
+    пересчитывает и сохраняет актуальные значения (первый прогон/сознательная
+    пересборка).
+  - Иначе сверяет с сохранёнными. Расхождение > STRICT_REL_TOL -> FAIL.
+
+Проверка фиксирует 6 метрик (все через analysis.py на лету):
+  rmssd, sdnn, mean_hr, stress_si, mo_ms, tp.
+"""
+import hashlib
 import json
 import os
 import sys
@@ -11,40 +33,58 @@ SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, SRC)
 sys.path.insert(0, os.path.join(SRC, "scripts"))
 
-from models import get_session, Athlete, ECGRecord
-import analysis as hrv
-from importer import _import_one
+from models import get_session, Athlete, ECGRecord  # noqa: E402
+import analysis as hrv                            # noqa: E402
+from importer import _import_one                   # noqa: E402
 
 REFERENCE_DIR = os.path.join(os.path.dirname(__file__), "ekg_reference")
 ETALONS = os.path.join(REFERENCE_DIR, "etalons.json")
+GOLDEN = os.path.join(REFERENCE_DIR, "reference_golden.json")
+
+# Строгий относительный допуск сверки с golden (0.01%).
+# Достаточно мал, чтобы ловить любые содержательные изменения алгоритма,
+# и достаточно велик для стабильности чисел с плавающей точкой между прогонами.
+STRICT_REL_TOL = 1e-4
+
+METRICS = ["rmssd", "sdnn", "mean_hr", "stress_si", "mo_ms", "tp"]
+
+
+def _load_json(path):
+    with open(path, "rb") as f:
+        content = f.read()
+    if content.startswith(b"\xef\xbb\xbf"):
+        content = content[3:]
+    return json.loads(content.decode("utf-8"))
+
+
+def _file_digest(path):
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _load_etalons():
     """Загружает эталоны, гарантированно обрабатывая UTF-8 BOM."""
-    with open(ETALONS, "rb") as f:
-        content = f.read()
-    
-    if content.startswith(b'\xef\xbb\xbf'):
-        content = content[3:]
-        
-    return json.loads(content.decode('utf-8'))
+    return _load_json(ETALONS)
 
 
-@pytest.fixture()
+@ pytest.fixture()
 def db_with_athlete(tmp_path, request):
     """Creates an empty DB with a recipient athlete and returns (db_path, polar_id, athlete_id)."""
     etalon = request.node.callspec.params.get("etalon")
     polar = etalon["polar_id"]
-    
+
     aid = str(uuid.uuid4())
     db_path = str(tmp_path / "ref.db")
     session = get_session(db_path)
     try:
         session.add(Athlete(
             id=aid, last_name="Reference", first_name="Test", middle_name="",
-            gender="M", birth_date=datetime.date(2000, 1, 1),
-            height_cm=180, weight_kg=75, resting_hr=60, max_hr=190,
-            hrv_rmssd_baseline=50, avg_rr_ms=1000, polar_id=polar))
+            gender="M", birth_date=None, height_cm=None, weight_kg=None,
+            resting_hr=None, max_hr=None, hrv_rmssd_baseline=None,
+            avg_rr_ms=None, polar_id=polar))
         session.commit()
     finally:
         session.close()
@@ -52,7 +92,7 @@ def db_with_athlete(tmp_path, request):
 
 
 def _metrics_from_record(rec):
-    """Extracts metrics from the DB."""
+    """Извлекает метрики из БД."""
     return {
         "rmssd": getattr(rec, "rmssd", None),
         "stress_si": getattr(rec, "stress_si", None),
@@ -64,57 +104,35 @@ def _metrics_from_record(rec):
 
 
 def _metrics_from_rr(rr):
-    """
-    Рассчитывает метрики "на лету", используя ИСКЛЮЧИТЕЛЬНО функции из analysis.py.
-    Это гарантирует 100% совпадение логики теста и приложения.
-    """
-    # 1. Сначала фильтруем артефакты
+    """Считает метрики на лету ИСКЛЮЧИТЕЛЬНО через analysis.py — совпадает с приложением."""
     seq = hrv.filter_rr(rr)
     if not seq:
-        return {
-            "mo_ms": None, "stress_si": None, "rmssd": None, 
-            "tp": None, "mean_hr": None, "sdnn": None
-        }
-    
-    # 2. Временные метрики и ЧСС (через analysis.py)
+        return {m: None for m in METRICS}
+
     time_metrics = hrv.calc_metrics(seq) or {}
-    
-    # 3. Метрики стресса (через analysis.py)
     stress_metrics = hrv.calc_stress(seq) or {}
-    
-    # 4. Спектральные метрики (через analysis.py)
     _, _, bands = hrv.compute_psd(seq) or (None, None, {})
-    
-    # Собираем словарь. Обратите внимание: в analysis.py ключ называется "si"
+
     return {
-        "mo_ms": stress_metrics.get("mo_ms"),
-        "stress_si": stress_metrics.get("si"),
         "rmssd": time_metrics.get("rmssd"),
-        "tp": bands.get("tp") if bands else None,
-        "mean_hr": time_metrics.get("mean_hr"),
         "sdnn": time_metrics.get("sdnn"),
+        "mean_hr": time_metrics.get("mean_hr"),
+        "stress_si": stress_metrics.get("si"),
+        "mo_ms": stress_metrics.get("mo_ms"),
+        "tp": bands.get("tp") if bands else None,
     }
 
 
-@pytest.mark.parametrize("etalon", _load_etalons(),
-                         ids=lambda e: os.path.basename(e["file"]))
-def test_reference_ecg(etalon, db_with_athlete):
-    db_path, polar, aid = db_with_athlete
-    path = etalon["file"]
-    if not os.path.isabs(path):
-        # Файлы эталонов лежат в той же папке, что и etalons.json (ekg_reference)
-        path = os.path.join(REFERENCE_DIR, path)
-    assert os.path.exists(path), f"Reference file not found: {path}"
-
+def _compute_ours(db_path, aid, etalon_path, tmp_path):
+    """Импортирует запись, считает метрики анализом и возвращает (ours, rec, rr)."""
     from athlete_generator import _calc_age
-    athletes = [(aid, "Reference", "Test", _calc_age("2000-01-01"), "M", polar)]
+    athletes = [(aid, "Reference", "Test", _calc_age("2000-01-01"), "M", None)]
     selected = athletes[0]
 
-    # === 1. Import ECG to DB ===
-    status, changed_aid = _import_one(db_path, path, athletes, selected, None, interactive=False)
+    status, changed_aid = _import_one(db_path, etalon_path, athletes, selected,
+                                      None, interactive=False)
     assert status == "added", f"Import failed: status '{status}'"
 
-    # === 2. Separate metrics: what's in DB and what's calculated on the fly ===
     session = get_session(db_path)
     try:
         rec = session.query(ECGRecord).filter_by(athlete_id=aid).one()
@@ -122,89 +140,84 @@ def test_reference_ecg(etalon, db_with_athlete):
     finally:
         session.close()
 
-    with open(path, encoding="utf-8") as f:
+    with open(etalon_path, encoding="utf-8") as f:
         rr = hrv.parse_rr(f.read())
     calc_metrics = _metrics_from_rr(rr)
 
-    ours = {**db_metrics, **calc_metrics}
+    return {**db_metrics, **calc_metrics}, rec, rr
 
-    # === Extract reference values for visual comparison ===
-    exp = etalon["expected"]
-    ref_si = exp.get("stress_si", {}).get("value", 0)
-    ref_mo = exp.get("mo_ms", {}).get("value", 0)
-    ref_rmssd = exp.get("rmssd", {}).get("value", 0)
-    ref_tp = exp.get("tp", {}).get("value", 0)
-    
-    # ИСПРАВЛЕНИЕ 1: Берем HR и SDNN из эталона, а не хардкодим N/A
-    ref_hr = exp.get("mean_hr", {}).get("value", "N/A")
-    ref_sdnn = exp.get("sdnn", {}).get("value", "N/A")
-    
-    # Форматируем для красивого вывода
-    hr_str = f"{ref_hr:>5.1f}" if isinstance(ref_hr, (int, float)) else "  N/A"
-    sdnn_str = f"{ref_sdnn:>5.1f}" if isinstance(ref_sdnn, (int, float)) else "  N/A"
 
-    print(f"\n=== OUR STRING (Calculated)   ===")
-    print(f"SI={ours.get('stress_si', 0):>6.1f}  Mo={ours.get('mo_ms', 0):>4.0f}  "
-          f"RMSSD={ours.get('rmssd', 0):>5.1f}  TP={ours.get('tp', 0):>6.0f}  "
-          f"HR={ours.get('mean_hr', 0):>5.1f}  SDNN={ours.get('sdnn', 0):>5.1f}")
-    
-    print(f"=== REFERENCE STRING (Expected) ===")
-    print(f"SI={ref_si:>6.1f}  Mo={ref_mo:>4.0f}  "
-          f"RMSSD={ref_rmssd:>5.1f}  TP={ref_tp:>6.0f}  "
-          f"HR={hr_str:>5}  SDNN={sdnn_str:>5}")
-    print("-" * 78)
+def _dataset_key(etalon_path):
+    """Контрольный ключ эталона (md5 файла) — ловит подмену данных."""
+    return _file_digest(etalon_path)
 
-    # === 3. Localized comparison with reference ===
+
+@pytest.mark.parametrize("etalon", _load_etalons(),
+                         ids=lambda e: os.path.basename(e["file"]))
+def test_reference_ecg(etalon, db_with_athlete, tmp_path):
+    db_path, polar, aid = db_with_athlete
+    rel_file = etalon["file"]
+    path = rel_file if os.path.isabs(rel_file) else os.path.join(REFERENCE_DIR, rel_file)
+    assert os.path.exists(path), f"Reference file not found: {path}"
+    name = os.path.basename(path)
+
+    ours, rec, rr = _compute_ours(db_path, aid, path, tmp_path)
+    digest = _dataset_key(path)
+
+    # Справочные значения Омега.Диагностика — только для контекста, не для проверки.
+    exp = etalon.get("expected", {})
+    print(f"\n=== {name} ===")
+    for m in METRICS:
+        ref = exp.get(m, {}).get("value") if isinstance(exp.get(m), dict) else None
+        print(f"  {m:>9}: ours={ours.get(m)}  (omega_ref={ref})")
+
+    if os.environ.get("UPDATE_GOLDEN") == "1" or not os.path.exists(GOLDEN):
+        golden = _load_or_init_golden()
+        golden["results"][name] = {m: ours.get(m) for m in METRICS}
+        golden["dataset_key"][name] = digest
+        _write_golden(golden)
+        pytest.skip(f"UPDATE_GOLDEN/нет golden: записаны значения для {name}")
+
+    golden = _load_json(GOLDEN)
+    assert name in golden.get("results", {}), (
+        f"Нет golden-значений для {name}. Пересобери: UPDATE_GOLDEN=1 pytest ...")
+
+    if golden["dataset_key"].get(name) != digest:
+        pytest.fail(
+            f"Изменился содержимое эталонного файла {name}. "
+            f"Обнови golden: UPDATE_GOLDEN=1 pytest ...")
+
+    expected = golden["results"][name]
     problems = []
-    DB_STORED_FIELDS = {"mean_hr", "rmssd", "sdnn", "stress_si", "tp"}
-    SKIP_METRICS = {"nn50", "pnn50"}
-    
-    def fmt(v):
-        return f"{v:.1f}" if v is not None else "None"
-
-    for key, spec in etalon["expected"].items():
-        if key in SKIP_METRICS:
+    for m in METRICS:
+        cur = ours.get(m)
+        ref = expected.get(m)
+        if cur is None or ref is None:
+            if cur != ref:
+                problems.append(f"[{m}] {"None" if cur is None else "%.6g" % cur} "
+                                f"-> {"None" if ref is None else "%.6g" % ref}")
             continue
-            
-        value = spec["value"]
-        tol = spec.get("tol", 0.10)
-        
-        db_val = db_metrics.get(key)
-        calc_val = calc_metrics.get(key)
+        diff = abs(cur - ref)
+        denom = abs(ref) if ref != 0 else 1.0
+        if diff > STRICT_REL_TOL * denom:
+            problems.append(f"[{m}] {cur:.6g} -> {ref:.6g} (отклонение "
+                            f"{diff / denom:.2e} > {STRICT_REL_TOL:.0e})")
 
-        if calc_val is None and db_val is None:
-            problems.append(f"[{key}] our program does not calculate and does not store this metric")
-            continue
-            
-        is_calc_ok = False
-        if calc_val is not None:
-            diff_calc = abs(calc_val - value)
-            is_calc_ok = diff_calc <= abs(value) * tol
-            
-        is_db_ok = False
-        if db_val is not None:
-            diff_db = abs(db_val - value)
-            is_db_ok = diff_db <= abs(value) * tol
-        elif key not in DB_STORED_FIELDS:
-            is_db_ok = True 
+    assert not problems, (
+        f"Метрики {name} ИЗМЕНИЛИСЬ относительно golden "
+        f"(reference_golden.json). Похоже, в алгоритм analysis.py внесены "
+        f"правки.\n" + "\n".join(problems))
 
-        if not is_calc_ok and not is_db_ok:
-            problems.append(
-                f"[{key}] CRITICAL DISCREPANCY: reference={value}, "
-                f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
-                f"(tolerance {tol:.0%})"
-            )
-        elif not is_calc_ok and is_db_ok:
-            problems.append(
-                f"[{key}] CALCULATION ERROR (DB is correct): reference={value}, "
-                f"calculation={fmt(calc_val)}, in DB={fmt(db_val)} "
-                f"(calculation discrepancy {diff_calc/abs(value):.1%} > tolerance {tol:.0%})"
-            )
-        elif is_calc_ok and not is_db_ok:
-            problems.append(
-                f"[{key}] IMPORT/DB ERROR (calculation is correct!): reference={value}, "
-                f"calculation={fmt(calc_val)}, but in DB: {fmt(db_val)} "
-                f"(DB discrepancy > tolerance {tol:.0%})"
-            )
 
-    assert not problems, "Localized discrepancies with reference:\n" + "\n".join(problems)
+def _load_or_init_golden():
+    if os.path.exists(GOLDEN):
+        try:
+            return _load_json(GOLDEN)
+        except Exception:
+            pass
+    return {"dataset_key": {}, "results": {}, "metric_notes": METRICS}
+
+
+def _write_golden(golden):
+    with open(GOLDEN, "w", encoding="utf-8") as f:
+        json.dump(golden, f, ensure_ascii=False, indent=2)

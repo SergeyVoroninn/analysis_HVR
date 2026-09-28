@@ -234,6 +234,7 @@ analysis_HVR\src\
 +---scripts
 |   |   athlete_generator.py       Генерация тестовых спортсменов: ФИО, антропометрия, оценки ВРС по возрасту
 |   |   biometric_poc.py           Proof-of-concept биометрической проверки ЭКГ (standalone, DTW/FFT)
+|   |   build_bio_ecg_reference.py Сборка эталонного набора bio_ecg_reference (дедуп по MD5, выбор эталона, копирование)
 |   |   calibrate_ecg.py           Автокалибровка профилей ЭКГ по целевым метрикам качества (SNR, дрейф)
 |   |   config.yaml                Настройки генерации БД: длительность, сид, список спортсменов, расписание
 |   |   config_big.yaml            Альтернативный конфиг с увеличенными объёмами данных
@@ -249,22 +250,23 @@ analysis_HVR\src\
 |   |   sort_unsorted.py            Кластеризация неизвестных ЭКГ: поиск дубликатов (MD5), биометрическое сходство (DTW/FFT), копирование в sorted с группировкой
 |   |
 \---tests
-        etalons.json               Эталонные метрики (RMSSD, ИС, Мо, TP) из Омега.Диагностика для сверки
         test_appsettings.py        handle_app_close сохраняет состояние (атлет, год, зум) на диск
         test_athlete_zoom_persistence.py  Сохранение масштаба при смене атлета
+        test_bio_ecg_reference.py  Регрессионный тест определения атлета по ЭКГ (шаблон → лучшая запись эталона; golden)
         test_calendar.py           Тесты календаря (DateEntry) в диалоге атлета
         test_chart_right_click.py  Интеграция: ПКМ по графику → сброс масштаба
         test_ghost_resize.py       Адаптивный ресайз виджетов (ResizeController)
         test_importer.py           Импорт: валидный файл, дубликаты, битый файл
         test_metricplot.py         Клик, ПКМ, колесо, панорамирование на графиках
         test_orchestrator.py       Сохранение/восстановление масштаба, смена атлета, полный цикл save/restore
-        test_reference_ecg.py      Импорт эталонной ЭКГ в базу и сверка метрик с etalons.json
+        test_reference_ecg.py      Импорт эталонной ЭКГ и сверка метрик с golden (строгий допуск, отслеживание изменений алгоритма)
         test_timeframe.py          Подбор таймфрейма, зебра, границы лет
         test_weekmap.py            Клик/двойной/ПКМ по weekmap (зелёная/пустая ячейка)
         test_weekmap_right_click.py ПКМ по weekmap: диапазон недели + синхронизация курсора
         test_yearmap.py            Клик/двойной/ПКМ/колесо по yearmap
         test_yearmap_right_click.py ПКМ по yearmap: диапазон года + синхронизация weekmap
-        reference\                 Эталонные файлы .teamloggerh10 для test_reference_ecg.py
+        ekg_reference\             Эталонные ЭКГ для test_reference_ecg.py (etalons.json + reference_golden.json)
+        bio_ecg_reference\         Данные для test_bio_ecg_reference.py (template/, probes/, manifest.json, results_golden.json)
 ```
 
 ---
@@ -944,22 +946,23 @@ my_profile:
 ```text
 src/
 └── tests/
-    ├── etalons.json                  # эталонные метрики Омега.Диагностика
-    ├── test_appsettings.py           # handle_app_close сохраняет состояние на диск
-    ├── test_athlete_zoom_persistence.py  # сохранение масштаба после ПКМ при смене атлета (3 атлета × все переходы)
-    ├── test_calendar.py              # календарь DateEntry: базовые операции + устойчивость GUI при смене месяца/года
-    ├── test_chart_right_click.py     # ПКМ по графику → on_reset → сброс масштаба ровно на диапазон данных
-    ├── test_ghost_resize.py          # ResizeController: защита от зацикливания ресайза
-    ├── test_importer.py              # импорт: валидный файл, дубликаты, битый файл
-    ├── test_metricplot.py            # жесты MetricPlot: клик, ПКМ, колесо, панорамирование (двойной клик игнорируется)
-    ├── test_orchestrator.py          # оркестратор: сохранение/восстановление масштаба, смена атлета, save/restore
-    ├── test_reference_ecg.py         # сверка метрик с эталонной записью Polar H10 (Омега.Диагностика)
-    ├── test_timeframe.py             # подбор таймфрейма баров (MIN5/HOUR1/…), зебра, границы лет
-    ├── test_weekmap.py               # одинарный/двойной клик по weekmap (зелёная/пустая ячейка)
-    ├── test_weekmap_right_click.py   # ПКМ по weekmap: зум на неделю + синхронизация курсора yearmap + персистентность
-    ├── test_yearmap.py               # клик/двойной/ПКМ/колесо по yearmap (заполненные/пустые недели)
-    ├── test_yearmap_right_click.py   # ПКМ по yearmap: зум на год + синхронизация yearmap/weekmap/charts + персистентность
-    └── reference/                    # эталонные файлы .teamloggerh10 для test_reference_ecg.py
+    ├── test_appsettings.py              # handle_app_close сохраняет состояние на диск
+    ├── test_athlete_zoom_persistence.py # сохранение масштаба после ПКМ при смене атлета (3 атлета × все переходы)
+    ├── test_bio_ecg_reference.py        # определение атлета по ЭКГ: запись эталона = лучшая; результаты зафиксированы в golden
+    ├── test_calendar.py                 # календарь DateEntry: базовые операции + устойчивость GUI при смене месяца/года
+    ├── test_chart_right_click.py        # ПКМ по графику → on_reset → сброс масштаба ровно на диапазон данных
+    ├── test_ghost_resize.py             # ResizeController: защита от зацикливания ресайза
+    ├── test_importer.py                 # импорт: валидный файл, дубликаты, битый файл
+    ├── test_metricplot.py               # жесты MetricPlot: клик, ПКМ, колесо, панорамирование (двойной клик игнорируется)
+    ├── test_orchestrator.py             # оркестратор: сохранение/восстановление масштаба, смена атлета, save/restore
+    ├── test_reference_ecg.py            # сверка метрик HRV с golden (строгий допуск 1e-4) — ловит изменения алгоритма
+    ├── test_timeframe.py                # подбор таймфрейма баров (MIN5/HOUR1/…), зебра, границы лет
+    ├── test_weekmap.py                  # одинарный/двойной клик по weekmap (зелёная/пустая ячейка)
+    ├── test_weekmap_right_click.py      # ПКМ по weekmap: зум на неделю + синхронизация курсора yearmap + персистентность
+    ├── test_yearmap.py                  # клик/двойной/ПКМ/колесо по yearmap (заполненные/пустые недели)
+    ├── test_yearmap_right_click.py      # ПКМ по yearmap: зум на год + синхронизация yearmap/weekmap/charts + персистентность
+    ├── ekg_reference/                   # эталонные .teamloggerh10 + etalons.json + reference_golden.json
+    └── bio_ecg_reference/               # шаблон/пробы, manifest.json, results_golden.json для test_bio_ecg_reference.py
 ```
 
 ### Установка
@@ -975,12 +978,13 @@ pip install pytest
 ```bash
 cd C:\s21\projects\analysis_HVR\src
 
-python -m pytest tests -v                              # все тесты (14 файлов)
+python -m pytest tests -v                              # все тесты (18 файлов)
 python -m pytest tests/test_metricplot.py -v           # жесты на графиках
 python -m pytest tests/test_weekmap.py -v              # жесты weekmap
 python -m pytest tests/test_yearmap.py -v              # жесты yearmap
 python -m pytest tests/test_orchestrator.py -v         # масштаб и смена атлета
-python -m pytest tests/test_reference_ecg.py -v        # сверка с эталонами Омега.Диагностика
+python -m pytest tests/test_reference_ecg.py -v        # сверка метрик с golden (регрессия анализа)
+python -m pytest tests/test_bio_ecg_reference.py -v    # определение атлета по ЭКГ (регрессия биометрии)
 python -m pytest tests/test_calendar.py -v             # календарь в диалоге атлета
 python -m pytest tests/test_chart_right_click.py -v    # ПКМ по графику → сброс
 python -m pytest tests/test_weekmap_right_click.py -v  # ПКМ по weekmap
@@ -998,33 +1002,68 @@ python -m pytest tests/test_appsettings.py -v          # сохранение с
 | --- | --- | --- |
 | `test_appsettings.py` | 1 | `handle_app_close` сохраняет athlete_id, year и zoom на диск |
 | `test_athlete_zoom_persistence.py` | 1 | Сохранение масштаба после ПКМ при переключении между 3 атлетами (10 лет / 1 год / 1 месяц), все комбинации переходов |
+| `test_bio_ecg_reference.py` | 2 | Запись атлета-эталона даёт лучший биометрический матч; результаты зафиксированы в `results_golden.json` (регрессия) |
 | `test_calendar.py` | 2 | DateEntry: начальная/программная дата, открытие/закрытие dropdown, календарь не исчезает при клике на заголовок месяца |
 | `test_chart_right_click.py` | 1 | ПКМ по графику → оркестратор вызывает `on_reset`, график сбрасывает масштаб ровно на диапазон данных |
 | `test_ghost_resize.py` | 4 | `ResizeController`: защита от зацикливания ресайза (settle/poll, перерисовка не чаще нужного) |
 | `test_importer.py` | 3 | Импорт: валидный .teamloggerh10 (SDNN>0), дубликат (skip), битый файл (graceful failure) |
 | `test_metricplot.py` | 19 | Клик/ПКМ/колесо/панорамирование на графике: вызовы `on_single_click`, `on_reset`, `_commit_view` (двойной клик намеренно игнорируется) |
 | `test_orchestrator.py` | 13 | Сохранение/восстановление масштаба, `zoom`, `sync_athlete`, полный цикл save/restore, колбэки heatmap |
-| `test_reference_ecg.py` | 1 | Импорт эталонной Polar H10 и сверка RMSSD, индекса стресса, TP с `etalons.json` (Омега.Диагностика) |
+| `test_reference_ecg.py` | 4 | Импорт эталонной Polar H10 и сверка RMSSD, SDNN, ИС, Мо, ЧСС, TP со строгим допуском 1e-4 с golden |
 | `test_timeframe.py` | 10 | Подбор таймфрейма баров по span (MIN5/HOUR1/…), зебра, границы лет |
 | `test_weekmap.py` | 12 | Одинарный/двойной клик по weekmap: зелёная и пустая ячейки, `on_pick`/`on_day_dbl`, вне сетки, `week_start=None` |
 | `test_weekmap_right_click.py` | 1 | ПКМ по weekmap → зум на 7 дней + курсор yearmap + персистентность при смене атлета |
 | `test_yearmap.py` | 13 | Клик/двойной/ПКМ/колесо по yearmap: заполненные/пустые недели, вне сетки, `on_year_zoom`, интеграционный тест колеса |
 | `test_yearmap_right_click.py` | 1 | ПКМ по yearmap → зум на год + синхронизация yearmap/weekmap/charts + персистентность |
 
-### Тесты сверки с эталонами (`test_reference_ecg.py`)
+### Тесты расчёта метрик HRV (`test_reference_ecg.py`)
 
-Импортирует эталонную запись Polar H10 из `tests/reference/` в базу через `importer._import_one`
-(тем же путём, что и приложение) и сверяет рассчитанные метрики с ожидаемыми значениями из
-`tests/etalons.json` (источник — «Омега.Диагностика»). Сверяются: RMSSD, индекс стресса (ИС),
-Мо и TP — каждая со своим допуском `tol`.
+Импортирует эталонную запись Polar H10 из `tests/ekg_reference/` в базу через `importer._import_one`
+(тем же путём, что и приложение) и считает метрики RMSSD, SDNN, ЧСС, ИС, Мо и TP
+через `analysis.py`. Результаты сверяются со **строгим допуском** (`STRICT_REL_TOL = 1e-4`)
+с сохранёнными golden-значениями из `reference_golden.json`.
+
+Файл `etalons.json` содержит справочные значения из «Омега.Диагностика» и выводится в лог
+только для контекста — в жёсткую проверку он не входит (методика Омеги и нашего расчёта
+отличаются, поэтому её числа не могут служить строгим эталоном).
+
+**Назначение golden-механизма** — подсветить, что в алгоритм расчёта (`analysis.py`)
+внесены изменения: при любом отличии текущего результата от сохранённого тест падает
+с диффом по конкретным метрикам.
 
 | Файл | Назначение |
 | --- | --- |
-| `tests/etalons.json` | Ожидаемые метрики и допуски для каждой эталонной записи |
-| `tests/reference/` | Эталонные файлы `.teamloggerh10` для импорта |
+| `tests/ekg_reference/etalons.json` | Справочные метрики Омега.Диагностика (file/polar_id/expected) — для контекста |
+| `tests/ekg_reference/reference_golden.json` | Зафиксированные golden-значения (расчёт анализа) + md5 файлов |
+| `tests/ekg_reference/*.teamloggerh10` | Эталонные записи `.teamloggerh10` для импорта |
 
-Чтобы добавить новый эталон: положите файл в `tests/reference/` и допишите запись
-в `tests/etalons.json` (поля `file`, `polar_id`, `expected` с допуском `tol`).
+Чтобы добавить новый эталон: положите файл в `tests/ekg_reference/` и допишите запись
+в `tests/ekg_reference/etalons.json` (поля `file`, `polar_id`, `expected`).
+
+Чтобы пересобрать golden после **сознательной** правки расчёта:
+
+```bash
+cd C:\s21\projects\analysis_HVR\src
+$env:UPDATE_GOLDEN="1"; python -m pytest tests/test_reference_ecg.py
+```
+
+### Тест определения атлета по ЭКГ (`test_bio_ecg_reference.py`)
+
+Из записей атлета-эталона (у кого больше всего уникальных ЭКГ — `filipp`) строится
+биометрический шаблон (`create_and_save_template`), и по одной записи каждого атлета
+сравнивается с ним (`check_ownership_with_saved_template`). Тест проверяет, что запись
+**эталона** даёт **наибольшее совпадение**, и что результаты не изменились относительно
+`results_golden.json` (регрессия на изменения `ecg_biometrics.py`).
+
+| Файл | Назначение |
+| --- | --- |
+| `tests/bio_ecg_reference/template/` | Записи эталона для построения шаблона |
+| `tests/bio_ecg_reference/probes/` | По одной записи каждого атлета для сравнения |
+| `tests/bio_ecg_reference/manifest.json` | Эталон, список записей, маппинг probes→атлет |
+| `tests/bio_ecg_reference/results_golden.json` | Зафиксированные результаты сравнения |
+
+Набор собирается скриптом `scripts/build_bio_ecg_reference.py` (дедупликация по MD5,
+выбор эталона). Пересборка golden: `$env:UPDATE_GOLDEN="1"; python -m pytest tests/test_bio_ecg_reference.py`.
 
 ---
 
