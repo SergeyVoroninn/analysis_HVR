@@ -1,0 +1,182 @@
+{
+  "description": "Эталонный набор для регрессионного теста определения атлета по ЭКГ. template/ — записи атлета-эталона, из которых тест строит биометрический шаблон; probes/ — по одной записи каждого атлета для сравнения с шаблоном. Запись, принадлежащая эталонному атлету, должна дать наибольшее совпадение.",
+  "etalon_athlete": "filipp",
+  "unique_records_count": {
+    "andrey": 9,
+    "filipp": 30,
+    "konstantin": 16,
+    "trofim": 19
+  },
+  "template": {
+    "count": 29,
+    "records": [
+      {
+        "file": "template/filipp_01.teamloggerh10",
+        "content_hash": "00dab375ccaeda59a5a99c682a9cc8d3",
+        "source": "84E5FD2B_2026_teamloggerh10 (2).teamloggerh10"
+      },
+      {
+        "file": "template/filipp_02.teamloggerh10",
+        "content_hash": "01bfe1217b0a707b797111cdff84e55b",
+        "source": "C821EB2E_2026_teamloggerh10_10_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_03.teamloggerh10",
+        "content_hash": "06561394b191aad9c5ab617e758370e9",
+        "source": "C8219D21_2026_teamloggerh10 (2).teamloggerh10"
+      },
+      {
+        "file": "template/filipp_04.teamloggerh10",
+        "content_hash": "0ecb912ca3a79f4bb3e8dce6954c4c22",
+        "source": "C8219D21_2026_08_22_09_05_46_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_05.teamloggerh10",
+        "content_hash": "1cd4054cb9aa3ec931947eaa1e37376e",
+        "source": "C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_06.teamloggerh10",
+        "content_hash": "1d462bb38614229083f4cd5b974d2791",
+        "source": "C821EB2E_2026_08_10_08_33_21_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_07.teamloggerh10",
+        "content_hash": "1e69a5f906368f0b3e699ceacb2bdaa1",
+        "source": "C8219D21_2026_08_21_10_01_08_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_08.teamloggerh10",
+        "content_hash": "21c0a08baf3043ad0fea1ef8fe25e18b",
+        "source": "C8219D21_2026_teamloggerh10 (3).teamloggerh10"
+      },
+      {
+        "file": "template/filipp_09.teamloggerh10",
+        "content_hash": "2486ff6f528cae4aa5ce272fc4849a73",
+        "source": "C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_10.teamloggerh10",
+        "content_hash": "332bd1aa9ffcfed6732b8e1c2093b160",
+        "source": "C8219D21_2026_teamloggerh10 (8).teamloggerh10"
+      },
+      {
+        "file": "template/filipp_11.teamloggerh10",
+        "content_hash": "33ece191c92ec6451028d4570e5ec4ca",
+        "source": "C8219D21_2026_08_25_09_18_42_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_12.teamloggerh10",
+        "content_hash": "3f4f369164f91d722930d4829176bb64",
+        "source": "C821EB2E_2026_08_03_08_45_28_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_13.teamloggerh10",
+        "content_hash": "476b0a3dde2db57504f92603f816f9d8",
+        "source": "C821EB2E_2026_teamloggerh10_11_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_14.teamloggerh10",
+        "content_hash": "492ae8dcf59cd87e69dd6ea2bd9e163c",
+        "source": "C8219D21_2026_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_15.teamloggerh10",
+        "content_hash": "54636e22aee7fc60bba5911373ceb512",
+        "source": "C8219D21_2026_08_17_08_54_46_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_16.teamloggerh10",
+        "content_hash": "5544b0881ee9e4e16b3ba03c85e5627a",
+        "source": "C8219D21_2026_teamloggerh10 (5).teamloggerh10"
+      },
+      {
+        "file": "template/filipp_17.teamloggerh10",
+        "content_hash": "57e2fca9c79da9d034607204ff248972",
+        "source": "C821E528_2026_teamloggerh10_7_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_18.teamloggerh10",
+        "content_hash": "6bb0204b968fe3917b187f29ca4b81d4",
+        "source": "C8219D21_2026_teamloggerh10 (6).teamloggerh10"
+      },
+      {
+        "file": "template/filipp_19.teamloggerh10",
+        "content_hash": "7223966642acd24d4da1138e8a6e47c5",
+        "source": "84E5FD2B_2026_teamloggerh10 (1).teamloggerh10"
+      },
+      {
+        "file": "template/filipp_20.teamloggerh10",
+        "content_hash": "7cb3d94e314751743c268e656511bf10",
+        "source": "C8219D21_2026_teamloggerh10 (1).teamloggerh10"
+      },
+      {
+        "file": "template/filipp_21.teamloggerh10",
+        "content_hash": "80584d41c92a27ea99a484cef89fe407",
+        "source": "84E5FD2B_2026_08_26_09_51_21_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_22.teamloggerh10",
+        "content_hash": "894e3b7c47ba66d562a3e4a1318cefc7",
+        "source": "C8219D21_2026_08_18_08_51_00_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_23.teamloggerh10",
+        "content_hash": "996ac482b6445519f818532447725f52",
+        "source": "C821E528_2026_08_07_08_47_13_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_24.teamloggerh10",
+        "content_hash": "a7892c78ba14df30c40ba69fda946978",
+        "source": "C8219D21_2026_08_24_09_04_54_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_25.teamloggerh10",
+        "content_hash": "c2b27fc450f1283777976821d828762a",
+        "source": "C8219D21_2026_teamloggerh10 (4).teamloggerh10"
+      },
+      {
+        "file": "template/filipp_26.teamloggerh10",
+        "content_hash": "d68113b2c01c09361997740a88fd18a2",
+        "source": "C8219D21_2026_08_19_08_49_13_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_27.teamloggerh10",
+        "content_hash": "d81dff078af82b94f79e43a9660550a7",
+        "source": "C8219D21_2026_08_20_09_08_34_teamloggerh10.teamloggerh10"
+      },
+      {
+        "file": "template/filipp_28.teamloggerh10",
+        "content_hash": "e7595d677b85e7dda3597100c55c5794",
+        "source": "C8219D21_2026_teamloggerh10 (7).teamloggerh10"
+      },
+      {
+        "file": "template/filipp_29.teamloggerh10",
+        "content_hash": "ed54a18f9f8518ab26fb21265dc52bd6",
+        "source": "C821EB2E_2026_teamloggerh10_3_teamloggerh10.teamloggerh10"
+      }
+    ]
+  },
+  "probes": {
+    "andrey": {
+      "file": "probes/andrey_probe.teamloggerh10",
+      "content_hash": "4e57b17f3a19adaf79130a3334223474",
+      "source": "84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10"
+    },
+    "filipp": {
+      "file": "probes/filipp_probe.teamloggerh10",
+      "content_hash": "e0a85a51f6606b7ccdd0e671ec0f9414",
+      "source": "C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10"
+    },
+    "konstantin": {
+      "file": "probes/konstantin_probe.teamloggerh10",
+      "content_hash": "a8866049f98176f772c4f9c374e40fe7",
+      "source": "C821E528_2026_08_11_08_48_07_teamloggerh10.teamloggerh10"
+    },
+    "trofim": {
+      "file": "probes/trofim_probe.teamloggerh10",
+      "content_hash": "d223fcda74f8e0d6214bfecae443998f",
+      "source": "C821EB2E_2026_08_24_09_08_21_teamloggerh10.teamloggerh10"
+    }
+  }
+}

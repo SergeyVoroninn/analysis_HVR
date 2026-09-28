@@ -1,0 +1,65 @@
+{
+  "dataset_key": {
+    "etalon_athlete": "filipp",
+    "template_hashes": [
+      "00dab375ccaeda59a5a99c682a9cc8d3",
+      "01bfe1217b0a707b797111cdff84e55b",
+      "06561394b191aad9c5ab617e758370e9",
+      "0ecb912ca3a79f4bb3e8dce6954c4c22",
+      "1cd4054cb9aa3ec931947eaa1e37376e",
+      "1d462bb38614229083f4cd5b974d2791",
+      "1e69a5f906368f0b3e699ceacb2bdaa1",
+      "21c0a08baf3043ad0fea1ef8fe25e18b",
+      "2486ff6f528cae4aa5ce272fc4849a73",
+      "332bd1aa9ffcfed6732b8e1c2093b160",
+      "33ece191c92ec6451028d4570e5ec4ca",
+      "3f4f369164f91d722930d4829176bb64",
+      "476b0a3dde2db57504f92603f816f9d8",
+      "492ae8dcf59cd87e69dd6ea2bd9e163c",
+      "54636e22aee7fc60bba5911373ceb512",
+      "5544b0881ee9e4e16b3ba03c85e5627a",
+      "57e2fca9c79da9d034607204ff248972",
+      "6bb0204b968fe3917b187f29ca4b81d4",
+      "7223966642acd24d4da1138e8a6e47c5",
+      "7cb3d94e314751743c268e656511bf10",
+      "80584d41c92a27ea99a484cef89fe407",
+      "894e3b7c47ba66d562a3e4a1318cefc7",
+      "996ac482b6445519f818532447725f52",
+      "a7892c78ba14df30c40ba69fda946978",
+      "c2b27fc450f1283777976821d828762a",
+      "d68113b2c01c09361997740a88fd18a2",
+      "d81dff078af82b94f79e43a9660550a7",
+      "e7595d677b85e7dda3597100c55c5794",
+      "ed54a18f9f8518ab26fb21265dc52bd6"
+    ],
+    "probe_hashes": {
+      "andrey": "4e57b17f3a19adaf79130a3334223474",
+      "filipp": "e0a85a51f6606b7ccdd0e671ec0f9414",
+      "konstantin": "a8866049f98176f772c4f9c374e40fe7",
+      "trofim": "d223fcda74f8e0d6214bfecae443998f"
+    }
+  },
+  "results": {
+    "andrey": {
+      "distance": 0.24444126301276226,
+      "probability": 0.5427517979664689,
+      "status": "SUSPICIOUS"
+    },
+    "filipp": {
+      "distance": 0.06712087418351816,
+      "probability": 0.8455210745063114,
+      "status": "MATCH"
+    },
+    "konstantin": {
+      "distance": 0.12551637973296245,
+      "probability": 0.7306717596137017,
+      "status": "MATCH"
+    },
+    "trofim": {
+      "distance": 0.5839933146762313,
+      "probability": 0.23224015619891336,
+      "status": "SUSPICIOUS"
+    }
+  },
+  "metric": "distance"
+}

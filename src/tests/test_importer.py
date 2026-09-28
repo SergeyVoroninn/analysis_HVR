@@ -21,9 +21,9 @@ from models import get_session, Athlete, ECGRecord, ECGRaw, Base
 from importer import import_ecg
 
 # Находим реальный эталонный файл для тестов
-REFERENCE_DIR = os.path.join(PROJECT_DIR, "tests", "reference")
+REFERENCE_DIR = os.path.join(PROJECT_DIR, "tests", "ekg_reference")
 REFERENCE_FILES = glob.glob(os.path.join(REFERENCE_DIR, "*.teamloggerh10"))
-assert len(REFERENCE_FILES) > 0, "Не найдено эталонных файлов .teamloggerh10 в tests/reference/"
+assert len(REFERENCE_FILES) > 0, "Не найдено эталонных файлов .teamloggerh10 в tests/ekg_reference/"
 REAL_H10_FILE = REFERENCE_FILES[0]
 
 

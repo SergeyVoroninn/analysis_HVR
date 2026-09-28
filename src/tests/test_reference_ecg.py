@@ -15,8 +15,8 @@ from models import get_session, Athlete, ECGRecord
 import analysis as hrv
 from importer import _import_one
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-ETALONS = os.path.join(os.path.dirname(__file__), "etalons.json")
+REFERENCE_DIR = os.path.join(os.path.dirname(__file__), "ekg_reference")
+ETALONS = os.path.join(REFERENCE_DIR, "etalons.json")
 
 
 def _load_etalons():
@@ -102,7 +102,8 @@ def test_reference_ecg(etalon, db_with_athlete):
     db_path, polar, aid = db_with_athlete
     path = etalon["file"]
     if not os.path.isabs(path):
-        path = os.path.join(ROOT, path)
+        # Файлы эталонов лежат в той же папке, что и etalons.json (ekg_reference)
+        path = os.path.join(REFERENCE_DIR, path)
     assert os.path.exists(path), f"Reference file not found: {path}"
 
     from athlete_generator import _calc_age
