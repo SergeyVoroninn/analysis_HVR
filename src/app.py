@@ -78,7 +78,7 @@ if __name__ == "__main__":
     pump(0.60)
     from atlets import AthletesPanel
     from heatmap import Heatmap
-    from dialogs import ECGJournal
+    from dialogs import ECGJournal, HelpDialog
     from charts import ChartsPanel, TP_METRIC, SI_METRIC
     pump(0.80)
     from importer import import_ecg
@@ -186,6 +186,11 @@ if __name__ == "__main__":
     root.update()
     splash.close_splash()
     root.deiconify()
+
+    # F1 — инструкция пользователя
+    def open_help(event=None):
+        HelpDialog(root)
+    root.bind("<F1>", open_help)
 
     root.protocol("WM_DELETE_WINDOW", lambda: handle_app_close(panel, orchestrator, root))
     root.mainloop()

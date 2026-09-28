@@ -10,7 +10,7 @@ import customtkinter as ctk
 
 from database import get_db_path
 from models import get_session, Athlete
-from dialogs import AthleteDialog
+from dialogs import AthleteDialog, ToolTip
 from athlete_generator import (
     _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
     _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd, _calc_age)
@@ -49,8 +49,13 @@ class AthletesPanel(tk.Frame):
 
         mgmt = ctk.CTkFrame(self, fg_color="transparent")
         mgmt.grid(row=2, column=0, pady=5)
+        tips = {"＋": "Добавить спортсмена",
+                "✎": "Редактировать выбранного",
+                "🗑": "Удалить выбранного"}
         for text, cmd in (("＋", self.add), ("✎", self.edit), ("🗑", self.delete)):
-            ctk.CTkButton(mgmt, text=text, width=40, command=cmd).pack(side="left", padx=3)
+            btn = ctk.CTkButton(mgmt, text=text, width=40, command=cmd)
+            btn.pack(side="left", padx=3)
+            ToolTip(btn, tips[text])
 
         # === НОВАЯ КНОПКА: Список ЭКГ ===
         self._list_btn = ctk.CTkButton(
@@ -59,11 +64,12 @@ class AthletesPanel(tk.Frame):
             command=self.open_ecg_list,
         )
         self._list_btn.grid(row=3, column=0, sticky="ew", padx=5, pady=(5, 2))
-        # ==================================
+        ToolTip(self._list_btn, "Журнал записей ЭКГ")
 
         self._imp_btn = ctk.CTkButton(self, text="⬇ Импорт записи ЭКГ",
                                       command=lambda: self.on_import and self.on_import())
         self._imp_btn.grid(row=4, column=0, sticky="ew", padx=5, pady=(0, 5))
+        ToolTip(self._imp_btn, "Загрузить записи ЭКГ (.teamloggerh10)")
 
         self.reload()
 
