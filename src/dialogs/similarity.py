@@ -1,4 +1,4 @@
-"""Диалог «Улучшить сходство»."""
+"""Единое окно биометрического сходства — список атлетов по убыванию совпадения."""
 import customtkinter as ctk
 from tkinter import ttk
 
@@ -8,24 +8,35 @@ from .base import BaseDialog, CANCEL
 
 
 class SimilarityDialog(BaseDialog):
-    """Диалог «Улучшить сходство»: ранжирует атлетов по биометрии для записи ЭКГ.
+    """Выбор атлета по биометрическому сходству.
 
-    Атлеты перечислены по убыванию степени сходства (по вероятности совпадения),
-    с метриками (расстояние, количество записей в шаблоне) — чтобы выбирать
-    по всем признакам, а не только по фамилии.
+    Единое окно для двух сценариев:
+      * кнопка «Улучшить схожесть» в журнале ЭКГ — source = id записи;
+      * слабое совпадение с шаблоном при импорте — source = raw-данные файла.
+
+    В окне — сортированный по убыванию схожести список всех атлетов
+    (probability), с отметкой текущего и родственников. Результат выбора:
+      * через колбэк on_apply(athlete_id, probability);
+      * через self.result = {"athlete_id": ..., "probability": ...}
+        (None — если отменено), подходит для modal_loop().
     """
 
     COLS = ("ФИО", "Polar ID", "Сходство %", "Расстояние", "Записей в шаблоне", "Отметка")
 
-    def __init__(self, parent, db_path, record_id, on_apply=None):
-        super().__init__(parent, title="Улучшить сходство", db_path=db_path,
+    def __init__(self, parent, db_path, source, *,
+                 candidates=None, current_athlete_id=None, on_apply=None,
+                 title="Улучшить сходство",
+                 prompt="Выберите наиболее подходящего атлета:"):
+        super().__init__(parent, title=title, db_path=db_path,
                          size="780x480", resizable=(True, True), modal=True)
 
-        self.record_id = record_id
         self.on_apply = on_apply
-        self.candidates = []
+        # source: int (id записи в БД) либо str (raw-фрагмент ЭКГ)
+        if candidates is None:
+            candidates = self._load_candidates(source, current_athlete_id)
+        self.candidates = candidates
 
-        ctk.CTkLabel(self, text="Выберите наиболее подходящего атлета (по биометрии)",
+        ctk.CTkLabel(self, text=prompt,
                      font=ctk.CTkFont(size=13, weight="bold")).pack(padx=12, pady=(10, 4))
 
         frame = ctk.CTkFrame(self)
@@ -52,14 +63,19 @@ class SimilarityDialog(BaseDialog):
         self.btn_apply = self.make_button(btns, "Привязать к выбранному",
                                           self._apply, state="disabled", padx=6,
                                           tooltip="Переназначить запись выбранному атлету")
-        self.make_button(btns, "Отмена", self.destroy, kind=CANCEL, padx=6,
+        self.make_button(btns, "Отмена", self.close, kind=CANCEL, padx=6,
                          tooltip="Закрыть без изменений")
 
         self._load()
 
+    def _load_candidates(self, source, current_athlete_id):
+        """Загружает и ранжирует кандидатов по source (id записи или raw)."""
+        from ecg_biometrics import rank_athletes_for_raw, rank_athletes_for_record
+        if isinstance(source, int):
+            return rank_athletes_for_record(self.db_path, source)
+        return rank_athletes_for_raw(self.db_path, source, current_athlete_id)
+
     def _load(self):
-        from ecg_biometrics import rank_athletes_for_record
-        self.candidates = rank_athletes_for_record(self.db_path, self.record_id)
         if not self.candidates:
             self.info_label.configure(
                 text="Нет данных: для записи нет сырых данных или шаблонов атлетов.")
@@ -96,15 +112,17 @@ class SimilarityDialog(BaseDialog):
 
     def _on_select(self, event=None):
         sel = self.tree.selection()
-        state = "normal" if sel else "disabled"
-        self.btn_apply.configure(state=state)
+        self.btn_apply.configure(state="normal" if sel else "disabled")
 
     def _apply(self):
         sel = self.tree.selection()
         if not sel:
             return
-        new_aid = sel[0]
-        m = next((x for x in self.candidates if x['athlete'].id == new_aid), None)
+        aid = sel[0]
+        m = next((x for x in self.candidates if x['athlete'].id == aid), None)
+        if m is None:
+            return
         if self.on_apply:
-            self.on_apply(self.record_id, new_aid, m['probability'] if m else None)
+            self.on_apply(m['athlete'].id, m['probability'])
+        self.result = {"athlete_id": m['athlete'].id, "probability": m['probability']}
         self.destroy()

@@ -7,14 +7,12 @@ from .common import _ForegroundDateEntry, ToolTip
 from .athlete import AthleteDialog
 from .ecg_journal import ECGJournal
 from .similarity import SimilarityDialog
-from .choice import BiometricChoiceDialog
 from .help import HelpDialog
 
 __all__ = [
     "AthleteDialog",
     "ECGJournal",
     "SimilarityDialog",
-    "BiometricChoiceDialog",
     "HelpDialog",
     "ToolTip",
     "_ForegroundDateEntry",

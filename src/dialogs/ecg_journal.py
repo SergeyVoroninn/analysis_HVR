@@ -14,6 +14,21 @@ from app_constants import (ECG_FILE_EXTENSION, ECGLIST_DEFAULT_LIMIT,
 from .base import BaseDialog, CANCEL, DANGER
 
 
+def _short_bio_note(note):
+    """Короткая метка причины отсутствующего сходства для колонки «Сходство»."""
+    if not note:
+        return "—"
+    if "нет ЭКГ" in note:
+        return "нет ЭКГ"
+    if "нет шаблона" in note:
+        return "нет шаблона"
+    if "плохой сигнал" in note:
+        return "плохой сигн."
+    if "ошибка" in note:
+        return "ошибка"
+    return "—"
+
+
 class ECGJournal(BaseDialog):
     """Единый журнал записей ЭКГ (используется и из heatmap, и из главной формы).
 
@@ -70,7 +85,7 @@ class ECGJournal(BaseDialog):
         frame.pack(fill="both", expand=True, padx=10, pady=6)
         self.tree = ttk.Treeview(frame, columns=self.DISPLAY_COLS, show="headings",
                                  height=14)
-        widths = {"Атлет": 150, "Прибор": 120, "Время": 120, "Импорт": 120,
+        widths = {"Атлет": 150, "Прибор": 120, "Время": 155, "Импорт": 195,
                   "Сходство": 80, "ЧСС": 70, "RMSSD": 70, "SDNN": 70,
                   "ИС": 70, "TP": 80, "Статус": 80}
         for c in self.DISPLAY_COLS:
@@ -90,15 +105,15 @@ class ECGJournal(BaseDialog):
                          tooltip="Сортировать по времени снятия записи (по возрастанию)")
         self.make_button(btns, "По времени импорта", lambda: self._sort_preset("Импорт", True), width=130,
                          tooltip="Сортировать по времени импорта (по убыванию)")
-        self.btn_export = self.make_button(btns, " Экспорт в файл", self._export, state="disabled",
+        self.btn_export = self.make_button(btns, " Экспорт в файл", self._export, width=130, state="disabled",
                                            tooltip="Сохранить сырые данные записи в файл .teamloggerh10")
-        self.btn_delete = self.make_button(btns, "🗑 Удалить", self._delete,
+        self.btn_delete = self.make_button(btns, "🗑 Удалить", self._delete, width=95,
                                            kind=DANGER, state="disabled",
                                            tooltip="Удалить выбранную запись ЭКГ")
         self.btn_improve = self.make_button(btns, "🎯 Улучшить сходство",
-                                            self._improve_similarity, state="disabled",
+                                            self._improve_similarity, width=150, state="disabled",
                                             tooltip="Подобрать более подходящего атлета для записи")
-        self.make_button(btns, "Закрыть", self.close, kind=CANCEL,
+        self.make_button(btns, "Закрыть", self.close, width=90, kind=CANCEL,
                          tooltip="Закрыть журнал")
 
         self.sort_label = ctk.CTkLabel(self, text="", text_color=COL_TEXT_DIM,
@@ -167,18 +182,19 @@ class ECGJournal(BaseDialog):
         device_name = f"{device.model} · {device.serial_number}" if device else "—"
 
         try:
-            rec_at = datetime.datetime.fromisoformat(rec.recorded_at).strftime("%d.%m.%Y %H:%M")
+            rec_at = datetime.datetime.fromisoformat(rec.recorded_at).strftime("%d.%m.%Y %H:%M:%S")
         except Exception:
             rec_at = rec.recorded_at if rec.recorded_at else ""
 
         updated_str = ""
         if rec.updated_at:
             if isinstance(rec.updated_at, datetime.datetime):
-                updated_str = rec.updated_at.strftime("%d.%m.%Y %H:%M")
+                updated_str = rec.updated_at.strftime("%d.%m.%Y %H:%M:%S") + f".{rec.updated_at.microsecond // 1000:03d}"
             else:
-                updated_str = str(rec.updated_at)[:16]
+                updated_str = str(rec.updated_at)
 
-        sim = f"{rec.bio_similarity_pct:.0f}" if rec.bio_similarity_pct is not None else "—"
+        sim = (f"{rec.bio_similarity_pct:.0f}" if rec.bio_similarity_pct is not None
+       else _short_bio_note(getattr(rec, "bio_note", None)))
 
         tags = tuple([str(rec.id)])
         if rec.bio_similarity_pct is not None:
@@ -210,15 +226,15 @@ class ECGJournal(BaseDialog):
         return int(sel[0]) if sel else None
 
     def _improve_similarity(self):
-        """Открывает диалог выбора лучшего атлета для записи и переназначает её."""
+        """Открывает окно выбора лучшего атлета для записи и переназначает её."""
         rid = self._selected_id()
         if rid is None:
             return
 
-        def on_apply(record_id, new_athlete_id, prob):
+        def on_apply(new_athlete_id, prob):
             session = get_session(self.db_path)
             try:
-                rec = session.get(ECGRecord, record_id)
+                rec = session.get(ECGRecord, rid)
                 if rec is None:
                     return
                 rec.athlete_id = new_athlete_id
@@ -233,7 +249,8 @@ class ECGJournal(BaseDialog):
                 pass
 
         from .similarity import SimilarityDialog
-        SimilarityDialog(self, self.db_path, rid, on_apply=on_apply)
+        SimilarityDialog(self, self.db_path, rid, on_apply=on_apply,
+                         title="Улучшить схожесть")
 
     def _export(self):
         rid = self._selected_id()

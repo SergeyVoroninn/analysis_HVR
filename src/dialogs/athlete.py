@@ -15,7 +15,7 @@ from app_constants import ECGLIST_DEFAULT_LIMIT
 class AthleteDialog(BaseDialog):
     def __init__(self, parent, title, data=None, db_path=None):
         super().__init__(parent, title=title, db_path=db_path,
-                         size="380x545", modal=False)
+                         size="380x545", modal=True)
 
         # ⚡ ДОБАВЛЕНО: Сохраняем параметры для проверки и открытия биометрии
         self.athlete_id = data.get("id") if data else None

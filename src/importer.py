@@ -8,13 +8,16 @@ import threading
 from tkinter import messagebox, filedialog
 
 from database import get_db_path
+from app_logging import get_logger
 from models import get_session, Athlete, ECGRecord, ECGRaw, Device
 from analysis import parse_rr, calc_metrics, calc_stress, filter_rr, compute_psd, cfg as analysis_cfg
 
+log = get_logger("importer")
+
 # ИМПОРТ ФУНКЦИЙ И КОНФИГУРАЦИИ БИОМЕТРИИ
 from ecg_biometrics import (
-    check_ownership_with_saved_template, 
-    find_best_match,
+    check_ownership_with_saved_template,
+    rank_athletes_for_raw,
     auto_update_template_if_needed,
     cfg,
     _are_relatives_by_name
@@ -28,8 +31,8 @@ from app_constants import (
     ECG_FILE_EXTENSION
 )
 
-# Диалог выбора атлета при биометрическом несовпадении вынесен в пакет dialogs.
-from dialogs import BiometricChoiceDialog
+# Диалог выбора атлета при биометрическом несовпадении — единое окно сходства.
+from dialogs import SimilarityDialog
 
 # ==============================================================================
 # ЛОГИКА ИМПОРТА
@@ -65,6 +68,7 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         with open(path, "r", encoding="utf-8") as f:
             raw = f.read()
     except Exception as e:
+        log.exception("Не удалось прочитать файл: %s", path)
         if interactive:
             messagebox.showerror("Ошибка чтения", f"Не удалось прочитать файл:\n\n{e}", parent=parent_window)
         return "err", None
@@ -99,6 +103,15 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         status, distance, prob = check_ownership_with_saved_template(db_path, aid, path)
         bio_prob = prob  # вероятность для итогового атлета (обновляется при перенаправлении)
 
+        if status == "NO_TEMPLATE":
+            log.info("Импорт %s: у атлета %s НЕТ шаблона -> сходство не считается, кандидаты не предлагаются",
+                     os.path.basename(path), aid)
+        elif status == "BAD_SIGNAL":
+            log.warning("Импорт %s: плохой сигнал (нет R-зубцов) -> сходство не считается", os.path.basename(path))
+        else:
+            log.info("Импорт %s: биометрия status=%s distance=%.3f prob=%.3f (атлет %s)",
+                     os.path.basename(path), status, distance, prob, aid)
+
         if interactive and parent_window:
             if status == "NO_TEMPLATE":
                 if not messagebox.askyesno("Биометрия", 
@@ -107,53 +120,41 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
                     return "cancelled", None
                     
             elif status in ("SUSPICIOUS", "LOW_CONFIDENCE"):
-                best_athlete, best_dist, best_prob, all_matches = find_best_match(db_path, path, exclude_athlete_id=aid)
-                
-                has_relatives = False
-                relative_candidates = []
-                for m in all_matches:
-                    if _are_relatives_by_name(db_path, aid, m['athlete'].id):
-                        has_relatives = True
-                        relative_candidates.append(m)
-                
-                best_relative = None
-                best_relative_prob = 0
-                for m in relative_candidates:
-                    if m['probability'] > best_relative_prob:
-                        best_relative = m
-                        best_relative_prob = m['probability']
-                
+                candidates = rank_athletes_for_raw(db_path, raw, current_athlete_id=aid) if raw else []
+                best = candidates[0] if candidates else None
+                best_athlete = best['athlete'] if best else None
+                best_prob = best['probability'] if best else 0.0
+
+                relative_candidates = [m for m in candidates
+                                       if _are_relatives_by_name(db_path, aid, m['athlete'].id)]
+                best_relative = (max(relative_candidates, key=lambda m: m['probability'])
+                                 if relative_candidates else None)
+                best_relative_prob = best_relative['probability'] if best_relative else 0.0
+
                 should_show_dialog = False
-                
                 if best_relative and best_relative_prob >= IMPORT_RELATIVE_PROB_THRESHOLD:
                     should_show_dialog = True
                     best_athlete = best_relative['athlete']
                     best_prob = best_relative_prob
                 elif best_athlete and best_prob >= IMPORT_UNKNOWN_PROB_THRESHOLD:
                     should_show_dialog = True
-                
+
                 if should_show_dialog:
-                    best_athlete_name = f"{best_athlete.last_name} {best_athlete.first_name}"
-                    is_best_relative = best_relative is not None
-                    best_records = next((m['records_used'] for m in all_matches if m['athlete'].id == best_athlete.id), 0)
-                    
-                    dialog = BiometricChoiceDialog(
-                        parent_window, 
-                        current_athlete_name, prob * 100, 
-                        best_athlete_name, best_prob * 100,
-                        is_relative=is_best_relative,
-                        best_records=best_records
-                    )
-                    
-                    parent_window.wait_window(dialog)
-                    
-                    # Любое значение, кроме "best" (включая None при закрытии крестиком), = отмена
-                    if dialog.result == "best":
-                        aid = best_athlete.id
-                        bio_prob = best_prob
-                    else:
+                    # Единое окно биометрического сходства: список всех атлетов
+                    # по убыванию совпадения; пользователь выбирает владельца записи.
+                    dlg = SimilarityDialog(
+                        parent_window, db_path, raw,
+                        candidates=candidates,
+                        current_athlete_id=aid,
+                        title="Биометрическое совпадение",
+                        prompt="Запись слабо совпадает с текущим атлетом. "
+                               "Укажите, кому принадлежит запись:")
+                    res = dlg.modal_loop()
+                    if res is None:
                         return "cancelled", None
-                    
+                    aid = res["athlete_id"]
+                    bio_prob = res["probability"]
+
                 else:
                     msg = (f"⚠️ Биометрическое сходство низкое!\n\n"
                            f"Вероятность совпадения с текущим атлетом: {prob*100:.1f}%\n"
@@ -204,7 +205,16 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         # % биологической схожести с эталонным шаблоном атлета
         # (None, если корректного сравнения не было: нет шаблона, ошибка, плохой сигнал)
         bio_pct = None
-        if status not in ("NO_TEMPLATE", "ERROR", "BAD_SIGNAL") and bio_prob is not None:
+        bio_note = None
+        if status == "NO_TEMPLATE":
+            bio_note = "нет шаблона у атлета"
+        elif status == "BAD_SIGNAL":
+            from ecg_biometrics import bio_failure_reason
+            bio_note = bio_failure_reason(raw)
+            log.warning("Импорт %s: %s", os.path.basename(path), bio_note)
+        elif status == "ERROR":
+            bio_note = "ошибка обработки сигнала"
+        elif bio_prob is not None:
             bio_pct = round(bio_prob * 100, 2)
 
         rec = ECGRecord(
@@ -212,7 +222,7 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
             mean_hr=m["mean_hr"] if m else None, rmssd=m["rmssd"] if m else None,
             sdnn=m["sdnn"] if m else None, status=m["status"] if m else "ok",
             stress_si=s["si"] if s else None, tp=spectral_tp,
-            device_id=device_id, bio_similarity_pct=bio_pct,
+            device_id=device_id, bio_similarity_pct=bio_pct, bio_note=bio_note,
         )
         session.add(rec)
         session.flush()
@@ -223,6 +233,7 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
 
     except Exception as e:
         session.rollback()
+        log.exception("Ошибка при импорте %s", path)
         if interactive:
             messagebox.showerror("Ошибка сохранения", f"Не удалось сохранить:\n\n{e}", parent=parent_window)
         return "err", None

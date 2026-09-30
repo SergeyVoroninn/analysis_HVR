@@ -341,15 +341,21 @@ def clean_ecg(ecg_signal, fs, notch_freq=None, band_low=None, band_high=None):
     
     nyq = 0.5 * fs
     padlen = min(3 * max(len(sig) // 10, 50), len(sig) - 1)
-    
+
     if 0 < notch_freq < nyq:
         b_notch, a_notch = iirnotch(notch_freq / nyq, Q=cfg.NOTCH_Q)
-        sig = filtfilt(b_notch, a_notch, sig, padlen=padlen)
-    
+        try:
+            sig = filtfilt(b_notch, a_notch, sig, padlen=padlen)
+        except (ValueError, RuntimeError):
+            pass  # короткий сигнал — пропускаем фильтрацию
+
     if 0 < band_low < band_high < nyq:
         b_band, a_band = butter(cfg.BUTTERWORTH_ORDER, [band_low / nyq, band_high / nyq], btype='band')
-        sig = filtfilt(b_band, a_band, sig, padlen=padlen)
-    
+        try:
+            sig = filtfilt(b_band, a_band, sig, padlen=padlen)
+        except (ValueError, RuntimeError):
+            pass  # короткий сигнал — пропускаем фильтрацию
+
     return sig
 
 

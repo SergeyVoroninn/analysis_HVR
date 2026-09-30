@@ -9,7 +9,10 @@ from scipy import signal
 from scipy.fft import fft, fftfreq
 from dtaidistance import dtw
 from app_constants import BIOMETRIC_ERROR_DISTANCE
+from app_logging import get_logger
 from models import get_session, ECGRecord, ECGRaw, BiometricTemplate, Athlete
+
+log = get_logger("ecg_biometrics")
 
 # ==============================================================================
 # КОНФИГУРАЦИЯ (Устранение хардкода и магических чисел)
@@ -64,6 +67,16 @@ class ECGConfig:
 cfg = ECGConfig()
 
 
+def _safe_filtfilt(b, a, sig):
+    """filtfilt, устойчивый к коротким сигналам: не падает, а возвращает сигнал."""
+    try:
+        return signal.filtfilt(b, a, sig)
+    except (ValueError, RuntimeError):
+        # Слишком короткий сигнал для padlen — оставляем как есть;
+        # дальнейшая обработка отбракует запись как невалидную.
+        return sig
+
+
 def _parse_and_clean_ecg(raw_data, fs=None):
     fs = fs or cfg.FS
     lines = raw_data.split('\n')
@@ -88,18 +101,53 @@ def _parse_and_clean_ecg(raw_data, fs=None):
     # Режекторный фильтр (сеть)
     if 0 < cfg.NOTCH_FREQ < nyq:
         b, a = signal.iirnotch(cfg.NOTCH_FREQ / nyq, Q=cfg.NOTCH_Q)
-        sig = signal.filtfilt(b, a, sig)
+        sig = _safe_filtfilt(b, a, sig)
         
     # Полосовой фильтр
     if 0 < cfg.BANDPASS_LOW < cfg.BANDPASS_HIGH < nyq:
         b, a = signal.butter(cfg.BUTTERWORTH_ORDER, [cfg.BANDPASS_LOW / nyq, cfg.BANDPASS_HIGH / nyq], btype='band')
-        sig = signal.filtfilt(b, a, sig)
+        sig = _safe_filtfilt(b, a, sig)
         
     return sig
 
 
+def bio_failure_reason(raw_data):
+    """Человекочитаемая причина, почему сходство нельзя вычислить.
+
+    Различает «в файле нет секции [ECG] (только RR)» и «ЭКГ есть, но нет R-зубцов».
+    """
+    if not raw_data:
+        return "нет данных"
+
+    in_ecg_marker = False   # встречен ли заголовок [ECG]
+    ecg_data_lines = 0      # непустых строк данных внутри [ECG]
+    in_ecg = False
+    for line in raw_data.splitlines():
+        line = line.strip()
+        if line == "[ECG]":
+            in_ecg = True
+            in_ecg_marker = True
+            continue
+        if line.startswith("["):
+            in_ecg = False
+            continue
+        if in_ecg and ":" in line:
+            values = [v for v in line.split(":", 1)[1].split(",") if v.strip()]
+            if values:
+                ecg_data_lines += 1
+
+    if not in_ecg_marker:
+        return "нет ЭКГ-сигнала (только RR)"
+    if ecg_data_lines == 0:
+        return "плохой сигнал: секция ЭКГ без данных"
+    return "плохой сигнал: не найдены R-зубцы"
+
+
 def _extract_features(ecg_clean, fs=None):
     fs = fs or cfg.FS
+    # Слишком короткий/пустой сигнал: R-зубцов не найти — не считаем пустыми срезами
+    if ecg_clean is None or len(ecg_clean) < 10:
+        return None, None
     min_r_height = np.mean(ecg_clean) + cfg.R_PEAK_STD_MULT * np.std(ecg_clean)
     
     # Переводим временные интервалы в семплы динамически
@@ -224,12 +272,14 @@ def create_and_save_template(db_path, athlete_id, progress_cb=None):
                     continue
                 _, probability = _score_features(final_shape, final_spec, q_shape, q_spec)
                 rec.bio_similarity_pct = round(probability * 100, 2)
+                rec.bio_note = None
                 filled += 1
             session.commit()
             if filled:
-                print(f"[биометрия] дозаполнена схожесть: {filled} записей для атлета {athlete_id}")
+                log.info("Дозаполнена схожесть: %d записей атлета %s", filled, athlete_id)
         except Exception:
             session.rollback()
+            log.exception("Не удалось дозаполнить схожесть записей атлета %s", athlete_id)
 
         avg_dist = sum(x[1] for x in distances[:num_to_use]) / num_to_use
         return True, f"Шаблон успешно создан из {len(best_shapes)} лучших записей (среднее отклонение: {avg_dist:.3f})"
@@ -377,6 +427,29 @@ def find_best_match(db_path, new_file_path, exclude_athlete_id=None):
     return None, BIOMETRIC_ERROR_DISTANCE, 0.0, []
 
 
+def rank_athletes_for_raw(db_path, raw_data, current_athlete_id=None):
+    """Ранжирует атлетов по биометрии для произвольного raw-фрагмента ЭКГ.
+
+    Используется и при импорте (запись ещё не в БД), и для сохранённых записей.
+    Возвращает список кандидатов, отсортированный по убыванию сходства
+    (probability), с отметками is_current / is_relative.
+    """
+    if not raw_data:
+        return []
+
+    q_shape, q_spec = _extract_features(_parse_and_clean_ecg(raw_data))
+    if q_shape is None or q_spec is None:
+        return []
+
+    matches = _score_cycles(db_path, q_shape, q_spec, exclude_athlete_id=None)
+    for m in matches:
+        m['is_current'] = bool(current_athlete_id and m['athlete'].id == current_athlete_id)
+        m['is_relative'] = bool(
+            current_athlete_id and _are_relatives_by_name(db_path, current_athlete_id, m['athlete'].id))
+    matches.sort(key=lambda x: x['probability'], reverse=True)
+    return matches
+
+
 def rank_athletes_for_record(db_path, record_id):
     """Возвращает кандидатов-атлетов по биометрии для сохранённой записи ЭКГ.
 
@@ -394,18 +467,7 @@ def rank_athletes_for_record(db_path, record_id):
     finally:
         session.close()
 
-    q_shape, q_spec = _extract_features(_parse_and_clean_ecg(raw))
-    if q_shape is None or q_spec is None:
-        return []
-
-    matches = _score_cycles(db_path, q_shape, q_spec, exclude_athlete_id=None)
-    for m in matches:
-        m['is_current'] = (m['athlete'].id == current_athlete_id)
-        m['is_relative'] = bool(
-            current_athlete_id and _are_relatives_by_name(db_path, current_athlete_id, m['athlete'].id))
-    # Сортируем по убыванию сходства (большая вероятность = лучше)
-    matches.sort(key=lambda x: x['probability'], reverse=True)
-    return matches
+    return rank_athletes_for_raw(db_path, raw, current_athlete_id=current_athlete_id)
 
 
 def auto_update_template_if_needed(db_path, athlete_id):
@@ -415,7 +477,7 @@ def auto_update_template_if_needed(db_path, athlete_id):
         if count >= cfg.MIN_RECORDS:
             create_and_save_template(db_path, athlete_id, progress_cb=None)
     except Exception:
-        pass
+        log.exception("Не удалось авто-обновить шаблон атлета %s", athlete_id)
     finally:
         session.close()
 

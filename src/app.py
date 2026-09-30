@@ -158,16 +158,36 @@ if __name__ == "__main__":
     pump(0.95)
 
     saved_id = settings.get("athlete_id")
+    saved_year = settings.get("year")
+    saved_week = settings.get("week")
     panel.reload(select_id=saved_id)
     cur = panel.selected()
-    
+
     panel.on_select = orchestrator.sync_athlete
     orchestrator.sync_athlete(cur[0] if cur else None)
-    
+
+    # На «первом запуске» (нет сохранённого года/недели) ставим карты на последнюю
+    # запись атлета — иначе годовая карта показывает текущий год, а недельная пуста.
+    if not saved_year and not saved_week and cur:
+        last_dt = None
+        session = get_session(panel.db_path)
+        try:
+            row = (session.query(ECGRecord.recorded_at)
+                   .filter(ECGRecord.athlete_id == cur[0])
+                   .order_by(ECGRecord.recorded_at.desc()).first())
+            if row and row[0]:
+                last_dt = datetime.datetime.fromisoformat(row[0]).date()
+        except Exception:
+            last_dt = None
+        finally:
+            session.close()
+        if last_dt:
+            hm.set_cursor_by_date(last_dt)
+
     orchestrator.restore_state(
         saved_athlete_id=cur[0] if cur else None,
-        saved_year=settings.get("year"),
-        saved_week=settings.get("week"),
+        saved_year=saved_year,
+        saved_week=saved_week,
         saved_zoom=settings.get("zoom")
     )
     

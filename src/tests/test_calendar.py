@@ -8,11 +8,26 @@ import sys
 import time
 import tkinter as tk
 
+import pytest
+
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
 from dialogs import _ForegroundDateEntry
+
+
+@pytest.fixture(scope="module")
+def root():
+    """Один Tk-корень на модуль: избегаем создания множества Tcl-интерпретаторов
+    (второй/третий tk.Tk() в одном процессе может падать с 'Can't find init.tcl')."""
+    w = tk.Tk()
+    w.withdraw()
+    yield w
+    try:
+        w.destroy()
+    except tk.TclError:
+        pass
 
 
 def find_widget_by_text(parent, text_contains):
@@ -35,11 +50,9 @@ def find_widget_by_text(parent, text_contains):
 # ==============================================================================
 # ТЕСТ 1: Базовые операции (дата, открытие, закрытие)
 # ==============================================================================
-def test_calendar_basic_operations():
+def test_calendar_basic_operations(root):
     """Проверяет программную смену даты и корректное открытие/закрытие."""
-    root = tk.Tk()
-    root.withdraw()
-
+    cal = None
     try:
         cal = _ForegroundDateEntry(
             root, width=12, date_pattern='dd-mm-yyyy',
@@ -78,23 +91,18 @@ def test_calendar_basic_operations():
 
     finally:
         try:
-            if hasattr(cal, '_top_cal') and cal._top_cal.winfo_exists():
+            if cal is not None and hasattr(cal, '_top_cal') and cal._top_cal.winfo_exists():
                 cal._top_cal.destroy()
         except Exception:
             pass
-        root.destroy()
 
 
 # ==============================================================================
 # ТЕСТ 2: Интеграционный тест смены месяца через GUI
 # ==============================================================================
-def test_calendar_month_selection_gui():
+def test_calendar_month_selection_gui(root):
     """Проверяет, что календарь не пропадает при клике на заголовок месяца."""
-    root = tk.Tk()
-    root.title("Calendar GUI Test")
-    root.geometry("400x300+100+100")
-    root.update_idletasks()
-
+    cal = None
     try:
         cal = _ForegroundDateEntry(
             root, width=12, date_pattern='dd-mm-yyyy',
@@ -163,4 +171,3 @@ def test_calendar_month_selection_gui():
                     cal._top_cal.destroy()
         except Exception:
             pass
-        root.destroy()

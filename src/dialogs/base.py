@@ -7,6 +7,7 @@
 from contextlib import contextmanager
 
 import customtkinter as ctk
+import tkinter as tk
 
 from models import get_session
 from theme import COL_NEUTRAL, COL_CRIT, COL_DANGER_HOVER
@@ -43,7 +44,12 @@ class BaseDialog(ctk.CTkToplevel):
         self.resizable(*resizable)
         self.transient(parent)
         self.protocol("WM_DELETE_WINDOW", self.close)
+        self._modal = modal
+        self._grab_owner = None
         if modal:
+            # Запоминаем текущего владельца grab (если есть), чтобы восстановить
+            # его при закрытии — корректная вложенная модальность.
+            self._grab_owner = self._grab_current()
             self.grab_set()
 
         self._parent_watch = None
@@ -55,10 +61,35 @@ class BaseDialog(ctk.CTkToplevel):
     def close(self):
         """Безопасно закрывает окно (отменяет таймер и уничтожает)."""
         self._stop_parent_watch()
+        self._release_grab_and_restore()
         try:
             self.destroy()
         except Exception:
             pass
+
+    def _release_grab_and_restore(self):
+        """Снимает собственный grab и возвращает фокус владельцу (для вложенных)."""
+        if not self._modal:
+            return
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        owner = self._grab_owner
+        if owner is not None:
+            try:
+                if owner.winfo_exists():
+                    owner.grab_set()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _grab_current():
+        """Возвращает текущее окно, владеющее grab, либо None."""
+        try:
+            return tk._default_root.grab_current() if tk._default_root else None
+        except Exception:
+            return None
 
     def _start_parent_watch(self):
         self._stop_parent_watch()

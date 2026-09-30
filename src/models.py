@@ -80,6 +80,8 @@ class ECGRecord(Base):
     device_id = Column(Integer, ForeignKey("device.id", ondelete="SET NULL"), index=True)
     # Биологическая схожесть ЭКГ с эталонным шаблоном атлета, в % (0..100)
     bio_similarity_pct = Column(Float)
+    # Причина, если биометрическое сходство не вычислено (нет ЭКГ, нет шаблона, плохой сигнал)
+    bio_note = Column(String)
 
     athlete = relationship("Athlete", back_populates="ecg_records")
     device = relationship("Device", back_populates="ecg_records")
@@ -176,6 +178,8 @@ def _migrate(engine):
             conn.execute(text("ALTER TABLE ecg_records ADD COLUMN device_id INTEGER"))
         if "bio_similarity_pct" not in columns:
             conn.execute(text("ALTER TABLE ecg_records ADD COLUMN bio_similarity_pct FLOAT"))
+        if "bio_note" not in columns:
+            conn.execute(text("ALTER TABLE ecg_records ADD COLUMN bio_note VARCHAR"))
         conn.commit()
 
     session = sessionmaker(bind=engine, expire_on_commit=False)()
