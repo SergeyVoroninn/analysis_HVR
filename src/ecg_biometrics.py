@@ -8,9 +8,10 @@ from scipy.signal import find_peaks
 from scipy import signal
 from scipy.fft import fft, fftfreq
 from dtaidistance import dtw
-from app_constants import BIOMETRIC_ERROR_DISTANCE
+from app_constants import BIOMETRIC_ERROR_DISTANCE, BIOMETRIC_THRESHOLD, MATCH_WARNING_THRESHOLD
 from app_logging import get_logger
 from models import get_session, ECGRecord, ECGRaw, BiometricTemplate, Athlete
+from analysis import cfg as analysis_cfg
 
 log = get_logger("ecg_biometrics")
 
@@ -19,12 +20,13 @@ log = get_logger("ecg_biometrics")
 # ==============================================================================
 class ECGConfig:
     # --- Аппаратные параметры ---
-    FS = 130.0                  # Частота дискретизации (Гц)
-    NOTCH_FREQ = 50.0           # Частота сети (50.0 для РФ/Европы, 60.0 для США/Японии)
-    BANDPASS_LOW = 0.5          # Нижняя граница фильтрации (Гц)
-    BANDPASS_HIGH = 50.0        # Верхняя граница фильтрации (Гц)
-    NOTCH_Q = 30.0              # Добротность режекторного фильтра
-    BUTTERWORTH_ORDER = 4       # Порядок фильтра Баттерворта
+    # (Физические константы берём из analysis.AnalysisConfig — единый источник истины)
+    FS = analysis_cfg.DEFAULT_FS                # Частота дискретизации (Гц)
+    NOTCH_FREQ = analysis_cfg.NOTCH_FREQ        # Частота сети (50.0 для РФ/Европы, 60.0 для США/Японии)
+    BANDPASS_LOW = analysis_cfg.BANDPASS_LOW    # Нижняя граница фильтрации (Гц)
+    BANDPASS_HIGH = analysis_cfg.BANDPASS_HIGH  # Верхняя граница фильтрации (Гц)
+    NOTCH_Q = analysis_cfg.NOTCH_Q              # Добротность режекторного фильтра
+    BUTTERWORTH_ORDER = analysis_cfg.BUTTERWORTH_ORDER  # Порядок фильтра Баттерворта
 
     # --- Параметры извлечения признаков (в секундах, масштабируются под FS) ---
     R_PEAK_STD_MULT = 1.5       # Множитель стандартного отклонения для порога R-зубца
@@ -50,8 +52,9 @@ class ECGConfig:
     MIN_RECORDS = 8      
     OPTIMAL_RECORDS = 20 
     MAX_RECORDS = 50     
-    BIOMETRIC_THRESHOLD = 0.15  
-    MATCH_WARNING_THRESHOLD = 0.10
+    # Берём из app_constants (единый источник истины для биометрических порогов)
+    BIOMETRIC_THRESHOLD = BIOMETRIC_THRESHOLD
+    MATCH_WARNING_THRESHOLD = MATCH_WARNING_THRESHOLD
 
     # --- Параметры извлечения признаков ---
     MIN_CYCLES_FOR_TEMPLATE = 3              # Минимум циклов/спектров для валидного шаблона
