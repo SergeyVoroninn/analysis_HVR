@@ -37,8 +37,7 @@ class WeekHeatmap(tk.Frame):
         self._athlete_id = None
         self._week_start = None
         self._block_map = {}
-        self._load_seq = 0
-        
+
         # Отслеживаем время и ИНДЕКС ЯЧЕЙКИ, а не пиксели (как в yearmap.py)
         self._click_t = 0.0
         self._click_d = -1
@@ -92,27 +91,17 @@ class WeekHeatmap(tk.Frame):
         return self._title.winfo_reqheight() + Y0 + 8 * step + 6
 
     def _load_data(self):
-        self._block_map = {}
+        """Загружает данные синхронно в GUI-потоке — без гонок при первом запуске."""
         if self._athlete_id is None:
+            self._block_map = {}
             self._redraw()
             return
 
-        self._load_seq += 1
-        seq = self._load_seq
-        athlete = self._athlete_id
-
-        def worker():
-            try:
-                rows = self._fetch_rows(athlete)
-            except Exception:
-                rows = []
-            try:
-                self.after(0, lambda: self._apply_loaded(seq, athlete, rows))
-            except RuntimeError:
-                pass  # Tk уже разрушен
-
-        import threading
-        threading.Thread(target=worker, daemon=True).start()
+        try:
+            rows = self._fetch_rows(self._athlete_id)
+        except Exception:
+            rows = []
+        self._apply_loaded(self._athlete_id, rows)
 
     def _fetch_rows(self, athlete):
         session = get_session(self.db_path)
@@ -122,9 +111,7 @@ class WeekHeatmap(tk.Frame):
         finally:
             session.close()
 
-    def _apply_loaded(self, seq, athlete, rows):
-        if seq != self._load_seq or athlete != self._athlete_id:
-            return
+    def _apply_loaded(self, athlete, rows):
         self._block_map = {}
         for recorded_at, status in rows:
             dt = datetime.datetime.fromisoformat(recorded_at)

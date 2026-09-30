@@ -142,6 +142,10 @@ if __name__ == "__main__":
     orchestrator = AppOrchestrator(hm, charts, settings)
     ResizeController(right, blocks=[hm, charts], gap=10)
 
+    # Панель сама уведомляет оркестратор о выбранном атлете (в т.ч. при первом
+    # reload ниже) — оркестратор наполняет heatmap и графики данными.
+    panel.on_select = orchestrator.sync_athlete
+
     def do_import():
         changed = import_ecg(root, panel.db_path, panel.athletes,
                               panel.selected(), set_status)
@@ -162,9 +166,6 @@ if __name__ == "__main__":
     saved_week = settings.get("week")
     panel.reload(select_id=saved_id)
     cur = panel.selected()
-
-    panel.on_select = orchestrator.sync_athlete
-    orchestrator.sync_athlete(cur[0] if cur else None)
 
     # На «первом запуске» (нет сохранённого года/недели) ставим карты на последнюю
     # запись атлета — иначе годовая карта показывает текущий год, а недельная пуста.

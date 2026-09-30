@@ -195,3 +195,76 @@ IndexError: tuple index out of range
 2026-09-30 10:52:19,210 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета 170cd652-7d91-4c4c-baf5-1237e4419d06 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
 2026-09-30 10:52:20,221 INFO [importer] Импорт C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10: у атлета 1c195d59-88e7-4129-8d44-82383297ae65 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
 2026-09-30 10:52:21,222 INFO [importer] Импорт C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10: у атлета 2a1b3f31-97f2-48d0-b3f4-cd9d36856665 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-09-30 11:12:24,369 ERROR [sqlalchemy.pool.impl.SingletonThreadPool] Exception closing connection <sqlite3.Connection object at 0x000001E3B7C33B50>
+Traceback (most recent call last):
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\pool\base.py", line 375, in _close_connection
+    self._dialect.do_close(connection)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\engine\default.py", line 721, in do_close
+    dbapi_connection.close()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+sqlite3.ProgrammingError: SQLite objects created in a thread can only be used in that same thread. The object was created in thread id 19596 and this is thread id 21476.
+2026-09-30 11:12:24,884 ERROR [sqlalchemy.pool.impl.SingletonThreadPool] Exception closing connection <sqlite3.Connection object at 0x000001E3B7BF33D0>
+Traceback (most recent call last):
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\pool\base.py", line 375, in _close_connection
+    self._dialect.do_close(connection)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\engine\default.py", line 721, in do_close
+    dbapi_connection.close()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+sqlite3.ProgrammingError: SQLite objects created in a thread can only be used in that same thread. The object was created in thread id 14944 and this is thread id 10356.
+2026-09-30 11:12:24,886 ERROR [sqlalchemy.pool.impl.SingletonThreadPool] Exception closing connection <sqlite3.Connection object at 0x000001E3B3ECF5B0>
+Traceback (most recent call last):
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\pool\base.py", line 375, in _close_connection
+    self._dialect.do_close(connection)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\engine\default.py", line 721, in do_close
+    dbapi_connection.close()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+sqlite3.ProgrammingError: SQLite objects created in a thread can only be used in that same thread. The object was created in thread id 5344 and this is thread id 10356.
+2026-09-30 11:12:24,887 ERROR [sqlalchemy.pool.impl.SingletonThreadPool] Exception closing connection <sqlite3.Connection object at 0x000001E3B7C31C60>
+Traceback (most recent call last):
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\pool\base.py", line 375, in _close_connection
+    self._dialect.do_close(connection)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\engine\default.py", line 721, in do_close
+    dbapi_connection.close()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+sqlite3.ProgrammingError: SQLite objects created in a thread can only be used in that same thread. The object was created in thread id 12404 and this is thread id 10356.
+2026-09-30 11:12:24,888 ERROR [sqlalchemy.pool.impl.SingletonThreadPool] Exception closing connection <sqlite3.Connection object at 0x000001E3B7BF36A0>
+Traceback (most recent call last):
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\pool\base.py", line 375, in _close_connection
+    self._dialect.do_close(connection)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\engine\default.py", line 721, in do_close
+    dbapi_connection.close()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+sqlite3.ProgrammingError: SQLite objects created in a thread can only be used in that same thread. The object was created in thread id 21476 and this is thread id 10356.
+2026-09-30 11:12:24,889 ERROR [sqlalchemy.pool.impl.SingletonThreadPool] Exception closing connection <sqlite3.Connection object at 0x000001E3B4527F10>
+Traceback (most recent call last):
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\pool\base.py", line 375, in _close_connection
+    self._dialect.do_close(connection)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\kik\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\sqlalchemy\engine\default.py", line 721, in do_close
+    dbapi_connection.close()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+sqlite3.ProgrammingError: SQLite objects created in a thread can only be used in that same thread. The object was created in thread id 24252 and this is thread id 10356.
+2026-09-30 11:12:24,930 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета test_athlete_001 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-09-30 11:12:25,132 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-09-30 11:12:25,158 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-09-30 11:12:25,255 ERROR [importer] Ошибка при импорте C:\Users\kik\AppData\Local\Temp\tmplk9zg_h9.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range

@@ -98,6 +98,19 @@ class AthletesPanel(tk.Frame):
             self.tree.selection_set(target)
             self.tree.focus(target)
 
+        # Панель сама уведомляет слушателя о текущем выборе после перестроения
+        # списка. Это гарантирует, что при первом запуске оркестратор получает
+        # сигнал и наполняет heatmap/графики данными, даже если событие
+        # <<TreeviewSelect>> ещё не дошло (колбэки могут быть назначены позже).
+        self._notify_selected()
+
+    def _notify_selected(self):
+        """Вызывает on_select с текущим выбранным атлетом, если колбэк назначен."""
+        if not self.on_select:
+            return
+        cur = self.selected()
+        self.on_select(cur[0] if cur else None)
+
     def selected(self):
         """Текущий выбранный спортсмен (кортеж) или None."""
         sel = self.tree.selection()
