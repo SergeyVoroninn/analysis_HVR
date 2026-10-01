@@ -1371,3 +1371,63 @@ IndexError: tuple index out of range
 2026-10-01 10:28:11,719 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета 88ff5205-cd5c-4b50-9a21-0a2024adf28c НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
 2026-10-01 10:28:12,055 INFO [importer] Импорт C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10: у атлета 5ea1e2e5-c846-4f16-b70a-cd6a4a8d7ce2 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
 2026-10-01 10:28:12,403 INFO [importer] Импорт C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10: у атлета fba90519-7ae6-44a1-bcd2-43700616b1e2 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:42:44,065 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета 43285c09-6b79-4917-ae3c-421ce4e11671
+2026-10-01 10:43:12,548 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета ed7198b9-7948-4984-9df5-8fdf03b6d609
+2026-10-01 10:43:23,006 INFO [importer] Импорт a.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:43:23,530 INFO [importer] Импорт b1.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:43:23,601 INFO [importer] Импорт b2.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:43:24,114 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: биометрия status=SUSPICIOUS distance=0.900 prob=0.050 (атлет cur-1)
+2026-10-01 10:43:24,811 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: биометрия status=SUSPICIOUS distance=0.900 prob=0.050 (атлет cur-1)
+2026-10-01 10:43:25,404 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета test_athlete_001 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:43:25,884 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-01 10:43:25,944 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-01 10:43:26,310 ERROR [importer] Ошибка при импорте C:\Users\kik\AppData\Local\Temp\tmpqr_44evn.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-01 10:43:38,753 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: у атлета 1ae6c0e2-b34c-456a-a42c-a98d80e8e138 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:43:39,220 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета 75ab47af-9ed1-4798-bf60-34052ed976bf НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:43:39,736 INFO [importer] Импорт C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10: у атлета 14058a47-ba34-47dd-ae07-7bf0afbc6720 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:43:40,231 INFO [importer] Импорт C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10: у атлета d51ea756-f2e9-4085-9b87-a46315fd441a НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:52:37,734 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета 89494eb2-d8b3-4b14-b9f5-0414d02d8ce6
+2026-10-01 10:52:59,561 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета 02bc6fb9-4463-4575-800f-c643465a5269
+2026-10-01 10:53:10,585 INFO [importer] Импорт a.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:53:11,093 INFO [importer] Импорт b1.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:53:11,126 INFO [importer] Импорт b2.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:53:11,461 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: биометрия status=SUSPICIOUS distance=0.900 prob=0.050 (атлет cur-1)
+2026-10-01 10:53:11,959 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: биометрия status=SUSPICIOUS distance=0.900 prob=0.050 (атлет cur-1)
+2026-10-01 10:53:12,263 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета test_athlete_001 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:53:12,978 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-01 10:53:13,012 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-01 10:53:13,964 ERROR [importer] Ошибка при импорте C:\Users\kik\AppData\Local\Temp\tmpgb7e_tl7.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-01 10:53:24,473 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: у атлета 24bfd773-1c7c-4862-8247-932708ba04c6 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:53:25,599 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета 1507a828-f55e-4953-9365-d387cac4f830 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:53:26,177 INFO [importer] Импорт C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10: у атлета caa80cb2-0d4a-49b5-9df7-3655cbcd47ad НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 10:53:26,697 INFO [importer] Импорт C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10: у атлета 1677d71d-3ee2-427c-a8d9-e8a73dafa3f1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются

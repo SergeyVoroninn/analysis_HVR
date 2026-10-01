@@ -38,9 +38,9 @@ class ECGJournal(BaseDialog):
       * последние: limit по времени импорта (updated_at DESC), конкретный атлет
         или все (из главной формы).
 
-    Сортировка — кликом по заголовку любой колонки, а также кнопками
-    «По времени снятия» / «По времени импорта». Записи с низкой биологической
-    схожестью с шаблоном подсвечиваются цветом (< WARN — жёлтым, < CRIT — красным).
+    Сортировка — кликом по заголовку любой колонки (повторный клик меняет
+    направление). Записи с низкой биологической схожестью с шаблоном
+    подсвечиваются цветом (< WARN — жёлтым, < CRIT — красным).
     """
 
     DISPLAY_COLS = ("Атлет", "Прибор", "Время", "Импорт", "Сходство",
@@ -100,10 +100,6 @@ class ECGJournal(BaseDialog):
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
 
         btns = self.make_button_bar(self, pady=6)
-        self.make_button(btns, "По времени снятия", lambda: self._sort_preset("Время", False), width=110,
-                         tooltip="Сортировать по времени снятия записи (по возрастанию)")
-        self.make_button(btns, "По времени импорта", lambda: self._sort_preset("Импорт", True), width=130,
-                         tooltip="Сортировать по времени импорта (по убыванию)")
         self.btn_export = self.make_button(btns, " Экспорт в файл", self._export, width=130, state="disabled",
                                            tooltip="Сохранить сырые данные записи в файл .teamloggerh10")
         self.btn_delete = self.make_button(btns, "🗑 Удалить", self._delete, width=95,
@@ -125,11 +121,6 @@ class ECGJournal(BaseDialog):
         self._load()
 
     # ---------- сортировка ----------
-    def _sort_preset(self, col, desc):
-        self._sort_col = col
-        self._sort_desc = desc
-        self._load()
-
     def _sort_by(self, col):
         """Клик по заголовку: переключает направление либо меняет колонку."""
         if col == self._sort_col:
