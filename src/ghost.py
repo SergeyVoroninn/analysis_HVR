@@ -50,8 +50,25 @@ class ResizeController:
         master.bind("<Configure>", self._on_configure)
 
     # ---------------- вычисление ----------------
-    def _compute(self, avail):
-        return [b.target_size(avail) for b in self.blocks]
+    def _compute(self, w, h):
+        """Вычисляет размеры блоков, распределяя доступную высоту окна.
+
+        Первые блоки (heatmap и пр.) получают свой естественный размер по
+        ширине. Последний блок (обычно ChartsPanel) растягивается на ВЕСЬ
+        оставшийся вертикальный запас — так не остаётся пустого места внизу.
+        """
+        fixed, flex = self.blocks[:-1], self.blocks[-1]
+        result = []
+        remaining = h
+        for b in fixed:
+            bw, bh = b.target_size(w, remaining)
+            result.append((bw, bh))
+            remaining -= bh + self.gap
+        # Последний блок заполняет остаток (минимум 60px).
+        avail_charts = max(60, remaining - self.gap)
+        fw, _fh = flex.target_size(w, avail_charts)
+        result.append((fw, avail_charts))
+        return result
 
     def _positions(self, sizes):
         """Верхние Y-координаты блоков и общая высота колонки."""
@@ -62,8 +79,27 @@ class ResizeController:
         return ys, max(0, y - self.gap)
 
     # ---------------- события ----------------
+    def relayout(self):
+        """Принудительно пересчитать и применить размеры блоков.
+
+        Нужен, когда состав блоков меняется вне ресайза окна (например,
+        после ChartsPanel.set_metrics пересоздаются графики) — чтобы новые
+        элементы получили правильный размер.
+        """
+        self._cur = None
+        avail_w = self.master.winfo_width()
+        avail_h = self.master.winfo_height()
+        if avail_w < 100:
+            return
+        self._last_avail = avail_w
+        sizes = self._compute(avail_w, avail_h)
+        self._cur = sizes
+        _dbg(f"RELAYOUT w={avail_w} h={avail_h} sizes={sizes}")
+        self._layout(sizes)
+
     def _on_configure(self, event):
         avail = self.master.winfo_width()
+        avail_h = self.master.winfo_height()
         if avail < 100:
             return
         _dbg(f"CONF avail={avail} mouse={self._mouse_held()} cur={self._cur}")
@@ -71,7 +107,7 @@ class ResizeController:
             _dbg("CONF skip (width unchanged)")
             return
         self._last_avail = avail
-        sizes = self._compute(avail)
+        sizes = self._compute(avail, avail_h)
 
         if self._cur is None:                      # первый замер
             self._cur = sizes
@@ -106,9 +142,10 @@ class ResizeController:
             _dbg("APPLY cancelled (mouse held)")
             return
         avail = self.master.winfo_width()
+        avail_h = self.master.winfo_height()
         if avail < 100:
             return
-        sizes = self._compute(avail)
+        sizes = self._compute(avail, avail_h)
         if self._cur != sizes:
             self._cur = sizes
             _dbg(f"APPLY {sizes}")

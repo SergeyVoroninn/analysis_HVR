@@ -71,7 +71,6 @@ class ECGRecord(Base):
     
     mean_hr = Column(Float)
     rmssd = Column(Float)
-    sdnn = Column(Float)
     status = Column(String)
     stress_si = Column(Float)
     tp = Column(Float)
@@ -180,6 +179,12 @@ def _migrate(engine):
             conn.execute(text("ALTER TABLE ecg_records ADD COLUMN bio_similarity_pct FLOAT"))
         if "bio_note" not in columns:
             conn.execute(text("ALTER TABLE ecg_records ADD COLUMN bio_note VARCHAR"))
+        # SDNN больше не рассчитывается и не показывается — удаляем колонку.
+        if "sdnn" in columns:
+            try:
+                conn.execute(text("ALTER TABLE ecg_records DROP COLUMN sdnn"))
+            except Exception:
+                pass  # старый SQLite может не поддержать DROP COLUMN
         conn.commit()
 
     session = sessionmaker(bind=engine, expire_on_commit=False)()

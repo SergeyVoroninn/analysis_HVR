@@ -267,7 +267,6 @@ def calc_metrics(rr):
 
     rr_array = np.array(rr_clean, dtype=float)
     mean_rr = np.mean(rr_array)
-    sdnn = np.std(rr_array, ddof=1)
     diffs = np.diff(rr_array)
     rmssd = np.sqrt(np.mean(np.square(diffs)))
     mean_hr = 60000.0 / mean_rr
@@ -277,7 +276,6 @@ def calc_metrics(rr):
         "min_hr": float(60000.0 / np.max(rr_array)),
         "max_hr": float(60000.0 / np.min(rr_array)),
         "mean_rr": float(mean_rr),
-        "sdnn": float(sdnn),
         "rmssd": float(rmssd),
         "count": n,
         "status": _status(mean_hr, rmssd),

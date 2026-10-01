@@ -65,7 +65,6 @@ class AnalysisDialog(tk.Toplevel):
             (f"{self.analysis.stress_color} Стресс", f"{self.analysis.stress_si:.0f} у.е. — {self.analysis.stress_status}"),
             ("💓 ЧСС", f"{self.analysis.mean_hr:.0f} уд/мин"),
             ("📊 RMSSD", f"{self.analysis.rmssd:.0f} мс"),
-            ("📊 SDNN", f"{self.analysis.sdnn:.0f} мс"),
         ])
         
         # Разделитель

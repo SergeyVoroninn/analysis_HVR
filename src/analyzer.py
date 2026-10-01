@@ -19,7 +19,6 @@ class MetricAnalysis:
     tp: float
     stress_si: float
     rmssd: float
-    sdnn: float
     mean_hr: float
     
     tp_status: str
@@ -37,7 +36,7 @@ class MetricAnalysis:
                 f"{'─' * 50}\n"
                 f"{self.tp_color} TP: {self.tp:.0f} мс² — {self.tp_status}\n"
                 f"{self.stress_color} Стресс: {self.stress_si:.0f} у.е. — {self.stress_status}\n"
-                f"💓 ЧСС: {self.mean_hr:.0f} уд/мин | RMSSD: {self.rmssd:.0f} мс | SDNN: {self.sdnn:.0f} мс\n"
+                f"💓 ЧСС: {self.mean_hr:.0f} уд/мин | RMSSD: {self.rmssd:.0f} мс\n"
                 f"{'─' * 50}\n"
                 f"💡 {self.recommendation}\n\n"
                 f"📝 {self.detailed_comment}")
@@ -83,7 +82,6 @@ class MetricAnalyzer:
         tp = record.tp or 0.0
         si = record.stress_si or 0.0
         rmssd = record.rmssd or 0.0
-        sdnn = record.sdnn or 0.0
         mean_hr = record.mean_hr or 0.0
         
         # Анализ TP (используем cfg.TP_THRESHOLDS)
@@ -138,7 +136,7 @@ class MetricAnalyzer:
         return MetricAnalysis(
             athlete_name=athlete_name,
             recorded_at=datetime.datetime.fromisoformat(record.recorded_at),
-            tp=tp, stress_si=si, rmssd=rmssd, sdnn=sdnn, mean_hr=mean_hr,
+            tp=tp, stress_si=si, rmssd=rmssd, mean_hr=mean_hr,
             tp_status=tp_status, tp_color=tp_color,
             stress_status=stress_status, stress_color=stress_color,
             recommendation=recommendation, detailed_comment=detailed_comment

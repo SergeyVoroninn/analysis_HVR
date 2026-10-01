@@ -25,7 +25,7 @@ class FakeBlock:
         self.ghost_shown_calls = 0
         self.ghost_hidden_calls = 0
 
-    def target_size(self, avail_w):
+    def target_size(self, avail_w, avail_h=None):
         self.target_size_calls += 1
         return (avail_w, 100)
 
@@ -174,3 +174,31 @@ def test_resize_do_apply_direct(resize_env):
     assert block2.apply_size_calls == 1
     
     print(f"✓ _do_apply работает корректно")
+
+
+def test_relayout_applies_current_width_after_metric_change(resize_env):
+    """
+    Регрессия: после пересоздания графиков (set_metrics) размеры элементов
+    ломаются, пока не произойдёт ресайз окна. relayout() должен принудительно
+    пересчитать и применить размеры под текущую ширину.
+    """
+    root, controller, block1, block2 = resize_env
+
+    # Счётчики после инициализации
+    block1.apply_size_calls = 0
+    block2.apply_size_calls = 0
+
+    # При изменении ширины вызовем relayout
+    with patch.object(root, 'winfo_width', return_value=800):
+        controller.relayout()
+
+    # Оба блока должны получить новый размер
+    assert block1.apply_size_calls >= 1, "relayout должен применить размер к block1"
+    assert block2.apply_size_calls >= 1, "relayout должен применить размер к block2"
+
+    # Повторный relayout при той же ширине тоже допустим (принудительный)
+    with patch.object(root, 'winfo_width', return_value=800):
+        controller.relayout()
+    assert block1.apply_size_calls >= 2, "повторный relayout тоже должен применяться"
+
+    print(f"✓ relayout применяет размеры под текущую ширину")

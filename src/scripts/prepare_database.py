@@ -150,7 +150,6 @@ def prepare_database(config_path=None):
                     duration_seconds=duration,
                     mean_hr=m["mean_hr"],
                     rmssd=m["rmssd"],
-                    sdnn=m["sdnn"],
                     status=m["status"],
                     stress_si=s["si"] if s else None,
                     tp=tp_value,

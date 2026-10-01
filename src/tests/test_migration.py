@@ -77,6 +77,7 @@ def test_migration_adds_columns_and_backfills_device(tmp_path):
 
     cols = _columns(db)
     assert {"device_id", "bio_similarity_pct"} <= cols, f"колонки не добавлены: {cols}"
+    assert "sdnn" not in cols, "колонка sdnn должна быть удалена миграцией"
     assert "device" in _tables(db)
 
 
@@ -102,4 +103,5 @@ def test_fresh_db_has_columns_and_device_table(tmp_path):
 
     cols = _columns(db)
     assert {"device_id", "bio_similarity_pct"} <= cols
+    assert "sdnn" not in cols, "в свежей БД не должно быть колонки sdnn"
     assert "device" in _tables(db)

@@ -22,6 +22,7 @@ import datetime
 import os
 import sys
 import tkinter as tk
+import customtkinter as ctk
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
@@ -78,8 +79,9 @@ if __name__ == "__main__":
     pump(0.60)
     from atlets import AthletesPanel
     from heatmap import Heatmap
-    from dialogs import ECGJournal, HelpDialog
-    from charts import ChartsPanel, TP_METRIC, SI_METRIC
+    from dialogs import ECGJournal, HelpDialog, MetricsSettingsDialog
+    from charts import (ChartsPanel, TP_METRIC, SI_METRIC, ALL_METRICS,
+                        DEFAULT_METRIC_ORDER, metric_by_key)
     pump(0.80)
     from importer import import_ecg
     pump(0.90)
@@ -105,10 +107,37 @@ if __name__ == "__main__":
 
     # ---------- статус-бар ----------
     status_var = tk.StringVar(value="Готово")
-    status_bar = tk.Label(root, textvariable=status_var, bg=COL_BG_DARK,
-                          fg=COL_TEXT_DIM, anchor="w", font=("Segoe UI", 10),
-                          padx=10)
+    status_bar = tk.Frame(root, bg=COL_BG_DARK)
     status_bar.grid(row=1, column=0, columnspan=2, sticky="ew")
+    status_bar.grid_columnconfigure(0, weight=1)
+    tk.Label(status_bar, textvariable=status_var, bg=COL_BG_DARK,
+             fg=COL_TEXT_DIM, anchor="w", font=("Segoe UI", 10),
+             padx=10).grid(row=0, column=0, sticky="ew")
+
+    def _open_metrics_settings():
+        dlg = MetricsSettingsDialog(root, current_order=charts.metric_keys())
+        dlg.modal_loop()
+        # Только после подтверждения применяем и сохраняем.
+        if dlg.result:
+            specs = [metric_by_key(k) for k in dlg.result
+                     if metric_by_key(k) is not None]
+            charts.set_metrics(specs, db_path=panel.db_path)
+            settings.set("metrics", dlg.result)
+            settings.save()
+            # Пересчитываем размер графиков под текущую ширину окна (после
+            # пересоздания plots), чтобы пропорции не сбились.
+            resize_ctrl.relayout()
+            # Сбрасываем сохранённый зум: новые графики должны показать ВЕСЬ
+            # диапазон данных, а не обрезанный кэш старого масштаба. Иначе при
+            # смене метрик «на лету» часть данных не видна до перезапуска.
+            orchestrator._saved_range = None
+            # Восстанавливаем связи оркестратора и показываем данные текущего атлета.
+            orchestrator.sync_athlete(orchestrator.heatmap.athlete)
+            charts.refresh()
+
+    btn_settings = ctk.CTkButton(status_bar, text="⚙ Настройки", width=110,
+                                 height=24, command=_open_metrics_settings)
+    btn_settings.grid(row=0, column=1, padx=(0, 8), pady=2)
 
     _status_timer = None
 
@@ -137,10 +166,24 @@ if __name__ == "__main__":
                          title=title, on_change=hm.refresh)
 
     hm = Heatmap(right, on_pick=on_week_pick_action)
-    charts = ChartsPanel(right, metrics=[TP_METRIC, SI_METRIC])
+
+    # --- метрики из настроек (порядок + состав) ---
+    saved_metric_keys = settings.get("metrics")
+    if saved_metric_keys:
+        # Фильтруем только существующие ключи, сохраняя порядок.
+        metric_specs = [metric_by_key(k) for k in saved_metric_keys
+                        if metric_by_key(k) is not None]
+    else:
+        # На первый запуск — метрики по умолчанию.
+        metric_specs = [metric_by_key(k) for k in DEFAULT_METRIC_ORDER
+                        if metric_by_key(k) is not None]
+    if not metric_specs:
+        metric_specs = [TP_METRIC, SI_METRIC]   # безопасный фолбэк
+
+    charts = ChartsPanel(right, metrics=metric_specs, db_path=panel.db_path)
     
     orchestrator = AppOrchestrator(hm, charts, settings)
-    ResizeController(right, blocks=[hm, charts], gap=10)
+    resize_ctrl = ResizeController(right, blocks=[hm, charts], gap=10)
 
     # Панель сама уведомляет оркестратор о выбранном атлете (в т.ч. при первом
     # reload ниже) — оркестратор наполняет heatmap и графики данными.

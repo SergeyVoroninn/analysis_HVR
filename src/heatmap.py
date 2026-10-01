@@ -170,7 +170,7 @@ class Heatmap(ctk.CTkFrame):
     def ghost_hidden(self):
         pass
 
-    def target_size(self, avail_w):
+    def target_size(self, avail_w, avail_h=None):
         t = int(max(7, min((avail_w - 60) // 60, 23)))
         self._pending_t = t
         w = 60 * t + 60

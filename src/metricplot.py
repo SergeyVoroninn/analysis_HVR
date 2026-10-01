@@ -5,6 +5,7 @@ import datetime
 import time as _time
 import tkinter as tk
 import bisect
+import os
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -16,6 +17,36 @@ from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
 from timeframe import TimeFrame, get_chart_config, calc_proportional_bar_size, pick_year_step
 from timeframe import WEEKDAYS_RU, MONTHS_RU  # Импортируем константы локализации
 from analyzer import MetricAnalyzer
+
+
+def _os_lmb_down():
+    """True, если левая кнопка мыши зажата прямо сейчас (Windows).
+
+    Используем состояние ОС, а не флаг приложеitия, чтобы избежать «залипания»
+    флага после завершения клика/панорамирования по графику.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)
+    except Exception:
+        return False
+
+
+def _compact_y_label(x, pos):
+    """Компактный формат значений оси Y: 1000→1k, 15000→15k, 2000000→2M."""
+    try:
+        ax = abs(x)
+        if ax >= 1_000_000:
+            return f"{x/1e6:g}M"
+        if ax >= 1000:
+            return f"{x/1e3:g}k"
+        return f"{x:g}"
+    except (TypeError, ValueError):
+        return ""
+
+
 from app_constants import (HOVER_TOLERANCE_ORDINAL, DOUBLE_CLICK_THRESHOLD_SEC,
                            MAX_ZOOM_ORDINALS, MAX_YEAR, SINGLE_CLICK_DELAY_METRICPLOT_MS,
                            PAN_REDRAW_MS, ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR,
@@ -45,7 +76,8 @@ class MetricSpec:
         self, 
         key, name, ylabel, value, color=None, 
         pid_floor=None,      # Минимально возможное значение (например, 0)
-        pid_ceiling=None     # Максимально возможное значение
+        pid_ceiling=None,    # Максимально возможное значение
+        marker_color=None    # Константный цвет-метка для UI (маркер в списке)
     ):
         self.key = key
         self.name = name
@@ -54,6 +86,14 @@ class MetricSpec:
         self.color = color
         self.pid_floor = pid_floor
         self.pid_ceiling = pid_ceiling
+        # Если явный marker_color не задан, берём color, но только если это
+        # строка (иначе color — функция подкраски графика, для маркера не годится).
+        if marker_color is not None:
+            self.marker_color = marker_color
+        elif isinstance(color, str):
+            self.marker_color = color
+        else:
+            self.marker_color = "#aaaaaa"
 
 
 class MetricPlot(tk.Frame):
@@ -80,6 +120,8 @@ class MetricPlot(tk.Frame):
         self._current_tf = None
         self._forced_tf = None
         self.on_view_changed = None
+        self._lmb_down = False          # зажата ли левая кнопка мыши
+        self.on_scroll_vertical = None  # колбэк вертикальной прокрутки панели
         self.on_year_pick = None
         self.on_reset = None
         self.on_single_click = None
@@ -96,11 +138,22 @@ class MetricPlot(tk.Frame):
         self.fig = Figure(dpi=100)
         self.fig.patch.set_facecolor(COL_BG_DARK)
         self.ax = self.fig.add_subplot(111)
+        # Заголовок графика вынесен в отдельный Tk-Label поверх matplotlib-канваса:
+        # при малой высоте графика (5 метрик на экране) matplotlib-заголовок
+        # физически не помещается и обрезается, а Tk-Label не зависит от размеров
+        # канваса и всегда читаем.
+        self._title_bar = tk.Frame(self, bg=COL_BG_DARK)
+        self._title_bar.pack(side="top", fill="x")
+        self.title_label = tk.Label(
+            self._title_bar, text="", anchor="center", padx=4,
+            bg=COL_BG_DARK, fg=COL_TEXT_LIGHT,
+            font=("Segoe UI", 9, "bold"))
+        self.title_label.pack(fill="x")
         self.canvas = _FrozenCanvas(self.fig, master=self)
         self.widget = self.canvas.get_tk_widget()
         self.widget.configure(background=COL_BG_WIDGET)
-        self.widget.pack(side="top", fill="x")
-        self.fig.subplots_adjust(left=0.05, right=0.98, top=0.86, bottom=0.18)
+        self.widget.pack(side="top", fill="both", expand=True)
+        self.fig.subplots_adjust(left=0.05, right=0.98, top=0.97, bottom=0.18)
         self._style()
 
         self.widget.bind("<Escape>", lambda e: self._hide_tooltip())
@@ -135,7 +188,9 @@ class MetricPlot(tk.Frame):
         self._reload()
 
     def set_size(self, w, h):
-        self.widget.configure(width=w, height=h)
+        # Часть высоты занимает заголовок-бар; канвасу — остаток.
+        title_h = self._title_bar.winfo_reqheight()
+        self.widget.configure(width=w, height=max(40, h - title_h))
 
     def set_forced_tf(self, tf):
         self._forced_tf = tf
@@ -143,7 +198,7 @@ class MetricPlot(tk.Frame):
     def redraw(self):
         self._draw()
 
-    def _reload(self, async_load=True):
+    def _reload(self, async_load=False):
         self._values = []
         if not self._athlete:
             self._draw()
@@ -264,7 +319,17 @@ class MetricPlot(tk.Frame):
 
     def _on_scroll(self, event):
         self._hide_tooltip()
-        
+
+        # Обычное колесо (без зажатой ЛКМ) = вертикальная прокрутка списка
+        # графиков. ЛКМ + колесо = изменение масштаба по времени (zoom).
+        # Зажатие левой кнопки проверяем напрямую у ОС (надёжнее флага,
+        # который мог «застревать» после кликов по графику).
+        if not _os_lmb_down() and not self._lmb_down:
+            if self.on_scroll_vertical:
+                steps = 1 if event.button == "up" else -1
+                self.on_scroll_vertical(steps)
+            return
+
         if event.xdata is None or self._start is None:
             return
         v = self._view_ordinals()
@@ -278,7 +343,14 @@ class MetricPlot(tk.Frame):
         ratio = (event.xdata - lo) / max(1e-9, hi - lo)
         new_lo = event.xdata - ratio * new_span
         new_hi = new_lo + new_span
-        self._commit_view(new_lo, new_hi)
+        # Дебаунс: при быстрой серии вращения колеса накапливаем новый масштаб
+        # и перерисовываем раз в PAN_REDRAW_MS вместо каждого щелчка — заметно
+        # ускоряет отклик (без накопления каждый промоток перерисовывал график,
+        # что при 4 панелях давало ощутимую задержку ~1с).
+        self._pending_view = (new_lo, new_hi)
+        if self._draw_timer is not None:
+            self.after_cancel(self._draw_timer)
+        self._draw_timer = self.after(PAN_REDRAW_MS, self._apply_pending_view)
 
     def _on_press(self, event):
         self._hide_tooltip()
@@ -291,6 +363,8 @@ class MetricPlot(tk.Frame):
             
         if event.button != 1 or event.xdata is None or self._start is None:
             return
+
+        self._lmb_down = True
 
         now = _time.monotonic()
         is_dbl = (now - self._click_t < DOUBLE_CLICK_THRESHOLD_SEC and
@@ -359,6 +433,8 @@ class MetricPlot(tk.Frame):
             self._commit_view(lo, hi)        
 
     def _on_release(self, event):
+        if event.button == 1:
+            self._lmb_down = False
         if self._draw_timer is not None:
             self.after_cancel(self._draw_timer)
             self._apply_pending_view()
@@ -479,6 +555,20 @@ class MetricPlot(tk.Frame):
         for s in self.ax.spines.values():
             s.set_color(COL_SPINE)
         self.ax.set_autoscale_on(False)
+        # Title вынесен в Tk-Label, поэтому канвасу сверху запас не нужен.
+        # Отступ снизу — под подписи оси X; слева — резервируем место под
+        # подпись единиц измерения (ylabel) и тики оси Y, чтобы они не
+        # «съедали» график при узком канвасе.
+        try:
+            w = self.widget.winfo_width()
+            h = self.widget.winfo_height()
+            if w > 0 and h > 0:
+                bottom = max(0.12, 30.0 / h)
+                # Резервируем слева минимум ~46px под ylabel и цифры оси Y.
+                left = max(0.05, 46.0 / w)
+                self.fig.subplots_adjust(left=left, right=0.98, top=0.98, bottom=bottom)
+        except Exception:
+            pass
 
     def _draw(self):
         self._hide_tooltip()
@@ -488,7 +578,8 @@ class MetricPlot(tk.Frame):
         self._style()
 
         if not self._values or not self._start:
-            ax.set_title(f"{self.spec.name}: нет данных", color=COL_TEXT_DIM, fontsize=9)
+            self.title_label.configure(text=f"{self.spec.name}: нет данных",
+                                       fg=COL_TEXT_DIM)
             self.canvas.draw_idle()
             return
 
@@ -538,19 +629,21 @@ class MetricPlot(tk.Frame):
             # ======================================================================
             # 🔮 2. PID-ПРОГНОЗ (подводка к соревнованиям)
             # ======================================================================
-            # Создаем универсальный предиктор с параметрами ТЕКУЩЕЙ метрики
-            predictor = PIDPredictor(
-                value_floor=self.spec.pid_floor,
-                value_ceiling=self.spec.pid_ceiling
-            )
-
-            # Строим прогноз ТОЛЬКО от последней записи в БД
+            # Создаем универсальный предиктор с параметрами ТЕКУЩЕЙ метрики.
+            # Если прогноз отключён (ENABLE_PID_FORECAST=False) — не тратим время
+            # на сбор точек и предсказание при каждом зуме.
             forecast = []
             last_db_point = None
-            
-            if self._values:
-                # Находим последнюю запись во всей БД
-                last_ordinal = max(x for x, _, _ in self._values)
+            if ENABLE_PID_FORECAST:
+                predictor = PIDPredictor(
+                    value_floor=self.spec.pid_floor,
+                    value_ceiling=self.spec.pid_ceiling
+                )
+
+                # Строим прогноз ТОЛЬКО от последней записи в БД
+                if self._values:
+                    # Находим последнюю запись во всей БД
+                    last_ordinal = max(x for x, _, _ in self._values)
                 
                 # Берем все точки за последние 7 дней относительно последней записи
                 recent_points = [
@@ -607,12 +700,19 @@ class MetricPlot(tk.Frame):
             ax.set_ylim(0, (max(ys) or 1) * 1.1)
         else:
             ax.set_ylim(0, 1)
+        # Компактный формат значений оси Y: «5k», «10k», «1.5M» и т.п.
+        # Широкие числа (например 20000 у TP) иначе не оставляют места
+        # для подписи единиц измерения (ylabel) слева.
+        from matplotlib.ticker import FuncFormatter
+        ax.yaxis.set_major_formatter(FuncFormatter(_compact_y_label))
         ax.set_ylabel(self.spec.ylabel, color=COL_TEXT_LIGHT)
 
         d0 = datetime.date.fromordinal(max(1, int(lo)))
         d1 = datetime.date.fromordinal(max(1, int(hi)))
         range_str = f"{d0:%d.%m.%y}–{d1:%d.%m.%y}"
-        ax.set_title(f"{self.spec.name} | {tf_label} ({range_str})", color=COL_TEXT_LIGHT, fontsize=9)
+        self.title_label.configure(
+            text=f"{self.spec.name} | {tf_label} ({range_str})",
+            fg=COL_TEXT_LIGHT)
         self.canvas.draw_idle()
 
     def _set_x_ticks_small(self, ax, lo, hi, vspan, config):

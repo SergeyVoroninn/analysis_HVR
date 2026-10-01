@@ -46,7 +46,7 @@ GOLDEN = os.path.join(REFERENCE_DIR, "reference_golden.json")
 # и достаточно велик для стабильности чисел с плавающей точкой между прогонами.
 STRICT_REL_TOL = 1e-4
 
-METRICS = ["rmssd", "sdnn", "mean_hr", "stress_si", "mo_ms", "tp"]
+METRICS = ["rmssd", "mean_hr", "stress_si", "mo_ms", "tp"]
 
 
 def _load_json(path):
@@ -97,7 +97,6 @@ def _metrics_from_record(rec):
         "rmssd": getattr(rec, "rmssd", None),
         "stress_si": getattr(rec, "stress_si", None),
         "mean_hr": getattr(rec, "mean_hr", None),
-        "sdnn": getattr(rec, "sdnn", None),
         "tp": getattr(rec, "tp", None),
         "mo_ms": getattr(rec, "mo_ms", None),
     }
@@ -115,7 +114,6 @@ def _metrics_from_rr(rr):
 
     return {
         "rmssd": time_metrics.get("rmssd"),
-        "sdnn": time_metrics.get("sdnn"),
         "mean_hr": time_metrics.get("mean_hr"),
         "stress_si": stress_metrics.get("si"),
         "mo_ms": stress_metrics.get("mo_ms"),

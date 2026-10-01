@@ -82,8 +82,8 @@ def test_import_valid_h10_file(temp_db_and_athlete):
         
         # Проверяем, что метрики рассчитаны для последней записи
         rec = records[-1]
-        assert rec.sdnn is not None, "Метрика SDNN не была рассчитана"
-        assert rec.sdnn > 0, "Метрика SDNN должна быть положительной"
+        assert rec.rmssd is not None, "Метрика RMSSD не была рассчитана"
+        assert rec.rmssd > 0, "Метрика RMSSD должна быть положительной"
         
     finally:
         session.close()
@@ -143,8 +143,8 @@ def test_import_corrupted_file_fails_gracefully(temp_db_and_athlete):
             # 1. Если записей нет вообще — это идеальный отказ (graceful failure).
             # 2. Если запись создана (например, как лог ошибки), то метрики в ней НЕ должны быть рассчитаны.
             for rec in records:
-                assert rec.sdnn is None, \
-                    "Битый файл не должен приводить к расчету валидных метрик (SDNN)"
+                assert rec.rmssd is None, \
+                    "Битый файл не должен приводить к расчету валидных метрик (RMSSD)"
             
             # Мы намеренно НЕ проверяем status_var.set.called, так как функция может 
             # обрабатывать ошибки молча, через logging или print, что тоже является 

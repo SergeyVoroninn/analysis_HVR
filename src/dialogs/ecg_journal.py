@@ -44,7 +44,7 @@ class ECGJournal(BaseDialog):
     """
 
     DISPLAY_COLS = ("Атлет", "Прибор", "Время", "Импорт", "Сходство",
-                    "ЧСС", "RMSSD", "SDNN", "ИС", "TP", "Статус")
+                    "ЧСС", "RMSSD", "ИС", "TP", "Статус")
 
     # имя колонки -> (ORM-таблица, атрибут) для order_by
     SORT_ATTR = {
@@ -55,7 +55,6 @@ class ECGJournal(BaseDialog):
         "Сходство": (ECGRecord, ECGRecord.bio_similarity_pct),
         "ЧСС": (ECGRecord, ECGRecord.mean_hr),
         "RMSSD": (ECGRecord, ECGRecord.rmssd),
-        "SDNN": (ECGRecord, ECGRecord.sdnn),
         "ИС": (ECGRecord, ECGRecord.stress_si),
         "TP": (ECGRecord, ECGRecord.tp),
         "Статус": (ECGRecord, ECGRecord.status),
@@ -86,7 +85,7 @@ class ECGJournal(BaseDialog):
         self.tree = ttk.Treeview(frame, columns=self.DISPLAY_COLS, show="headings",
                                  height=14)
         widths = {"Атлет": 150, "Прибор": 120, "Время": 155, "Импорт": 195,
-                  "Сходство": 80, "ЧСС": 70, "RMSSD": 70, "SDNN": 70,
+                  "Сходство": 80, "ЧСС": 70, "RMSSD": 70,
                   "ИС": 70, "TP": 80, "Статус": 80}
         for c in self.DISPLAY_COLS:
             self.tree.heading(c, text=c, command=lambda _c=c: self._sort_by(_c))
@@ -207,7 +206,6 @@ class ECGJournal(BaseDialog):
             athlete_name, device_name, rec_at, updated_str, sim,
             f"{rec.mean_hr:.0f}" if rec.mean_hr is not None else "",
             f"{rec.rmssd:.1f}" if rec.rmssd is not None else "",
-            f"{rec.sdnn:.1f}" if rec.sdnn is not None else "",
             f"{rec.stress_si:.0f}" if rec.stress_si is not None else "",
             f"{rec.tp:.0f}" if rec.tp is not None else "",
             rec.status or "",

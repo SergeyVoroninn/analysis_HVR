@@ -220,7 +220,7 @@ def _import_one(db_path, path, athletes, selected_athlete, status_cb, interactiv
         rec = ECGRecord(
             athlete_id=aid, recorded_at=recorded_at, duration_seconds=duration,
             mean_hr=m["mean_hr"] if m else None, rmssd=m["rmssd"] if m else None,
-            sdnn=m["sdnn"] if m else None, status=m["status"] if m else "ok",
+            status=m["status"] if m else "ok",
             stress_si=s["si"] if s else None, tp=spectral_tp,
             device_id=device_id, bio_similarity_pct=bio_pct, bio_note=bio_note,
         )
