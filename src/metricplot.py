@@ -476,7 +476,13 @@ class MetricPlot(tk.Frame):
             return
         if not self.analyzer or not self._athlete:
             return
-        
+        # Если мышь уже ушла с графика (резкое движение за пределы окна не всегда
+        # приносит axes_leave), не показываем подсказку — иначе она «выскакивает»
+        # где-то вне окна.
+        if not self._pointer_inside():
+            self._hide_tooltip()
+            return
+
         analysis = self.analyzer.analyze_by_date(self._athlete, recorded_at)
         if not analysis:
             return
@@ -514,6 +520,28 @@ class MetricPlot(tk.Frame):
             y = self.winfo_pointery() - tw_h - 15
         
         tw.wm_geometry(f"+{x}+{y}")
+
+    def _pointer_inside(self):
+        """True, если курсор всё ещё находится в пределах окна графика.
+
+        Резкий уход мыши за пределы окна приложения может не принести
+        <Leave>/axes_leave к канвасу — поэтому проверяем реальное положение
+        указателя на экране относительно окна графика.
+        """
+        try:
+            if not self.winfo_exists():
+                return False
+            gx = self.winfo_rootx()
+            gy = self.winfo_rooty()
+            gw = self.winfo_width()
+            gh = self.winfo_height()
+            if gw <= 0 or gh <= 0:
+                return False
+            px = self.winfo_pointerx()
+            py = self.winfo_pointery()
+            return (gx <= px <= gx + gw) and (gy <= py <= gy + gh)
+        except Exception:
+            return False
 
     def _hide_tooltip(self):
         if self._hover_timer is not None:
