@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from sqlalchemy import (
     create_engine, Column, String, Integer, Float, Date, DateTime, Text, Boolean,
-    ForeignKey, event, types, text
+    ForeignKey, event, types, text, UniqueConstraint
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship, joinedload
 
@@ -139,6 +139,31 @@ class Device(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     ecg_records = relationship("ECGRecord", back_populates="device")
+
+
+class MetricComment(Base):
+    """Комментарий пользователя к конкретной метрике за конкретную дату.
+
+    Привязка: атлет + ключ метрики + дата записи. Один комментарий на
+    (athlete_id, metric_key, comment_date). Хранится отдельно от записей ЭКГ,
+    поэтому переживает пересчёт метрик и не зависит от ECGRecord.
+    """
+    __tablename__ = "metric_comments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    athlete_id = Column(String, ForeignKey("athletes.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    metric_key = Column(String, nullable=False, index=True)   # "tp", "si", "hr", "rmssd"
+    comment_date = Column(Date, nullable=False, index=True)   # дата записи (YYYY-MM-DD)
+    comment = Column(Text, nullable=False)                    # текст комментария
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    # Уникальность: не более одного комментария на (атлет, метрика, дата)
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "metric_key", "comment_date",
+                         name="uq_metric_comment"),
+    )
 
 
 # ============================================================

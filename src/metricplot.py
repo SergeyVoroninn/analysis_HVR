@@ -13,7 +13,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from database import get_db_path
 from models import get_session, ECGRecord
 from theme import (COL_BG_DARK, COL_BG_WIDGET, COL_TEXT_LIGHT, COL_TEXT_DIM,
-                   COL_SPINE, COL_TP_YEAR, COL_TOOLTIP_BG, COL_SELECTION)
+                   COL_SPINE, COL_TP_YEAR, COL_TOOLTIP_BG, COL_SELECTION,
+                   COL_WARN)
 from timeframe import TimeFrame, get_chart_config, calc_proportional_bar_size, pick_year_step
 from timeframe import WEEKDAYS_RU, MONTHS_RU  # Импортируем константы локализации
 from analyzer import MetricAnalyzer
@@ -129,10 +130,12 @@ class MetricPlot(tk.Frame):
         self._pending_view = None
 
         self.analyzer = MetricAnalyzer(self.db_path) if self.db_path else None
+        self._comments = {}   # {дата: комментарий} для текущего атлета и метрики
         
         self._hover_timer = None
         self._hover_tooltip = None
         self._hover_record_id = None
+        self._hover_tip_obj = None
         self._mouse_on_axes = False
 
         self.fig = Figure(dpi=100)
@@ -165,6 +168,14 @@ class MetricPlot(tk.Frame):
         self.canvas.mpl_connect("axes_enter_event", self._on_axes_enter)
         self.canvas.mpl_connect("axes_leave_event", self._on_axes_leave)
 
+        # Открытие модального окна -> скрываем всплывающую подсказку, чтобы она
+        # не «зависала» поверх диалога.
+        try:
+            root = self.winfo_toplevel()
+            root.bind("<<ModalOpened>>", lambda e: self._hide_tooltip(), add="+")
+        except Exception:
+            pass
+
     def set_frozen(self, frozen):
         self.canvas.set_frozen(frozen)
 
@@ -178,7 +189,19 @@ class MetricPlot(tk.Frame):
         self._start = self._end = None
         self._current_tf = None
         self._hide_tooltip()
+        self.reload_comments()
         self._reload()
+
+    def reload_comments(self):
+        """Перечитывает комментарии текущего атлета и метрики из БД."""
+        self._comments = {}
+        if not self._athlete or not self.db_path:
+            return
+        try:
+            from metric_comments import get_comment_map
+            self._comments = get_comment_map(self.db_path, self._athlete, self.spec.key)
+        except Exception:
+            self._comments = {}
 
     def set_range(self, start, end):
         self._start, self._end = start, end
@@ -356,6 +379,7 @@ class MetricPlot(tk.Frame):
         self._hide_tooltip()
         
         if event.button == 3:
+            # ПКМ — всегда сброс масштаба к полному диапазону.
             self._current_tf = None
             if self.on_reset:
                 self.on_reset()
@@ -375,6 +399,10 @@ class MetricPlot(tk.Frame):
         self._click_y = event.y
 
         if is_dbl:
+            # Двойной клик ЛКМ по столбику — открыть/отредактировать комментарий.
+            self._hide_tooltip()
+            self._open_comment_at(event.xdata)
+            self._lmb_down = False
             return
 
         if self.on_single_click:
@@ -486,40 +514,61 @@ class MetricPlot(tk.Frame):
         analysis = self.analyzer.analyze_by_date(self._athlete, recorded_at)
         if not analysis:
             return
-        
+
+        # Не показываем подсказку, если открыто модальное окно (владеет grab).
+        if self._modal_open():
+            return
+
         self._hover_tooltip = tw = tk.Toplevel(self)
         tw.wm_overrideredirect(True)
         tw.configure(bg=COL_TOOLTIP_BG, borderwidth=1, relief="solid")
         tw.attributes('-topmost', True)
-        
+
         text = (f"📅 {analysis.recorded_at.strftime('%d.%m.%Y %H:%M')}\n"
                 f"{'─' * 40}\n"
                 f"{analysis.tp_color} TP: {analysis.tp:.0f} мс² — {analysis.tp_status}\n"
                 f"{analysis.stress_color} Стресс: {analysis.stress_si:.0f} у.е. — {analysis.stress_status}\n"
                 f"{'─' * 40}\n"
                 f"💡 {analysis.recommendation}")
-        
+        # Комментарий пользователя к этой метрике за дату записи (если есть).
+        d_key = analysis.recorded_at.date() if isinstance(analysis.recorded_at, datetime.datetime) else None
+        if d_key is not None and self._comments.get(d_key):
+            text += f"\n{'─' * 40}\n📌 {self._comments[d_key]}"
+
         label = tk.Label(
             tw, text=text, justify="left", bg=COL_TOOLTIP_BG, fg=COL_SELECTION,
             font=("Segoe UI", 9), padx=12, pady=10, anchor="w"
         )
         label.pack()
-        
+
         x = self.winfo_pointerx() + 15
         y = self.winfo_pointery() + 15
-        
+
         tw.update_idletasks()
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
         tw_w = tw.winfo_width()
         tw_h = tw.winfo_height()
-        
+
         if x + tw_w > screen_w:
             x = self.winfo_pointerx() - tw_w - 15
         if y + tw_h > screen_h:
             y = self.winfo_pointery() - tw_h - 15
-        
+
         tw.wm_geometry(f"+{x}+{y}")
+
+    def _modal_open(self):
+        """True, если открыто модальное окно (кто-то владеет grab).
+
+        Модальные окна делают grab_set() (см. dialogs/base.py), поэтому через
+        корневой grab_current() можно узнать, показывать ли всплывающую подсказку.
+        """
+        try:
+            root = self.winfo_toplevel()
+            cur = root.grab_current()
+            return cur is not None
+        except Exception:
+            return False
 
     def _pointer_inside(self):
         """True, если курсор всё ещё находится в пределах окна графика.
@@ -547,7 +596,7 @@ class MetricPlot(tk.Frame):
         if self._hover_timer is not None:
             self.after_cancel(self._hover_timer)
             self._hover_timer = None
-        
+
         if self._hover_tooltip is not None:
             try:
                 if self._hover_tooltip.winfo_exists():
@@ -555,7 +604,7 @@ class MetricPlot(tk.Frame):
             except Exception:
                 pass
             self._hover_tooltip = None
-        
+
         self._hover_record_id = None
 
     def _find_closest_record(self, xdata):
@@ -654,6 +703,10 @@ class MetricPlot(tk.Frame):
             # 1. Рисуем основные (фактические) столбцы
             ax.bar(xs, ys, width=bw, color=colors, align="edge", zorder=2, rasterized=True)
 
+            # Маркеры комментариев: точка над столбцами тех дат, для которых
+            # пользователь оставил комментарий к этой метрике.
+            self._draw_comment_markers(ax, xs, ys, bw)
+
             # ======================================================================
             # 🔮 2. PID-ПРОГНОЗ (подводка к соревнованиям)
             # ======================================================================
@@ -742,6 +795,60 @@ class MetricPlot(tk.Frame):
             text=f"{self.spec.name} | {tf_label} ({range_str})",
             fg=COL_TEXT_LIGHT)
         self.canvas.draw_idle()
+
+    def _bin_date(self, x, bar_size):
+        """Дата, к которой относится bin-интервал (его начало)."""
+        try:
+            return datetime.date.fromordinal(max(1, int(x)))
+        except Exception:
+            return None
+
+    def _open_comment_at(self, xdata):
+        """ПКМ по столбику: открывает диалог комментария для ближайшей даты.
+
+        Возвращает True, если рядом есть точка данных (диалог будет показан),
+        иначе False (клик в пустое место — сброс масштаба).
+        """
+        record = self._find_closest_record(xdata)
+        if record is None:
+            return False
+        if not self._athlete or not self.db_path:
+            return False
+        _, _, recorded_at = record
+        try:
+            dt = datetime.datetime.fromisoformat(recorded_at)
+            date = dt.date()
+        except Exception:
+            return False
+
+        self._hide_tooltip()
+        from dialogs.comment import CommentDialog
+
+        dlg = CommentDialog(self, athlete_id=self._athlete,
+                            metric_key=self.spec.key, metric_name=self.spec.name,
+                            comment_date=date, db_path=self.db_path)
+        r = dlg.modal_loop()
+        # После редактирования перечитываем комментарии и перерисовываем маркеры.
+        self.reload_comments()
+        self._draw()
+        return True
+
+    def _draw_comment_markers(self, ax, xs, ys, bw):
+        """Рисует маркер (точку) над столбцами с комментариями к этой метрике.
+
+        Для каждого столбца определяем дату начала bin и, если на эту дату
+        есть комментарий в self._comments — ставим точку над столбиком.
+        """
+        if not self._comments or not xs:
+            return
+        for i, x in enumerate(xs):
+            d = self._bin_date(x, bw)
+            if d is None or d not in self._comments:
+                continue
+            top = ys[i] if i < len(ys) else 0.0
+            py = top * 1.06
+            ax.plot([x + bw / 2], [py], marker='^', markersize=8,
+                    color=COL_WARN, zorder=5, clip_on=False)
 
     def _set_x_ticks_small(self, ax, lo, hi, vspan, config):
         ticks, names = [], []

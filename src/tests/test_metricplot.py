@@ -42,6 +42,10 @@ def plot():
     p.on_year_pick = None
     p.on_reset = Mock()
     p.on_single_click = Mock()
+    p._hover_timer = None
+    p._hover_tooltip = None
+    p._hover_tip_obj = None
+    p._hover_record_id = None
     
     # Debounce атрибуты
     p._draw_timer = None

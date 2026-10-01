@@ -51,6 +51,14 @@ class BaseDialog(ctk.CTkToplevel):
             # его при закрытии — корректная вложенная модальность.
             self._grab_owner = self._grab_current()
             self.grab_set()
+            # Уведомляем ГЛАВНОЕ окно приложения: открылось модальное окно.
+            # Слушатели (графики) скрывают свои всплывающие подсказки, чтобы
+            # те не «зависали» поверх модального окна.
+            try:
+                parent_tl = self.master.winfo_toplevel()
+                parent_tl.event_generate("<<ModalOpened>>")
+            except Exception:
+                pass
 
         self._parent_watch = None
         self._start_parent_watch()

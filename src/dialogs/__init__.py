@@ -9,6 +9,7 @@ from .ecg_journal import ECGJournal
 from .similarity import SimilarityDialog
 from .help import HelpDialog
 from .settings import MetricsSettingsDialog
+from .comment import CommentDialog
 
 __all__ = [
     "AthleteDialog",
@@ -16,6 +17,7 @@ __all__ = [
     "SimilarityDialog",
     "HelpDialog",
     "MetricsSettingsDialog",
+    "CommentDialog",
     "ToolTip",
     "_ForegroundDateEntry",
 ]
