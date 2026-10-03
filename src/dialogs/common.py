@@ -70,16 +70,42 @@ class ToolTip:
 
 
 class _ForegroundDateEntry(DateEntry):
-    """DateEntry, который не пропадает при смене месяца/года."""
+    """DateEntry, который не пропадает при смене месяца/года.
+
+    Дополнительно поддерживает «пустую» дату: если рождение не задано,
+    поле отображается пустым, а ``get_date`` возвращает None. Это нужно,
+    чтобы дату рождения можно было оставлять незаполненной (по умолчанию),
+    а не подставлять фиктивную дату вроде 01.01.2005.
+    """
 
     def __init__(self, *args, **kwargs):
+        self.required = kwargs.pop("required", True)
         super().__init__(*args, **kwargs)
+        # В «необязательном» режиме поле стартует пустым, без фиктивной даты.
+        if not self.required:
+            self._clear_text()
         self._rebuild_lock = False  # Блокировка от рекурсии
         # tkcalendar инициализирует _downarrow_name асинхронно (через таймер),
         # а _on_motion по наведению мыши может сработать раньше -> AttributeError.
         # Ставим безопасное значение по умолчанию, чтобы не падало до его определения.
         if not hasattr(self, "_downarrow_name"):
             self._downarrow_name = "__none__"
+
+    def _clear_text(self):
+        """Очищает поле ввода (дата рождения не задана)."""
+        self.delete(0, "end")
+
+    def _validate_date(self):
+        """Пустая необязательная дата — не подставляем форсированно дефолт."""
+        if not self.required and not self.get().strip():
+            return True
+        return super()._validate_date()
+
+    def get_date(self):
+        """Возвращает дату или None, если поле пустое и не обязательное."""
+        if not self.required and not self.get().strip():
+            return None
+        return super().get_date()
 
     def drop_down(self):
         super().drop_down()

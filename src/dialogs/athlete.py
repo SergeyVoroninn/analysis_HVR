@@ -42,7 +42,7 @@ class AthleteDialog(BaseDialog):
             background=COL_BG_DARK, foreground=COL_TEXT_LIGHT,
             fieldbackground=COL_WEEKEND, borderwidth=0,
             selectbackground=COL_ACCENT, selectforeground=COL_SELECTION,
-            year=2005, month=1, day=1,
+            required=False,
             locale="ru_RU",
             showothermonthdays=False,
         )
@@ -180,7 +180,8 @@ class AthleteDialog(BaseDialog):
             if isinstance(bd, str):
                 bd = datetime.date.fromisoformat(bd)
 
-            if not datetime.date(1900, 1, 1) <= bd <= datetime.date.today():
+            # Дата рождения необязательна: пустое поле сохраняется как None
+            if bd is not None and not datetime.date(1900, 1, 1) <= bd <= datetime.date.today():
                 from tkinter import messagebox
                 messagebox.showwarning("Проверка", "Некорректная дата рождения.")
                 return

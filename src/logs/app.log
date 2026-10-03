@@ -1431,3 +1431,195 @@ IndexError: tuple index out of range
 2026-10-01 10:53:25,599 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета 1507a828-f55e-4953-9365-d387cac4f830 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
 2026-10-01 10:53:26,177 INFO [importer] Импорт C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10: у атлета caa80cb2-0d4a-49b5-9df7-3655cbcd47ad НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
 2026-10-01 10:53:26,697 INFO [importer] Импорт C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10: у атлета 1677d71d-3ee2-427c-a8d9-e8a73dafa3f1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 13:53:58,605 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета 464aef88-3b29-43c0-9b2a-3b4204241cbe
+2026-10-01 13:54:13,567 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета bd451f06-3aea-40f7-b15f-ddea55467d80
+2026-10-01 13:54:19,330 INFO [importer] Импорт a.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 13:54:19,488 INFO [importer] Импорт b1.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 13:54:19,608 INFO [importer] Импорт b2.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 13:54:19,907 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: биометрия status=SUSPICIOUS distance=0.900 prob=0.050 (атлет cur-1)
+2026-10-01 13:54:20,139 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: биометрия status=SUSPICIOUS distance=0.900 prob=0.050 (атлет cur-1)
+2026-10-01 13:54:20,272 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета test_athlete_001 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 13:54:20,521 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-01 13:54:20,540 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-01 13:54:20,737 ERROR [importer] Ошибка при импорте C:\Users\kik\AppData\Local\Temp\tmpnpgdpc40.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-01 13:54:26,378 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: у атлета 66f951d9-2ced-40aa-8fba-b24f27bae013 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 13:54:26,779 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета f4936d5b-bfcb-485e-93fd-98513694b549 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 13:54:27,270 INFO [importer] Импорт C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10: у атлета 5de34fbf-9379-4db5-83aa-90ccdf066332 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-01 13:54:27,630 INFO [importer] Импорт C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10: у атлета 33ad571b-26e0-4a08-8a04-82d3bbb4cf9b НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:22:10,276 INFO [importer] Импорт a.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:22:10,564 INFO [importer] Импорт b1.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:22:10,593 INFO [importer] Импорт b2.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:38:08,914 INFO [importer] Импорт a.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:38:09,883 INFO [importer] Импорт b1.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:38:09,966 INFO [importer] Импорт b2.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:38:18,295 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета test_athlete_001 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:38:20,447 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-03 22:38:20,469 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-03 22:38:21,651 ERROR [importer] Ошибка при импорте C:\Users\kik\AppData\Local\Temp\tmp2s9u3zob.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-03 22:39:45,941 INFO [importer] Импорт a.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:39:46,166 INFO [importer] Импорт b1.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:39:46,197 INFO [importer] Импорт b2.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:41:11,126 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета test_athlete_001 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:41:11,465 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-03 22:41:11,494 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-03 22:41:11,662 ERROR [importer] Ошибка при импорте C:\Users\kik\AppData\Local\Temp\tmpmll_jao1.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-03 22:48:05,258 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: у атлета 40fc9f8c-7475-49ab-8a80-e4a59bb3aac5 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:48:05,825 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета 2b7aa9ea-ab66-4755-a344-e299d5059593 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:48:06,422 INFO [importer] Импорт C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10: у атлета e4baaa42-9829-484d-a347-429abcc7f79b НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:48:07,147 INFO [importer] Импорт C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10: у атлета 2ab8b4bf-23e3-4b17-bfb2-6ade4162ff8e НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:50:18,631 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета 5f986277-922a-4d5c-8abf-81d13eef9726
+2026-10-03 22:50:43,914 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета 139adde0-53e9-4878-9204-11f1cc1b327e
+2026-10-03 22:51:40,957 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета ca22f520-acf8-4c21-aef2-57bfe52b3896
+2026-10-03 22:51:58,560 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета de6c0347-e874-4f93-9c08-99d561c7e448
+2026-10-03 22:52:04,661 INFO [importer] Импорт a.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:52:04,995 INFO [importer] Импорт b1.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:52:05,027 INFO [importer] Импорт b2.teamloggerh10: у атлета a1 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:52:05,202 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: биометрия status=SUSPICIOUS distance=0.900 prob=0.050 (атлет cur-1)
+2026-10-03 22:52:05,590 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: биометрия status=SUSPICIOUS distance=0.900 prob=0.050 (атлет cur-1)
+2026-10-03 22:52:06,010 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета test_athlete_001 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:52:06,313 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-03 22:52:06,331 ERROR [importer] Ошибка при импорте C:\s21\projects\analysis_HVR\src\tests\ekg_reference\84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-03 22:52:06,518 ERROR [importer] Ошибка при импорте C:\Users\kik\AppData\Local\Temp\tmpz0ug2zvy.teamloggerh10
+Traceback (most recent call last):
+  File "C:\s21\projects\analysis_HVR\src\importer.py", line 96, in _import_one
+    current_athlete_name = f"{athlete[1]} {athlete[2]}"
+                                           ~~~~~~~^^^
+IndexError: tuple index out of range
+2026-10-03 22:52:13,007 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: у атлета 512d126b-d61d-44ed-9abb-bbced91aa78a НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:52:13,425 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета 74db9897-82c6-4aec-90d7-723c0c35e157 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:52:13,829 INFO [importer] Импорт C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10: у атлета 8c73d67b-c99b-4e56-9602-b3f9c2ac60c2 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 22:52:14,290 INFO [importer] Импорт C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10: у атлета 853e0163-0428-46af-922e-ab8bb353720e НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:01:09,326 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: у атлета 298f479c-3efb-4802-9010-399d8377e596 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:01:09,914 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета fa1aeebc-022b-4016-8a5a-ae8141675a94 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:01:10,394 INFO [importer] Импорт C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10: у атлета 1f145f69-e35c-4a94-b3ee-d98f09a5a0d0 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:01:11,125 INFO [importer] Импорт C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10: у атлета cbe810ac-4574-4628-a274-5076ee2e86bb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:01:27,398 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета e3058b2c-782e-490c-8e1c-96101f07d255
+2026-10-03 23:01:44,088 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета a2a9d286-e2d0-4a35-94b4-792c7b74f1e3
+2026-10-03 23:21:35,757 INFO [ecg_biometrics] Дозаполнена схожесть: 10 записей атлета 7a471806-cb72-4d78-a744-efff6fae9482
+2026-10-03 23:22:00,038 INFO [ecg_biometrics] Дозаполнена схожесть: 9 записей атлета c00e5ef4-fe48-4a5b-b551-2176c54f815d
+2026-10-03 23:23:55,144 INFO [importer] Импорт 84E5FD2B_2026_08_17_09_00_09_teamloggerh10.teamloggerh10: у атлета 686210e9-ca9e-494e-b159-fbedad07a92b НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:23:55,265 INFO [importer] Импорт 84E5FD2B_2026_08_18_09_06_40_teamloggerh10.teamloggerh10: у атлета 686210e9-ca9e-494e-b159-fbedad07a92b НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:23:55,373 INFO [importer] Импорт 84E5FD2B_2026_08_24_09_05_02_teamloggerh10.teamloggerh10: у атлета 686210e9-ca9e-494e-b159-fbedad07a92b НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:23:55,480 INFO [importer] Импорт C821E528_2026_teamloggerh10_2_teamloggerh10.teamloggerh10: у атлета 686210e9-ca9e-494e-b159-fbedad07a92b НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:23:55,586 INFO [importer] Импорт C821EB2E_2026_08_12_09_05_53_teamloggerh10.teamloggerh10: у атлета 686210e9-ca9e-494e-b159-fbedad07a92b НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:23:55,718 INFO [importer] Импорт C821EB2E_2026_08_14_09_06_56_teamloggerh10.teamloggerh10: у атлета 686210e9-ca9e-494e-b159-fbedad07a92b НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:23:55,815 INFO [importer] Импорт C8219D21_2026_08_13_08_59_53_teamloggerh10.teamloggerh10: у атлета 686210e9-ca9e-494e-b159-fbedad07a92b НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:23:55,883 INFO [importer] Импорт C8219D21_2026_08_19_09_01_43_teamloggerh10.teamloggerh10: у атлета 686210e9-ca9e-494e-b159-fbedad07a92b НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:23:55,983 INFO [importer] Импорт C8219D21_2026_08_20_09_15_18_teamloggerh10.teamloggerh10: у атлета 686210e9-ca9e-494e-b159-fbedad07a92b НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:02,507 INFO [ecg_biometrics] Дозаполнена схожесть: 9 записей атлета 686210e9-ca9e-494e-b159-fbedad07a92b
+2026-10-03 23:24:37,965 INFO [importer] Импорт 84E5FD2B_2026_08_26_09_51_21_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:38,098 INFO [importer] Импорт 84E5FD2B_2026_teamloggerh10 (1).teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:38,345 INFO [importer] Импорт 84E5FD2B_2026_teamloggerh10 (2).teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:38,471 INFO [importer] Импорт C821E528_2026_08_07_08_47_13_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:38,675 INFO [importer] Импорт C821E528_2026_08_08_09_17_03_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:38,781 INFO [importer] Импорт C821E528_2026_08_10_08_33_14_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:38,884 INFO [importer] Импорт C821E528_2026_teamloggerh10_7_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:38,989 INFO [importer] Импорт C821EB2E_2026_08_03_08_45_28_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:39,131 INFO [importer] Импорт C821EB2E_2026_08_10_08_33_21_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:39,354 INFO [importer] Импорт C821EB2E_2026_teamloggerh10_3_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:39,508 INFO [importer] Импорт C821EB2E_2026_teamloggerh10_10_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:39,715 INFO [importer] Импорт C821EB2E_2026_teamloggerh10_11_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:39,854 INFO [importer] Импорт C8219D21_2026_08_15_09_07_07_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:39,965 INFO [importer] Импорт C8219D21_2026_08_17_08_54_46_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:40,118 INFO [importer] Импорт C8219D21_2026_08_18_08_51_00_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:40,263 INFO [importer] Импорт C8219D21_2026_08_19_08_49_13_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:40,379 INFO [importer] Импорт C8219D21_2026_08_20_09_08_34_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:40,489 INFO [importer] Импорт C8219D21_2026_08_21_10_01_08_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:40,558 INFO [importer] Импорт C8219D21_2026_08_22_09_05_46_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:40,718 INFO [importer] Импорт C8219D21_2026_08_24_09_04_54_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:40,847 INFO [importer] Импорт C8219D21_2026_08_25_09_18_42_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:40,986 INFO [importer] Импорт C8219D21_2026_teamloggerh10 (1).teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:41,513 INFO [importer] Импорт C8219D21_2026_teamloggerh10 (2).teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:41,679 INFO [importer] Импорт C8219D21_2026_teamloggerh10 (4).teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:41,860 INFO [importer] Импорт C8219D21_2026_teamloggerh10 (5).teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:41,987 INFO [importer] Импорт C8219D21_2026_teamloggerh10 (6).teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:42,131 INFO [importer] Импорт C8219D21_2026_teamloggerh10 (7).teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:42,265 INFO [importer] Импорт C8219D21_2026_teamloggerh10 (8).teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:42,410 INFO [importer] Импорт C8219D21_2026_teamloggerh10.teamloggerh10: у атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:24:57,485 INFO [ecg_biometrics] Дозаполнена схожесть: 29 записей атлета b09cd24d-a1b2-4a69-80db-a6f4e1e4fdeb
+2026-10-03 23:25:18,954 INFO [importer] Импорт C821E528_2026_08_08_08_47_04_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:19,302 INFO [importer] Импорт C821E528_2026_08_11_08_48_07_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:19,419 INFO [importer] Импорт C821E528_2026_teamloggerh10_6_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:19,556 INFO [importer] Импорт C821EB2E_2026_08_07_08_47_20_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:19,750 INFO [importer] Импорт C821EB2E_2026_08_08_09_16_48_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:19,858 INFO [importer] Импорт C821EB2E_2026_08_11_08_48_16_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:19,963 INFO [importer] Импорт C821EB2E_2026_08_12_08_52_13_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:20,071 INFO [importer] Импорт C821EB2E_2026_08_13_08_44_03_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:20,183 INFO [importer] Импорт C821EB2E_2026_08_14_08_59_41_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:20,314 INFO [importer] Импорт C821EB2E_2026_08_15_09_07_13_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:20,443 INFO [importer] Импорт C821EB2E_2026_08_17_08_54_48_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:20,583 INFO [importer] Импорт C821EB2E_2026_08_18_09_05_30_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:20,704 INFO [importer] Импорт C821EB2E_2026_08_19_08_49_32_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:20,883 INFO [importer] Импорт C821EB2E_2026_teamloggerh10_12_teamloggerh10.teamloggerh10: у атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:31,343 INFO [ecg_biometrics] Дозаполнена схожесть: 14 записей атлета fa98ac6f-9ca2-43f6-bb4f-04ae30171d31
+2026-10-03 23:25:47,432 INFO [importer] Импорт 84E5FD2B_2026_08_18_08_54_51_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:47,509 INFO [importer] Импорт 84E5FD2B_2026_08_19_08_50_21_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:47,614 INFO [importer] Импорт 84E5FD2B_2026_08_20_09_15_52_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:47,730 INFO [importer] Импорт 84E5FD2B_2026_08_25_09_19_01_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:47,839 INFO [importer] Импорт 84E5FD2B_2026_teamloggerh10 (1).teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:47,979 INFO [importer] Импорт 84E5FD2B_2026_teamloggerh10 (3).teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:48,089 INFO [importer] Импорт 84E5FD2B_2026_teamloggerh10 (4).teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:48,215 INFO [importer] Импорт C821EB2E_2026_08_14_09_23_00_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:48,326 INFO [importer] Импорт C821EB2E_2026_08_15_09_14_31_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:48,430 INFO [importer] Импорт C821EB2E_2026_08_24_09_08_21_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:48,579 INFO [importer] Импорт C8219D21_2026_08_13_09_16_28_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:48,676 INFO [importer] Импорт C8219D21_2026_08_17_09_14_05_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:48,807 INFO [importer] Импорт C8219D21_2026_08_21_11_04_04_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:48,889 INFO [importer] Импорт C8219D21_2026_08_22_10_17_11_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:49,031 INFO [importer] Импорт C8219D21_2026_08_26_09_51_17_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
+2026-10-03 23:25:57,823 INFO [ecg_biometrics] Дозаполнена схожесть: 15 записей атлета 869d7198-221e-4cf8-a31f-ec888f5c9906

@@ -11,9 +11,7 @@ import customtkinter as ctk
 from database import get_db_path
 from models import get_session, Athlete
 from dialogs import AthleteDialog, ToolTip
-from athlete_generator import (
-    _generate_polar_id, _estimate_height_cm, _estimate_weight_kg,
-    _estimate_resting_hr, _estimate_max_hr, _estimate_hrv_rmssd, _calc_age)
+from athlete_generator import _calc_age
 from theme import COL_BG_WIDGET, COL_TEXT_LIGHT
 from app_constants import SINGLE_CLICK_DELAY_ATLETS_MS, ECGLIST_DEFAULT_LIMIT
 
@@ -90,7 +88,9 @@ class AthletesPanel(tk.Frame):
 
         self.tree.delete(*self.tree.get_children())
         for a in self.athletes:
-            self.tree.insert("", "end", iid=a[0], values=(f"{a[1]} {a[2]}", a[3]))
+            age = a[3]
+            age_display = "" if not age else age
+            self.tree.insert("", "end", iid=a[0], values=(f"{a[1]} {a[2]}", age_display))
 
         children = self.tree.get_children()
         if children:
@@ -168,12 +168,7 @@ class AthletesPanel(tk.Frame):
             return  # Пользователь нажал "Отмена"
             
         d = dlg.result
-        import datetime
-        bd = d["birth_date"]
-        if isinstance(bd, str):
-            bd = datetime.date.fromisoformat(bd)
-            
-        age = _calc_age(bd)
+        bd = d["birth_date"]  # может быть None, если дата не задана
         gender = d["gender"]
 
         # ✅ ИСПРАВЛЕНИЕ: Берем значения напрямую. Если поле пустое, там останется None.
@@ -182,8 +177,9 @@ class AthletesPanel(tk.Frame):
         weight = d["weight_kg"]
         resting = None  # Оставляем пустым, если пользователь не ввел
 
-        # Polar ID генерируем только если пользователь действительно оставил поле пустым
-        polar_id = d["polar_id"] or _generate_polar_id()
+        # Polar ID: сохраняем как есть. Если пользователь не ввёл — оставляем
+        # пустым (None), а НЕ генерируем случайный id прибора.
+        polar_id = d["polar_id"] or None
 
         athlete = Athlete(
             id=str(uuid.uuid4()),
@@ -195,9 +191,9 @@ class AthletesPanel(tk.Frame):
             height_cm=height, 
             weight_kg=weight,
             resting_hr=resting, 
-            max_hr=None,               # Было: _estimate_max_hr(age)
-            hrv_rmssd_baseline=None,   # Было: _estimate_hrv_rmssd(age)
-            avg_rr_ms=None,            # Было: int(60000 / resting) if resting > 0 else 60
+            max_hr=None,
+            hrv_rmssd_baseline=None,
+            avg_rr_ms=None,
             polar_id=polar_id,
         )
         

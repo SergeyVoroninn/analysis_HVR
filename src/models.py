@@ -204,6 +204,18 @@ def _migrate(engine):
             conn.execute(text("ALTER TABLE ecg_records ADD COLUMN bio_similarity_pct FLOAT"))
         if "bio_note" not in columns:
             conn.execute(text("ALTER TABLE ecg_records ADD COLUMN bio_note VARCHAR"))
+        # Для очень старых БД (схема до разделения raw_data и появления tp/updated_at)
+        # добавляем недостающие обязательные колонки, иначе обращение к модели падает.
+        if "tp" not in columns:
+            conn.execute(text("ALTER TABLE ecg_records ADD COLUMN tp FLOAT"))
+        if "updated_at" not in columns:
+            conn.execute(text("ALTER TABLE ecg_records ADD COLUMN updated_at DATETIME"))
+        if "profile" in columns:
+            # Устаревшая колонка-строка профиля больше не используется.
+            try:
+                conn.execute(text("ALTER TABLE ecg_records DROP COLUMN profile"))
+            except Exception:
+                pass  # старый SQLite может не поддержать DROP COLUMN
         # SDNN больше не рассчитывается и не показывается — удаляем колонку.
         if "sdnn" in columns:
             try:
@@ -211,6 +223,12 @@ def _migrate(engine):
             except Exception:
                 pass  # старый SQLite может не поддержать DROP COLUMN
         conn.commit()
+
+        # У старых БД athletes.gender/birth_date хранятся как VARCHAR.
+        # SQLite позволяет пересоздать таблицу с корректными типами,
+        # но текст-значение 'M'/'F' читается и так. Ничего не трогаем здесь —
+        # миграция значения birth_date при необходимости выполняется
+        # отдельным скриптом (migrate_legacy_db.py).
 
     session = sessionmaker(bind=engine, expire_on_commit=False)()
     try:
@@ -231,6 +249,42 @@ def _migrate(engine):
                 session.add(dev)
                 session.flush()
             rec.device_id = dev.id
+        session.commit()
+
+        # Бэкфилл ВРС-метрик для записей, у которых не рассчитан TP (или иные
+        # метрики) — например, после открытия старой БД, где колонка tp была
+        # добавлена миграцией как NULL. Метрики пересчитываются по сырой ЭКГ.
+        from analysis import parse_rr, calc_metrics, calc_stress, compute_psd
+        to_recompute = (
+            session.query(ECGRecord)
+            .join(ECGRaw, ECGRecord.id == ECGRaw.record_id)
+            .options(joinedload(ECGRecord.raw))
+            .filter(ECGRecord.tp.is_(None))
+            .all()
+        )
+        for rec in to_recompute:
+            raw = rec.raw.raw_data if rec.raw else ""
+            try:
+                rr = parse_rr(raw)
+                m = calc_metrics(rr) or {}
+                s = calc_stress(rr) or {}
+                tp = None
+                try:
+                    _, _, bands = compute_psd(rr)
+                    tp = bands.get("tp") if bands else None
+                except Exception:
+                    tp = None
+                if rec.rmssd is None or "rmssd" in m:
+                    rec.rmssd = m.get("rmssd")
+                if rec.mean_hr is None or "mean_hr" in m:
+                    rec.mean_hr = m.get("mean_hr")
+                if rec.stress_si is None or "si" in s:
+                    rec.stress_si = s.get("si")
+                if not rec.status:
+                    rec.status = m.get("status")
+                rec.tp = tp
+            except Exception:
+                continue
         session.commit()
     finally:
         session.close()
