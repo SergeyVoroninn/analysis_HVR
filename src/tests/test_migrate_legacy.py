@@ -1,10 +1,11 @@
 """
 test_migrate_legacy.py — проверка, что устаревшая схема БД открывается
-новой версией без сбоя (авто-миграция в models._migrate) и что
-migrate_legacy_db.py переносит данные и пересчитывает метрики.
+новой версией без сбоя (авто-миграция в models._migrate).
 
 История бага: старая БД имела ecg_records без колонок tp / updated_at /
-device_id, app на ней падал.
+device_id, app на ней падал. Авто-миграция добавляет недостающие колонки,
+бэкфиллит метрики по ЭКГ, проставляет прибор по polar_id и очищает
+фиктивные даты рождения (значения по умолчанию старого диалога).
 """
 import datetime
 import os
@@ -114,3 +115,16 @@ def test_legacy_db_backfills_tp_after_migration(tmp_path):
     nulls = conn.execute("SELECT COUNT(*) FROM ecg_records WHERE tp IS NULL").fetchone()[0]
     conn.close()
     assert nulls == 0, "не должно остаться записей без TP"
+
+
+def test_legacy_db_clears_fake_birth_date(tmp_path):
+    """Фиктивная дата рождения старого диалога очищается авто-миграцией."""
+    db = str(tmp_path / "legacy_fake_bd.db")
+    make_legacy_db(db)
+
+    get_session(db).close()  # авто-миграция + очистка даты рождения
+
+    conn = sqlite3.connect(db)
+    bd = conn.execute("SELECT birth_date FROM athletes WHERE id='a1'").fetchone()[0]
+    conn.close()
+    assert bd is None, f"фиктивная дата рождения должна очиститься, осталась: {bd!r}"
