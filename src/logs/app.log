@@ -1623,3 +1623,16 @@ IndexError: tuple index out of range
 2026-10-03 23:25:48,889 INFO [importer] Импорт C8219D21_2026_08_22_10_17_11_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
 2026-10-03 23:25:49,031 INFO [importer] Импорт C8219D21_2026_08_26_09_51_17_teamloggerh10.teamloggerh10: у атлета 869d7198-221e-4cf8-a31f-ec888f5c9906 НЕТ шаблона -> сходство не считается, кандидаты не предлагаются
 2026-10-03 23:25:57,823 INFO [ecg_biometrics] Дозаполнена схожесть: 15 записей атлета 869d7198-221e-4cf8-a31f-ec888f5c9906
+2026-10-04 08:17:29,276 INFO [ecg_biometrics] Дозаполнена схожесть: 16 записей атлета 78f556a6-5754-4751-9406-4c5546e967df
+2026-10-04 08:31:57,678 INFO [ecg_biometrics] Дозаполнена схожесть: 19 записей атлета 127e3b66-1e5a-48d4-9fe6-25fb33437f85
+2026-10-04 08:32:02,344 INFO [ecg_biometrics] Дозаполнена схожесть: 8 записей атлета 215221f7-858e-4c62-ae58-f611030fd0d5
+2026-10-04 08:32:17,245 INFO [ecg_biometrics] Дозаполнена схожесть: 24 записей атлета db678c72-eecb-4d3e-b706-6bccecfa2d4e
+2026-10-04 08:32:17,273 CRITICAL [app.crash] Необработанное исключение: PermissionError: [WinError 32] Процесс не может получить доступ к файлу, так как этот файл занят другим процессом: 'C:\\Users\\kik\\AppData\\Local\\Temp\\gigatool\\test_auto_tpl.db'
+Traceback (most recent call last):
+  File "<string>", line 20, in <module>
+    os.remove(test)
+    ~~~~~~~~~^^^^^^
+PermissionError: [WinError 32] Процесс не может получить доступ к файлу, так как этот файл занят другим процессом: 'C:\\Users\\kik\\AppData\\Local\\Temp\\gigatool\\test_auto_tpl.db'
+2026-10-04 08:33:19,062 INFO [ecg_biometrics] Дозаполнена схожесть: 19 записей атлета 127e3b66-1e5a-48d4-9fe6-25fb33437f85
+2026-10-04 08:33:21,572 INFO [ecg_biometrics] Дозаполнена схожесть: 8 записей атлета 215221f7-858e-4c62-ae58-f611030fd0d5
+2026-10-04 08:33:30,290 INFO [ecg_biometrics] Дозаполнена схожесть: 24 записей атлета db678c72-eecb-4d3e-b706-6bccecfa2d4e

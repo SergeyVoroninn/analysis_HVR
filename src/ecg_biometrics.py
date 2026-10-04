@@ -485,6 +485,61 @@ def auto_update_template_if_needed(db_path, athlete_id):
         session.close()
 
 
+def athletes_without_template(db_path):
+    """Id атлетов, у которых ещё нет биометрического шаблона.
+
+    Возвращает только тех, у кого записей достаточно (>= MIN_RECORDS), — у
+    остальных шаблон всё равно не построится.
+    """
+    session = get_session(db_path)
+    try:
+        rows = (
+            session.query(Athlete.id)
+            .outerjoin(BiometricTemplate, BiometricTemplate.athlete_id == Athlete.id)
+            .filter(BiometricTemplate.id.is_(None))
+            .all()
+        )
+        out = []
+        for (aid,) in rows:
+            n = session.query(ECGRecord).filter(ECGRecord.athlete_id == aid).count()
+            if n >= cfg.MIN_RECORDS:
+                out.append(aid)
+        return out
+    finally:
+        session.close()
+
+
+def auto_build_all_templates(db_path, status_cb=None, cancel_event=None):
+    """Фоновая генерация шаблонов для всех атлетов без шаблона (>= MIN_RECORDS).
+
+    Один поток, по одному атлету за раз, чтобы не блокировать UI. Статус
+    передаётся через status_cb(msg, keep) — keep подавляет авто-сброс в
+    «Готово», пока идёт пересчёт. cancel_event позволяет прервать прогон
+    без влияния на уже построенные шаблоны.
+    """
+    try:
+        ids = athletes_without_template(db_path)
+    except Exception:
+        log.exception("Не удалось получить список атлетов без шаблона")
+        return
+    total = len(ids)
+    if total == 0:
+        return
+    if status_cb:
+        status_cb(f"Строим биометрические шаблоны… осталось ~{total}", keep=True)
+    for i, aid in enumerate(ids, start=1):
+        if cancel_event is not None and cancel_event.is_set():
+            return
+        if status_cb:
+            status_cb(f"Строим шаблон: {i}/{total}", keep=True)
+        try:
+            create_and_save_template(db_path, aid, progress_cb=None)
+        except Exception:
+            log.exception("Не удалось построить шаблон атлета %s", aid)
+    if status_cb:
+        status_cb("Готово")
+
+
 def _are_relatives_by_name(db_path, athlete_id_1, athlete_id_2):
     """Проверяет, являются ли атлеты родственниками по фамилии."""
     session = get_session(db_path)

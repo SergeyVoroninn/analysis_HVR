@@ -21,6 +21,7 @@ except locale.Error:
 import datetime
 import os
 import sys
+import threading
 import tkinter as tk
 import customtkinter as ctk
 
@@ -141,12 +142,14 @@ if __name__ == "__main__":
 
     _status_timer = None
 
-    def set_status(text, timeout=STATUS_TIMEOUT_MS):
+    def set_status(text, timeout=STATUS_TIMEOUT_MS, keep=False):
         global _status_timer
         status_var.set(text)
         if _status_timer:
             root.after_cancel(_status_timer)
-        _status_timer = root.after(timeout, lambda: status_var.set("Готово"))
+            _status_timer = None
+        if not keep:
+            _status_timer = root.after(timeout, lambda: status_var.set("Готово"))
 
     # ---------- правая колонка ----------
     right = tk.Frame(root, bg=COL_BG_DARK)
@@ -250,6 +253,21 @@ if __name__ == "__main__":
     root.update()
     splash.close_splash()
     root.deiconify()
+
+    # Фоновая генерация биометрических шаблонов для атлетов, у которых
+    # достаточно записей (>= MIN_RECORDS), но шаблона ещё нет. Один поток,
+    # по одному атлету за раз; прогресс отражается в строке статуса.
+    # Отключается флагом auto_templates в app_settings.json.
+    def _auto_templates():
+        if settings.get("auto_templates", True) is False:
+            return
+        try:
+            from ecg_biometrics import auto_build_all_templates
+            auto_build_all_templates(panel.db_path, status_cb=set_status)
+        except Exception:
+            pass
+
+    threading.Thread(target=_auto_templates, daemon=True).start()
 
     # F1 — инструкция пользователя
     def open_help(event=None):
